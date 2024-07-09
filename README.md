@@ -1,2 +1,11 @@
 # ML_WB_longitudinal_CBCL_PGS_LGM
-This study aims to leverage and combine various modalities of data to build machine learning models for the prediction of wellbeing. Longitudinal features from childhood psychopathology as well as Polygenic risk scores and features from latent growth modeling will be included
+
+**Summary of the project:**
+
+Combining multiple modalities of data for the prediction of wellbeing in machine learning models might lead to a more accurate prediction. This project aims to investigate the usefulness of longitudinal features of a specific aspect of an individual’s life history, namely childhood psychopathology, for machine learning-based prediction of adult wellbeing. Features derived from longitudinal trajectories of childhood psychopathology will be compared to polygenic risk scores for a variety of phenotypes and to cross-sectional features of childhood psychopathology ignoring the longitudinal aspect. It is expected that longitudinal features will be of high feature importance. 
+
+Authors: Leitritz, D; Pool, R.; Ligthart, L.; Bartels, M.; Pelt, D.
+
+Department of Biological Psychology; Vrije Universiteit Amsterdam; Amsterdam,. Noord-Holland; The Netherlands
+
+This repository is organized as follows: 
