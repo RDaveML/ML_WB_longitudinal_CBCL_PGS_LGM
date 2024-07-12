@@ -8,4 +8,8 @@ Authors: Leitritz, D; Pool, R.; Ligthart, L.; Bartels, M.; Pelt, D.
 
 Department of Biological Psychology; Vrije Universiteit Amsterdam; Amsterdam,. Noord-Holland; The Netherlands
 
-This repository is organized as follows: 
+This repository contains all documents relevant to the analysis and is organized as follows:
+
+- data contains only proof-of-concept calculations and otherwise falls under the gitignore
+- doc contains all documentation of the study including legal documents and the pre-registration, furthermore visualizations based on the results of the analyses
+- scripts contains all R, Python, Mplus and bash scripts that were used for the analysis
