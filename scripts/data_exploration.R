@@ -37,6 +37,7 @@ colMeans(is.na(data))
 rowMeans(is.na(data))
 ## Issue, very many missings, maybe threshold needs to be raised
 
+# Next step: checking the codes of the variables
 
 
 
