@@ -13,3 +13,12 @@ This repository contains all documents relevant to the analysis and is organized
 - data contains only proof-of-concept calculations and otherwise falls under the gitignore
 - doc contains all documentation of the study including legal documents and the pre-registration, furthermore visualizations based on the results of the analyses
 - scripts contains all R, Python, Mplus and bash scripts that were used for the analysis
+
+The project contains the following areas of coding and analysis:
+- Preprocessing
+- Latent growth / longidtudinal modeling
+- Machine learning preprocessing
+- Running machine learning models
+- assessment of model stability
+- model evaluation
+
