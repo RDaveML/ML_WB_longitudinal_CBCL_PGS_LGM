@@ -7,6 +7,7 @@ Combining multiple modalities of data for the prediction of wellbeing in machine
 Authors: Leitritz, D; Pool, R.; Ligthart, L.; Bartels, M.; Pelt, D.
 
 Department of Biological Psychology; Vrije Universiteit Amsterdam; Amsterdam,. Noord-Holland; The Netherlands
+July 2024
 
 This repository contains all documents relevant to the analysis and is organized as follows:
 
