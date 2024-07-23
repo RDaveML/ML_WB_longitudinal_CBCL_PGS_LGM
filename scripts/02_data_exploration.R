@@ -19,6 +19,10 @@ options(scipen = 999)
 ## printing and changing working directory if needed
 getwd()
 
+here::here()
+
+getwd() == here::here()
+
 ## reading in datafile
 data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav"))
 
