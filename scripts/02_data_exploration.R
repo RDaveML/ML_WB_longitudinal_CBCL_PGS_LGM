@@ -1,21 +1,36 @@
+# HEADER --------------------------------------------
+#
+# Author: Dave Leitritz (RDaveML)
+# Year, 2024
+# Email: d.m.leitritz@vu.nl
+#   
+# Date: 2024-07-22
+#
+# end date: 
+#
+# Script Name: 02_data_exploration.R
+# 
+# Script Description:
+#
 ## Initial data exploration 
 ## Project Combining longitudinal change features of childhood psychopathology 
 ## with Polygenic scores in machine learning models of adult wellbeing
+#
+#
+# Notes:
+#
+#
 
-## Author: Dave Leitritz
-
-## start date: 2024-07-22
-
-## end date: 
+# Set options
+cat("SETTING OPTIONS... \n\n", sep = "") ## This is a helper when excuting the 
+## script! Console also prints options
+options(scipen = 999)
 
 
 ## installing / loading libraries
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table")
-
-## changing format of printed number
-options(scipen = 999)
 
 ## printing and changing working directory if needed
 getwd()
@@ -144,9 +159,9 @@ YSR_items_vec <- na.omit(YSR_items_vec)
 ## all on 4-point scale, higher N, also reliability info, number of reports,
 ## for overall: age at time of report
 
-ea_vars <- c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # overall
+ea_vars <- sort(c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # overall
              "ea4mo_agg", "ea4mo_info_agg", "ea4mo_n_agg", # mother
-             "ea4fa_agg", "ea4fa_info_agg", "ea4fa_n_agg") # father
+             "ea4fa_agg", "ea4fa_info_agg", "ea4fa_n_agg")) # father
 
 
 ## Outcome! QoL / wellbeing variables:
@@ -154,8 +169,10 @@ ea_vars <- c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # overall
 
 qol_vars <- c("levenc8", "levenc10", "levenc12", "levenc14")
 
+inspect <- FALSE
 
 ## visually inspecting unique values of variables for abnormalities
+if(inspect == TRUE){
 for(col in 3:131){
   cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
       sort(unique(data[, col])), "\n", "\n")
@@ -176,6 +193,59 @@ for(col in 263:393){
 for(col in 394:ncol(data)){
   cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
       sort(unique(data[, col])), "\n", "\n")
+}
+}
+  
+## tabulations: variables 3-14 inform about attributes of participants related
+## to genome, family, sex , sibling status
+for(col in 3:14){
+  cat("frequencies variable", "'", colnames(data)[col], "'", "\n",
+      paste(names(table(data[,col], useNA = "ifany")),
+            table(data[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## Inspecting codes
+
+# Read the file
+lines <- readLines(here::here("data", "source_raw", "NTR_4552_vallabels.txt"))
+
+labels_table <- data.frame(variable = character(), labels = character(), stringsAsFactors = FALSE)
+
+# Process each line
+for (line in lines) {
+  # Use regular expressions to extract the variable name and labels
+  variable_name <- str_extract(line, "^[^,]+")
+  labels <- str_extract(line, "\\{.*\\}")
+  
+  # Remove any surrounding whitespace
+  variable_name <- str_trim(variable_name)
+  labels <- str_trim(labels)
+  
+  # Add the extracted information to the data frame
+  labels_table <- rbind(labels_table, data.frame(variable = variable_name,
+                                                 labels = labels,
+                                                 stringsAsFactors = FALSE))
+}
+
+## writing to csv_file
+# write.csv(labels_table, here::here("data", "intermediate", "labels.csv"),
+#          row.names = FALSE, col.names = FALSE)
+
+
+## Not all variables in the data are contained in the label table
+setdiff(colnames(data), labels_table$variable)
+## doesn't matter, it's only the questions from the YsR that are not listed
+
+# Inspecting codes ea variables(educational attainment)
+ea_labels <- labels_table %>%
+  filter(variable %in% ea_vars)
+
+## unique codes that appear in the ea_vars
+for(ea in ea_vars){
+  cat("Variable", "'", ea, "'", "unique values: ",
+      sort(unique(data %>% select(ea) %>% pull())), "\n", "\n")
 }
 
 ## Next: Important codes, summary statistics
