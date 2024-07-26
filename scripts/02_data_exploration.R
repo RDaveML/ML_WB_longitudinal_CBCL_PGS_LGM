@@ -208,10 +208,25 @@ for(col in 3:14){
 
 ## Inspecting codes
 
+## Variables spybs14/16 (truant) are not coded 0-2, check codes and
+## distributions extracting together with CBCL items same question
+data_truant <- data %>%
+  select(q101m7, q101m10, q101m12, spybs14, spybs16)
+
+table(data_truant$q101m7, useNA = "ifany")
+table(data_truant$q101m10, useNA = "ifany")
+table(data_truant$q101m12, useNA = "ifany")
+table(data_truant$spybs14, useNA = "ifany")
+table(data_truant$spybs16, useNA = "ifany")
+## Some recoding should happen with those variables, alternatively discard
+## truant item
+
+
 # Read the file
 lines <- readLines(here::here("data", "source_raw", "NTR_4552_vallabels.txt"))
 
-labels_table <- data.frame(variable = character(), labels = character(), stringsAsFactors = FALSE)
+labels_table <- data.frame(variable = character(), labels = character(),
+                           stringsAsFactors = FALSE)
 
 # Process each line
 for (line in lines) {
@@ -248,4 +263,43 @@ for(ea in ea_vars){
       sort(unique(data %>% select(ea) %>% pull())), "\n", "\n")
 }
 
-## Next: Important codes, summary statistics
+## age at filling out survey variables, check distributions
+data_age_vars <- data %>%
+  select(contains("age"))
+
+
+## Next: containment variables: Did participate fill out survey wave?
+
+## Variables that indicate if participants filled out a survey
+data_in_vars <- data %>% 
+  select(FISNumber, starts_with("in_")) %>%
+  mutate(n_missing_surveys = rowSums(is.na(.)))
+
+## frequencies 
+for(col in 2:ncol(data_in_vars)){
+  cat("frequencies variable", "'", colnames(data_in_vars)[col], "'", "\n",
+      paste(names(table(data_in_vars[,col], useNA = "ifany")),
+            table(data_in_vars[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## NA proportions
+colMeans(is.na(data_in_vars)) ## Very high proportions of missings in YSR 
+
+## filtering step (this might be written into separate script
+## where data cleaning eventually takes place)
+
+## 1) Filtering out all participants who have no outcome (did not participate
+## in any of the ANTR surveys)
+data_ANTR_participate <- data %>%
+  select(FISNumber, starts_with("in_AS")) %>%
+  mutate(n_QoL = rowSums(!is.na(.)) - 1) ## ensuring FISnumber is not counted
+
+table(data_ANTR_participate$n_QoL)
+## 50375 participants have not a single QoL measure!
+## apply this filter before anything else! 
+
+
+
+
