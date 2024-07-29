@@ -39,7 +39,7 @@ here::here()
 
 getwd() == here::here()
 
-## reading in datafile
+## reading in datafile (if necessary, change filepath to where file is located)
 data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
   as.data.frame()
 
@@ -74,7 +74,7 @@ rowMeans(is.na(data))
 
 ## CBCL / YSR variables
 CBCL_YSR_items <- read_excel("C:/Users/qrq337/OneDrive - Vrije Universiteit Amsterdam/Documents/VU/PhD_Machine_Learning_x_Well-being/01_PROJECTS/Project01_longitudinal_machine_learning/Table_S1_Pre-reg_table_CBCL_features_GMM.xlsx",
-                              col_names = FALSE)[-1,]
+                             col_names = FALSE)[-1,]
 
 ## setting column names
 colnames(CBCL_YSR_items) <- CBCL_YSR_items[1,]
@@ -160,8 +160,8 @@ YSR_items_vec <- na.omit(YSR_items_vec)
 ## for overall: age at time of report
 
 ea_vars <- sort(c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # overall
-             "ea4mo_agg", "ea4mo_info_agg", "ea4mo_n_agg", # mother
-             "ea4fa_agg", "ea4fa_info_agg", "ea4fa_n_agg")) # father
+                  "ea4mo_agg", "ea4mo_info_agg", "ea4mo_n_agg", # mother
+                  "ea4fa_agg", "ea4fa_info_agg", "ea4fa_n_agg")) # father
 
 
 ## Outcome! QoL / wellbeing variables:
@@ -173,29 +173,29 @@ inspect <- FALSE
 
 ## visually inspecting unique values of variables for abnormalities
 if(inspect == TRUE){
-for(col in 3:131){
-  cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
-      sort(unique(data[, col])), "\n", "\n")
-}
-
-for(col in 132:262){
-  cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
-      sort(unique(data[, col])), "\n", "\n")
-}
-
-
-for(col in 263:393){
-  cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
-      sort(unique(data[, col])), "\n", "\n")
-}
-
-
-for(col in 394:ncol(data)){
-  cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
-      sort(unique(data[, col])), "\n", "\n")
-}
-}
+  for(col in 3:131){
+    cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
+        sort(unique(data[, col])), "\n", "\n")
+  }
   
+  for(col in 132:262){
+    cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
+        sort(unique(data[, col])), "\n", "\n")
+  }
+  
+  
+  for(col in 263:393){
+    cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
+        sort(unique(data[, col])), "\n", "\n")
+  }
+  
+  
+  for(col in 394:ncol(data)){
+    cat("Variable", "'", colnames(data)[col], "'", "unique values: ",
+        sort(unique(data[, col])), "\n", "\n")
+  }
+}
+
 ## tabulations: variables 3-14 inform about attributes of participants related
 ## to genome, family, sex , sibling status
 for(col in 3:14){
@@ -222,7 +222,7 @@ table(data_truant$spybs16, useNA = "ifany")
 ## truant item
 
 
-# Read the file
+# Read the file (change filepath if necessary to where file is located)
 lines <- readLines(here::here("data", "source_raw", "NTR_4552_vallabels.txt"))
 
 labels_table <- data.frame(variable = character(), labels = character(),
@@ -245,6 +245,7 @@ for (line in lines) {
 }
 
 ## writing to csv_file
+## change filepath if necessary
 # write.csv(labels_table, here::here("data", "intermediate", "labels.csv"),
 #          row.names = FALSE, col.names = FALSE)
 
@@ -262,10 +263,6 @@ for(ea in ea_vars){
   cat("Variable", "'", ea, "'", "unique values: ",
       sort(unique(data %>% select(ea) %>% pull())), "\n", "\n")
 }
-
-## age at filling out survey variables, check distributions
-data_age_vars <- data %>%
-  select(contains("age"))
 
 
 ## Next: containment variables: Did participate fill out survey wave?
@@ -301,5 +298,95 @@ table(data_ANTR_participate$n_QoL)
 ## apply this filter before anything else! 
 
 
+#-----------------------------------------------------------------------------------------
+
+## filtering out participants with no outcome, then calculate again how
+## many participants did surveys
+
+data_with_QoL <- data %>%
+  filter(!is.na(in_AS_8) | !is.na(in_AS_10) | !is.na(in_AS_12) | !is.na(in_AS_14))
 
 
+
+data_with_QoL2 <- data %>%
+  filter(!is.na(levenc8) | !is.na(levenc10) | !is.na(levenc12) | !is.na(levenc14))
+## There also seems to be difference here, not all participants in ANTR surveys filled out 
+## QoL measure CL
+
+nrow(data) - nrow(data_with_QoL2)
+
+## Containment variables again (after filtering process)
+## Variables that indicate if participants filled out a survey
+data_in_vars2 <- data_with_QoL2 %>% 
+  select(FISNumber, starts_with("in_")) %>%
+  mutate(n_missing_surveys = rowSums(is.na(.)))
+
+## frequencies 
+for(col in 2:ncol(data_in_vars2)){
+  cat("frequencies variable", "'", colnames(data_in_vars2)[col], "'", "\n",
+      paste(names(table(data_in_vars2[,col], useNA = "ifany")),
+            table(data_in_vars2[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## NA proportions
+colMeans(is.na(data_in_vars2)) ## Very high proportions of missings in YSR 
+
+## filtering step (this might be written into separate script
+## where data cleaning eventually takes place)
+
+## 1) Filtering out all participants who have no outcome (did not participate
+## in any of the ANTR surveys)
+data_ANTR_participate2 <- data_with_QoL2 %>%
+  select(FISNumber, starts_with("in_AS")) %>%
+  mutate(n_QoL = rowSums(!is.na(.)) - 1) ## ensuring FISnumber is not counted
+
+table(data_ANTR_participate2$n_QoL)
+
+## Calculating how many people have responses in YNTR surveys
+data_YNTR_participate2 <- data_with_QoL2 %>% 
+  select(FISNumber, starts_with("in_YS")) %>%
+  select(!(in_YS_DHBQ18)) %>%
+  mutate(n_missing_surveys = rowSums(is.na(.)))
+
+table(data_YNTR_participate2$n_missing_surveys)
+## We see that is is also an issue that a lot of participants from the ANTR who
+## have QoL measures did not participate in the YNTR surveys
+
+## Next thing: Calculate how many timepoints every CBCL / YSR question has
+## calculate percentage score of missing surveys per participant
+
+## Next: Reliability inspection of ea variables
+data_ea <- data_with_QoL2 %>%
+  select(FISNumber, starts_with("ea4"))
+
+for(col in 2:ncol(data_ea)){
+  cat("frequencies variable", "'", colnames(data_ea)[col], "'", "\n",
+      paste(names(table(data_ea[,col], useNA = "ifany")),
+            table(data_ea[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## Next: Age distribution variables - What is distribution of ages 
+## at every timepoint survey was filled out?
+## Tables but also plot distributions
+## Are there outliers? Inspect those cases
+## age at filling out survey variables, check distributions
+data_age_vars <- data_with_QoL2 %>%
+  select(FISNumber, contains("age")) %>%
+  select(!(ea4_age_agg))
+
+ncol(data_age_vars)
+
+## tables of distribution of age when survey was administered
+for(col in 2:ncol(data_age_vars)){
+  cat("frequencies variable", "'", colnames(data_age_vars)[col], "'", "\n",
+      paste(names(table(data_age_vars[,col], useNA = "ifany")),
+            table(data_age_vars[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## plots of age distribution
