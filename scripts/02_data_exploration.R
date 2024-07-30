@@ -390,3 +390,38 @@ for(col in 2:ncol(data_age_vars)){
 }
 
 ## plots of age distribution
+ANTR_age_cols <- c("age8", "age10", "age12", "age14")
+plot_age_list <- vector('list', ncol(data_age_vars) - 1)
+for(i in 1:(ncol(data_age_vars) - 1)) {
+  col_name <- names(data_age_vars)[i + 1]  # Get the column name
+  if(col_name %in% ANTR_age_cols){
+    age_desired <- mean(data_age_vars[, i + 1], na.rm = TRUE)
+    subtitle <- "ANTR wave,
+horizontal line indicates mean age of participants"
+  } else {
+    age_desired <- as.numeric(regmatches(col_name,
+                                         gregexpr("[0-9]+", col_name)))
+    subtitle <- "YNTR wave,
+horizontal line indicates age when survey was supposed to take place"
+  }
+  plot_age_list[[i]] <- ggplot(data_age_vars, aes(x = .data[[col_name]])) +
+    geom_histogram() + 
+    geom_vline(xintercept = age_desired, linewidth = 2) + 
+    labs(subtitle = subtitle)
+}
+plot_age_list[[1]]
+plot_age_list[[2]]
+plot_age_list[[3]]
+plot_age_list[[4]]
+plot_age_list[[5]]
+plot_age_list[[6]]
+plot_age_list[[7]]
+plot_age_list[[8]]
+plot_age_list[[9]]
+plot_age_list[[10]]
+plot_age_list[[11]]
+
+#------------------------------------------------------------------------------
+
+## Calculation how many measurements per CBCL / YSR question there are
+
