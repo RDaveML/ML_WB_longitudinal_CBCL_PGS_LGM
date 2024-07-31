@@ -30,7 +30,7 @@ options(scipen = 999)
 ## installing / loading libraries
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table")
+               "stringr", "readxl", "data.table", "psych")
 
 ## printing and changing working directory if needed
 getwd()
@@ -38,6 +38,9 @@ getwd()
 here::here()
 
 getwd() == here::here()
+
+## negation operator
+`%notin%` <- Negate(`%in%`)
 
 ## reading in datafile (if necessary, change filepath to where file is located)
 data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
@@ -73,6 +76,7 @@ rowMeans(is.na(data))
 ## which variables are what?
 
 ## CBCL / YSR variables
+## Still adjust this filename!!
 CBCL_YSR_items <- read_excel("C:/Users/qrq337/OneDrive - Vrije Universiteit Amsterdam/Documents/VU/PhD_Machine_Learning_x_Well-being/01_PROJECTS/Project01_longitudinal_machine_learning/Table_S1_Pre-reg_table_CBCL_features_GMM.xlsx",
                              col_names = FALSE)[-1,]
 
@@ -168,6 +172,10 @@ ea_vars <- sort(c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # overa
 ## Cantril ladder at ANTR waves 8, 10, 12, 14
 
 qol_vars <- c("levenc8", "levenc10", "levenc12", "levenc14")
+
+## saving all vectors of variable names to re-use in later scripts
+save(CBCL_YSR_items_vec, CBCL_items_vec, YSR_items_vec, ea_vars, qol_vars, 
+     file = here::here("scripts", "variable_vectors.RData"))
 
 inspect <- FALSE
 
@@ -344,18 +352,6 @@ data_ANTR_participate2 <- data_with_QoL2 %>%
 
 table(data_ANTR_participate2$n_QoL)
 
-## Calculating how many people have responses in YNTR surveys
-data_YNTR_participate2 <- data_with_QoL2 %>% 
-  select(FISNumber, starts_with("in_YS")) %>%
-  select(!(in_YS_DHBQ18)) %>%
-  mutate(n_missing_surveys = rowSums(is.na(.)))
-
-table(data_YNTR_participate2$n_missing_surveys)
-## We see that is is also an issue that a lot of participants from the ANTR who
-## have QoL measures did not participate in the YNTR surveys
-
-## Next thing: Calculate how many timepoints every CBCL / YSR question has
-## calculate percentage score of missing surveys per participant
 
 ## Next: Reliability inspection of ea variables
 data_ea <- data_with_QoL2 %>%
@@ -423,5 +419,110 @@ plot_age_list[[11]]
 
 #------------------------------------------------------------------------------
 
+## For all participants: In how many YNTR surveys did they participate
+## Calculating how many people have responses in YNTR surveys
+data_YNTR_participate2 <- data_with_QoL2 %>% 
+  select(FISNumber, starts_with("in_YS")) %>%
+  select(!(in_YS_DHBQ18)) %>%
+  mutate(n_missing_surveys = rowSums(is.na(.))) %>%
+  mutate(perc_surveys_missing = n_missing_surveys / 7)
+
+table(data_YNTR_participate2$n_missing_surveys)
+## We see that is is also an issue that a lot of participants from the ANTR who
+## have QoL measures did not participate in the YNTR surveys
+
+## calculate percentage score of missing surveys per participant
+table(round(data_YNTR_participate2$perc_surveys_missing, 2))
+
 ## Calculation how many measurements per CBCL / YSR question there are
+CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
+
+## This is still to be continued! 
+
+##-----------------------------------------------------------------------------
+
+## 50% filtering applied to a) columns b) rows for the CBCL / YSR questions
+data_CBCL_filter <- data_with_QoL2 %>%
+  select(FISNumber, all_of(CBCL_YSR_items_vec)) %>%
+  mutate(var_mis = rowSums(is.na(.))) %>%
+  mutate(miss50 = ifelse(var_mis - 2 > 0.5 * (ncol(.) - 2),
+                  0, 1))
+
+table(data_CBCL_filter$var_mis)
+
+table(data_CBCL_filter$miss50)
+## When applying the 50% filter to only the CBCL items, 33209 participants
+## need to be discarded, 6555 participants still left!
+
+colMeans(is.na(data_CBCL_filter))[colMeans(is.na(data_CBCL_filter)) > 0.5]
+colMeans(is.na(data_CBCL_filter))[colMeans(is.na(data_CBCL_filter)) > 0.5] %>%
+  length()
+colMeans(is.na(data_CBCL_filter))
+colMeans(is.na(data_CBCL_filter)) %>%
+  length()
+
+## Huge issue: all CBCL features in the dataset have more than 50% missing! 
+## filter needs to be more permissive
+
+## Only take participants with only one or two missing surveys? 
+
+## Trying again when removing those participants with only missing YNTR surveys
+data_CBCL_filter2 <- data_CBCL_filter %>%
+  filter(var_mis != 451) ## filter out all those who have 0 answers to CBCL
+
+table(data_CBCL_filter2$var_mis)
+
+table(data_CBCL_filter2$miss50)
+
+colMeans(is.na(data_CBCL_filter2))[colMeans(is.na(data_CBCL_filter2)) > 0.5]
+colMeans(is.na(data_CBCL_filter2))[colMeans(is.na(data_CBCL_filter2)) > 0.5] %>%
+  length()
+colMeans(is.na(data_CBCL_filter2))
+colMeans(is.na(data_CBCL_filter2)) %>%
+  length()
+
+
+data_not_CBCL <- data_with_QoL2 %>%
+  select(!any_of(CBCL_YSR_items_vec))
+
+workspace.size <- function() {
+  ws <- sum(sapply(ls(envir=globalenv()), function(x)object.size(get(x))))
+  class(ws) <- "object_size"
+  ws
+}
+
+workspace.size()
+## At this point objects in working environment almost sum up to 1GB,
+## make sure to clean unnecessary objects in the process (objects can always
+## be saved and loaded back in later)
+
+#------------------------------------------------------------------------------
+
+## Summary statistics and distribution plots
+## Based participants with at least one QoL measure and at least one YNTR
+## participation
+
+## Basic summary function looping over variables
+summary_df <- data.frame()
+for (col_name in names(data_CBCL_filter2
+     [names(data_CBCL_filter2) %notin% c("FISNumber", "var_mis", "miss50")])) {
+  cat("Summary of", col_name, ":\n")
+  print(describe(data_CBCL_filter2[[col_name]]))
+  cat("\n")
+  summary_var <- as.data.frame(describe(data_CBCL_filter2[[col_name]])) 
+  summary_var <- rownames_to_column(summary_var)
+  summary_var[1,1] <- col_name
+  names(summary_var)[1] <- "variable"
+  summary_df <- rbind(summary_df, summary_var)
+  ## only variable name still missing
+}
+
+## This summary df can be used to identify variables with suspicious 
+## distributions! 
+summary_df <- summary_df %>%
+  mutate(perc_answers = n / nrow(data_CBCL_filter2)) %>%
+  mutate(perc_missing_answers = 1 - perc_answers)
+
+## Continue here! check the summary statistics, calculate additional according
+## plot distributions, make correlation plots
 
