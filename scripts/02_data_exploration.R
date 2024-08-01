@@ -30,7 +30,8 @@ options(scipen = 999)
 ## installing / loading libraries
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table", "psych")
+               "stringr", "readxl", "data.table", "psych", "reshape2",
+               "gridExtra")
 
 ## printing and changing working directory if needed
 getwd()
@@ -405,6 +406,8 @@ horizontal line indicates age when survey was supposed to take place"
     geom_vline(xintercept = age_desired, linewidth = 2) + 
     labs(subtitle = subtitle)
 }
+show <- FALSE
+if(show){
 plot_age_list[[1]]
 plot_age_list[[2]]
 plot_age_list[[3]]
@@ -416,7 +419,7 @@ plot_age_list[[8]]
 plot_age_list[[9]]
 plot_age_list[[10]]
 plot_age_list[[11]]
-
+}
 #------------------------------------------------------------------------------
 
 ## For all participants: In how many YNTR surveys did they participate
@@ -453,14 +456,14 @@ table(data_CBCL_filter$var_mis)
 table(data_CBCL_filter$miss50)
 ## When applying the 50% filter to only the CBCL items, 33209 participants
 ## need to be discarded, 6555 participants still left!
-
+if(show){
 colMeans(is.na(data_CBCL_filter))[colMeans(is.na(data_CBCL_filter)) > 0.5]
 colMeans(is.na(data_CBCL_filter))[colMeans(is.na(data_CBCL_filter)) > 0.5] %>%
   length()
 colMeans(is.na(data_CBCL_filter))
 colMeans(is.na(data_CBCL_filter)) %>%
   length()
-
+}
 ## Huge issue: all CBCL features in the dataset have more than 50% missing! 
 ## filter needs to be more permissive
 
@@ -474,13 +477,14 @@ table(data_CBCL_filter2$var_mis)
 
 table(data_CBCL_filter2$miss50)
 
+if(show){
 colMeans(is.na(data_CBCL_filter2))[colMeans(is.na(data_CBCL_filter2)) > 0.5]
 colMeans(is.na(data_CBCL_filter2))[colMeans(is.na(data_CBCL_filter2)) > 0.5] %>%
   length()
 colMeans(is.na(data_CBCL_filter2))
 colMeans(is.na(data_CBCL_filter2)) %>%
   length()
-
+}
 
 data_not_CBCL <- data_with_QoL2 %>%
   select(!any_of(CBCL_YSR_items_vec))
@@ -506,9 +510,9 @@ workspace.size()
 summary_df <- data.frame()
 for (col_name in names(data_CBCL_filter2
      [names(data_CBCL_filter2) %notin% c("FISNumber", "var_mis", "miss50")])) {
-  cat("Summary of", col_name, ":\n")
-  print(describe(data_CBCL_filter2[[col_name]]))
-  cat("\n")
+  #cat("Summary of", col_name, ":\n")
+  #print(describe(data_CBCL_filter2[[col_name]]))
+  #cat("\n")
   summary_var <- as.data.frame(describe(data_CBCL_filter2[[col_name]])) 
   summary_var <- rownames_to_column(summary_var)
   summary_var[1,1] <- col_name
@@ -521,8 +525,90 @@ for (col_name in names(data_CBCL_filter2
 ## distributions! 
 summary_df <- summary_df %>%
   mutate(perc_answers = n / nrow(data_CBCL_filter2)) %>%
-  mutate(perc_missing_answers = 1 - perc_answers)
+  mutate(perc_missing_answers = 1 - perc_answers) %>%
+  mutate(VC = sd / mean)
 
-## Continue here! check the summary statistics, calculate additional according
-## plot distributions, make correlation plots
+## merging the question label to the corresponding item codes, might take 
+## some help from it
+
+## inspecting the summary dataframe
+
+# bottom 10 % variance
+summary_df %>% 
+  mutate(variance = sd^2) %>%
+  arrange(variance) %>%
+  select(variable, variance) %>%
+  head(round(nrow(summary_df) * 0.1))
+
+## top 10 % items with highest kurtosis
+summary_df %>%
+  arrange(desc(kurtosis)) %>%
+  select(variable, kurtosis) %>%
+  head(round(nrow(summary_df) * 0.1))
+## Some items have extremely high kurtosis, points towards outliers
+## check all those measures again after applying the MCD filter
+
+## top 10 % highest skew
+summary_df %>%
+  arrange(desc(skew)) %>%
+  select(variable, skew) %>%
+  head(round(nrow(summary_df) * 0.1))
+
+
+## checking variables with low or near zero variance
+caret::nzv(data_CBCL_filter2)
+length(caret::nzv(data_CBCL_filter2))
+
+
+#--------------------------------------------------------------
+
+## plots 
+
+# Define the number of plots per page
+plots_per_page <- 25
+data_plot <- data_CBCL_filter2 %>% 
+  select(all_of(CBCL_YSR_items_vec)) %>% 
+  select(!(spybs14:spybs16))
+## those still need to be recoded, separate plots for spybs vars
+
+# create pdf file in here folder to save plot to
+pdf("histograms_CBCL.pdf")
+
+# Loop over the variables in chunks
+for (i in seq(1, ncol(data_plot), by = plots_per_page)) {
+  end <- min(i + plots_per_page - 1, ncol(data_plot))
+  grid_arrange_list <- lapply(names(data_plot)[i:end], function(var) {
+    ggplot(data_plot, aes_string(x = var)) +
+      geom_histogram() +
+      scale_x_continuous(breaks = 0:2) +
+      theme(axis.text.x = element_blank()) #+
+      #ggtitle(var)
+  })
+  do.call(grid.arrange, c(grid_arrange_list, ncol = 5))
+}
+
+dev.off()
+
+## separate plots for the spybs variables
+pdf("histograms_spybs.pdf")
+
+pspy14 <- ggplot(data_CBCL_filter2, aes(x = spybs14)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks = 0:6)
+
+pspy16 <- ggplot(data_CBCL_filter2, aes(x = spybs16)) + 
+  geom_histogram() + 
+  scale_x_continuous(breaks = 0:6)
+
+do.call(grid.arrange, c(list(pspy14, pspy16), ncol = 2))
+
+dev.off()
+
+## Correlation matrix
+cor_matrix_CBCL <- cor(cbind(data_plot, data_CBCL_filter2 %>%
+                                          select(spybs14:spybs16)),
+                       use = "pairwise.complete.obs")
+## heatmap(cor_matrix_CBCL, main = "Correlation Heatmap")
+
+## heatmap doesn't really make sense with this many dimensions 
 
