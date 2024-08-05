@@ -6,16 +6,16 @@
 #   
 # Date: 2024-07-22
 #
-# end date: 
+# end date: ~2024-08-05 (CBCL) ~unknown (PGS)
 #
 # Script Name: 02_data_exploration.R
 # 
-# Script Description:
+# Script Description: 
 #
 ## Initial data exploration 
 ## Project Combining longitudinal change features of childhood psychopathology 
 ## with Polygenic scores in machine learning models of adult wellbeing
-#
+# 
 #
 # Notes:
 #
@@ -43,8 +43,18 @@ getwd() == here::here()
 ## negation operator
 `%notin%` <- Negate(`%in%`)
 
-## reading in datafile (if necessary, change filepath to where file is located)
-data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
+## workspace occupied return function
+workspace.size <- function() {
+  ws <- sum(sapply(ls(envir=globalenv()), function(x)object.size(get(x))))
+  class(ws) <- "object_size"
+  ws
+}
+
+## reading in NTR datafile (if necessary,
+## change filepath to where file is located)
+data <- read_sav(here::here("data",
+                            "source_raw",
+                            "PHE_20240722_4552_YJS.sav")) %>%
   as.data.frame()
 
 ## object size, dimensions, volume of dataset
@@ -65,9 +75,6 @@ rowMeans(is.na(data))
 # Next step: checking the codes of the variables
 
 
-
-
-
 ##------------------------------------------------------------------------------
 # Preparation steps
 ##
@@ -77,7 +84,7 @@ rowMeans(is.na(data))
 ## which variables are what?
 
 ## CBCL / YSR variables
-## Still adjust this filename!!
+## Adjust filepath to own filepath
 CBCL_YSR_items <- read_excel("C:/Users/qrq337/OneDrive - Vrije Universiteit Amsterdam/Documents/VU/PhD_Machine_Learning_x_Well-being/01_PROJECTS/Project01_longitudinal_machine_learning/Table_S1_Pre-reg_table_CBCL_features_GMM.xlsx",
                              col_names = FALSE)[-1,]
 
@@ -88,11 +95,13 @@ colnames(CBCL_YSR_items) <- CBCL_YSR_items[1,]
 CBCL_YSR_items <- CBCL_YSR_items[-1,]
 
 
-## starting the filtering
+## starting the filtering of CBCL items
 CBCL_YSR_items <- CBCL_YSR_items %>%
   filter(Inclusion == "yes") %>%
   select(contains("age"))
 
+## creating vector of all column names of CBCL / YSR items 
+## will be used for selecting operations later
 CBCL_YSR_items_vec <- vector()
 
 for(i in 1:nrow(CBCL_YSR_items)){
@@ -112,6 +121,7 @@ old_items <- c("q51om3", "q79om3", # YS3
                "q99oysr14", "q99oysr16") # YSR 14 & YSR 16
 
 
+## printing if old items are contained in the vector of CBCL questions
 old_items_keep <- vector()
 for(i in 1:length(old_items)){
   print(old_items[i])
@@ -134,13 +144,15 @@ sort(old_items_keep)
 no_data_items <- c(old_items_keep, "q113ysr14", "q113ysr16",
                    "q116ysr14", "q116ysr16")
 
+
 CBCL_YSR_items_vec <- setdiff(CBCL_YSR_items_vec, no_data_items)
 
 ## still needs to be separated into CBCL and YSR items and given to vector
 
-## df
+## df CBCL
 CBCL_items_df <- CBCL_YSR_items %>% select(Age3:Age12)
 
+## df YSR
 YSR_items_df <- CBCL_YSR_items %>% select(Age14:Age16)
 
 ## vectors (appending all item names from questions asked in the CBCL)
@@ -151,7 +163,7 @@ CBCL_items_vec <- c(CBCL_items_df %>% select(1) %>% pull(),
                     CBCL_items_df %>% select(4) %>% pull(),
                     CBCL_items_df %>% select(5) %>% pull())
 
-## removing NAs 
+## removing NAs from the vector 
 CBCL_items_vec <- na.omit(CBCL_items_vec)
 
 YSR_items_vec <- c(YSR_items_df %>% select(1) %>% pull(),
@@ -164,20 +176,20 @@ YSR_items_vec <- na.omit(YSR_items_vec)
 ## all on 4-point scale, higher N, also reliability info, number of reports,
 ## for overall: age at time of report
 
-ea_vars <- sort(c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # overall
+ea_vars <- sort(c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # subject
                   "ea4mo_agg", "ea4mo_info_agg", "ea4mo_n_agg", # mother
                   "ea4fa_agg", "ea4fa_info_agg", "ea4fa_n_agg")) # father
 
 
 ## Outcome! QoL / wellbeing variables:
 ## Cantril ladder at ANTR waves 8, 10, 12, 14
-
 qol_vars <- c("levenc8", "levenc10", "levenc12", "levenc14")
 
 ## saving all vectors of variable names to re-use in later scripts
 save(CBCL_YSR_items_vec, CBCL_items_vec, YSR_items_vec, ea_vars, qol_vars, 
      file = here::here("scripts", "variable_vectors.RData"))
 
+## change to TRUE to print large output of following lines
 inspect <- FALSE
 
 ## visually inspecting unique values of variables for abnormalities
@@ -206,7 +218,7 @@ if(inspect == TRUE){
 }
 
 ## tabulations: variables 3-14 inform about attributes of participants related
-## to genome, family, sex , sibling status
+## to genome, family, sex, sibling status
 for(col in 3:14){
   cat("frequencies variable", "'", colnames(data)[col], "'", "\n",
       paste(names(table(data[,col], useNA = "ifany")),
@@ -214,8 +226,6 @@ for(col in 3:14){
             sep = ": ", collapse = "\n"),
       "\n\n")
 }
-
-## Inspecting codes
 
 ## Variables spybs14/16 (truant) are not coded 0-2, check codes and
 ## distributions extracting together with CBCL items same question
@@ -229,6 +239,13 @@ table(data_truant$spybs14, useNA = "ifany")
 table(data_truant$spybs16, useNA = "ifany")
 ## Some recoding should happen with those variables, alternatively discard
 ## truant item
+
+rm(data_truant)
+
+#-----------------------------------------------------------------------------
+
+## Inspecting variable codes
+
 
 
 # Read the file (change filepath if necessary to where file is located)
@@ -258,6 +275,7 @@ for (line in lines) {
 # write.csv(labels_table, here::here("data", "intermediate", "labels.csv"),
 #          row.names = FALSE, col.names = FALSE)
 
+rm(lines)
 
 ## Not all variables in the data are contained in the label table
 setdiff(colnames(data), labels_table$variable)
@@ -293,8 +311,10 @@ for(col in 2:ncol(data_in_vars)){
 ## NA proportions
 colMeans(is.na(data_in_vars)) ## Very high proportions of missings in YSR 
 
-## filtering step (this might be written into separate script
-## where data cleaning eventually takes place)
+rm(data_in_vars)
+
+## exploratory filtering step (Complete filtering and cleaning written into
+## separate script where data cleaning eventually takes place)
 
 ## 1) Filtering out all participants who have no outcome (did not participate
 ## in any of the ANTR surveys)
@@ -306,27 +326,26 @@ table(data_ANTR_participate$n_QoL)
 ## 50375 participants have not a single QoL measure!
 ## apply this filter before anything else! 
 
+rm(data_ANTR_participate)
 
-#-----------------------------------------------------------------------------------------
+
+#------------------------------------------------------------------------------
 
 ## filtering out participants with no outcome, then calculate again how
 ## many participants did surveys
 
+
 data_with_QoL <- data %>%
-  filter(!is.na(in_AS_8) | !is.na(in_AS_10) | !is.na(in_AS_12) | !is.na(in_AS_14))
+  filter(!is.na(levenc8) | !is.na(levenc10) | !is.na(levenc12) |
+         !is.na(levenc14))
+## There also seems to be difference here, not all participants in ANTR 
+## surveys filled out QoL measure CL
 
-
-
-data_with_QoL2 <- data %>%
-  filter(!is.na(levenc8) | !is.na(levenc10) | !is.na(levenc12) | !is.na(levenc14))
-## There also seems to be difference here, not all participants in ANTR surveys filled out 
-## QoL measure CL
-
-nrow(data) - nrow(data_with_QoL2)
+nrow(data) - nrow(data_with_QoL)
 
 ## Containment variables again (after filtering process)
 ## Variables that indicate if participants filled out a survey
-data_in_vars2 <- data_with_QoL2 %>% 
+data_in_vars2 <- data_with_QoL %>% 
   select(FISNumber, starts_with("in_")) %>%
   mutate(n_missing_surveys = rowSums(is.na(.)))
 
@@ -342,20 +361,22 @@ for(col in 2:ncol(data_in_vars2)){
 ## NA proportions
 colMeans(is.na(data_in_vars2)) ## Very high proportions of missings in YSR 
 
-## filtering step (this might be written into separate script
-## where data cleaning eventually takes place)
+rm(data_in_vars2)
 
 ## 1) Filtering out all participants who have no outcome (did not participate
 ## in any of the ANTR surveys)
-data_ANTR_participate2 <- data_with_QoL2 %>%
+data_ANTR_participate2 <- data_with_QoL %>%
   select(FISNumber, starts_with("in_AS")) %>%
   mutate(n_QoL = rowSums(!is.na(.)) - 1) ## ensuring FISnumber is not counted
 
 table(data_ANTR_participate2$n_QoL)
 
+rm(data_ANTR_participate2)
+
+#-----------------------------------------------------------------------------
 
 ## Next: Reliability inspection of ea variables
-data_ea <- data_with_QoL2 %>%
+data_ea <- data_with_QoL %>%
   select(FISNumber, starts_with("ea4"))
 
 for(col in 2:ncol(data_ea)){
@@ -366,12 +387,14 @@ for(col in 2:ncol(data_ea)){
       "\n\n")
 }
 
+rm(data_ea)
+
 ## Next: Age distribution variables - What is distribution of ages 
 ## at every timepoint survey was filled out?
 ## Tables but also plot distributions
 ## Are there outliers? Inspect those cases
 ## age at filling out survey variables, check distributions
-data_age_vars <- data_with_QoL2 %>%
+data_age_vars <- data_with_QoL %>%
   select(FISNumber, contains("age")) %>%
   select(!(ea4_age_agg))
 
@@ -420,11 +443,128 @@ plot_age_list[[9]]
 plot_age_list[[10]]
 plot_age_list[[11]]
 }
+
+
+rm(data_age_vars)
+
+## Plotting again, now separate for twins vs. non-twins
+data_age_vars_twins <- data_with_QoL %>%
+  filter(!is.na(twzyg)) %>%
+  select(FISNumber, contains("age")) %>%
+  select(!(ea4_age_agg))
+
+ncol(data_age_vars_twins)
+
+## tables of distribution of age when survey was administered
+for(col in 2:ncol(data_age_vars_twins)){
+  cat("frequencies variable", "'", colnames(data_age_vars_twins)[col], "'", "\n",
+      paste(names(table(data_age_vars_twins[,col], useNA = "ifany")),
+            table(data_age_vars_twins[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## plots of age distribution
+ANTR_age_cols <- c("age8", "age10", "age12", "age14")
+plot_age_list_twins <- vector('list', ncol(data_age_vars_twins) - 1)
+for(i in 1:(ncol(data_age_vars_twins) - 1)) {
+  col_name <- names(data_age_vars_twins)[i + 1]  # Get the column name
+  if(col_name %in% ANTR_age_cols){
+    age_desired <- mean(data_age_vars_twins[, i + 1], na.rm = TRUE)
+    subtitle <- "ANTR wave,
+horizontal line indicates mean age of participants"
+  } else {
+    age_desired <- as.numeric(regmatches(col_name,
+                                         gregexpr("[0-9]+", col_name)))
+    subtitle <- "YNTR wave,
+horizontal line indicates age when survey was supposed to take place"
+  }
+  plot_age_list_twins[[i]] <- ggplot(data_age_vars_twins,
+                                     aes(x = .data[[col_name]])) +
+    geom_histogram() + 
+    geom_vline(xintercept = age_desired, linewidth = 2) + 
+    labs(subtitle = subtitle)
+}
+show <- FALSE
+if(show){
+  plot_age_list_twins[[1]]
+  plot_age_list_twins[[2]]
+  plot_age_list_twins[[3]]
+  plot_age_list_twins[[4]]
+  plot_age_list_twins[[5]]
+  plot_age_list_twins[[6]]
+  plot_age_list_twins[[7]]
+  plot_age_list_twins[[8]]
+  plot_age_list_twins[[9]]
+  plot_age_list_twins[[10]]
+  plot_age_list_twins[[11]]
+}
+
+rm(data_age_vars_twins)
+
+
+## same for non-twins
+data_age_vars_non_twins <- data_with_QoL %>%
+  filter(is.na(twzyg)) %>%
+  select(FISNumber, contains("age")) %>%
+  select(!(ea4_age_agg))
+
+ncol(data_age_vars_non_twins)
+
+## tables of distribution of age when survey was administered
+for(col in 2:ncol(data_age_vars_non_twins)){
+  cat("frequencies variable", "'", colnames(data_age_vars_non_twins)[col], "'", "\n",
+      paste(names(table(data_age_vars_non_twins[,col], useNA = "ifany")),
+            table(data_age_vars_non_twins[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
+}
+
+## plots of age distribution
+ANTR_age_cols <- c("age8", "age10", "age12", "age14")
+plot_age_list_non_twins <- vector('list', ncol(data_age_vars_non_twins) - 1)
+for(i in 1:(ncol(data_age_vars_non_twins) - 1)) {
+  col_name <- names(data_age_vars_non_twins)[i + 1]  # Get the column name
+  if(col_name %in% ANTR_age_cols){
+    age_desired <- mean(data_age_vars_non_twins[, i + 1], na.rm = TRUE)
+    subtitle <- "ANTR wave,
+horizontal line indicates mean age of participants"
+  } else {
+    age_desired <- as.numeric(regmatches(col_name,
+                                         gregexpr("[0-9]+", col_name)))
+    subtitle <- "YNTR wave,
+horizontal line indicates age when survey was supposed to take place"
+  }
+  plot_age_list_non_twins[[i]] <- ggplot(data_age_vars_non_twins,
+                                     aes(x = .data[[col_name]])) +
+    geom_histogram() + 
+    geom_vline(xintercept = age_desired, linewidth = 2) + 
+    labs(subtitle = subtitle)
+}
+show <- FALSE
+if(show){
+  plot_age_list_non_twins[[1]]
+  plot_age_list_non_twins[[2]]
+  plot_age_list_non_twins[[3]]
+  plot_age_list_non_twins[[4]]
+  plot_age_list_non_twins[[5]]
+  plot_age_list_non_twins[[6]]
+  plot_age_list_non_twins[[7]]
+  plot_age_list_non_twins[[8]]
+  plot_age_list_non_twins[[9]]
+  plot_age_list_non_twins[[10]]
+  plot_age_list_non_twins[[11]]
+}
+## Those participants will be discarded anyway because they did not participate
+## in the first 5 YNTR surveys, insufficient data for longitudinal modeling!
+
+rm(data_age_vars_non_twins)
+
 #------------------------------------------------------------------------------
 
 ## For all participants: In how many YNTR surveys did they participate
 ## Calculating how many people have responses in YNTR surveys
-data_YNTR_participate2 <- data_with_QoL2 %>% 
+data_YNTR_participate2 <- data_with_QoL %>% 
   select(FISNumber, starts_with("in_YS")) %>%
   select(!(in_YS_DHBQ18)) %>%
   mutate(n_missing_surveys = rowSums(is.na(.))) %>%
@@ -437,15 +577,24 @@ table(data_YNTR_participate2$n_missing_surveys)
 ## calculate percentage score of missing surveys per participant
 table(round(data_YNTR_participate2$perc_surveys_missing, 2))
 
+rm(data_YNTR_participate2)
+
 ## Calculation how many measurements per CBCL / YSR question there are
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
 ## This is still to be continued! 
 
+
+data_not_CBCL <- data_with_QoL %>%
+  select(!any_of(CBCL_YSR_items_vec))
+
+names(data_not_CBCL)
+rm(data_not_CBCL)
+
 ##-----------------------------------------------------------------------------
 
 ## 50% filtering applied to a) columns b) rows for the CBCL / YSR questions
-data_CBCL_filter <- data_with_QoL2 %>%
+data_CBCL_filter <- data_with_QoL %>%
   select(FISNumber, all_of(CBCL_YSR_items_vec)) %>%
   mutate(var_mis = rowSums(is.na(.))) %>%
   mutate(miss50 = ifelse(var_mis - 2 > 0.5 * (ncol(.) - 2),
@@ -469,9 +618,11 @@ colMeans(is.na(data_CBCL_filter)) %>%
 
 ## Only take participants with only one or two missing surveys? 
 
-## Trying again when removing those participants with only missing YNTR surveys
+## Trying again when removing participants with only missing YNTR surveys
 data_CBCL_filter2 <- data_CBCL_filter %>%
   filter(var_mis != 451) ## filter out all those who have 0 answers to CBCL
+
+rm(data_CBCL_filter)
 
 table(data_CBCL_filter2$var_mis)
 
@@ -486,19 +637,71 @@ colMeans(is.na(data_CBCL_filter2)) %>%
   length()
 }
 
-data_not_CBCL <- data_with_QoL2 %>%
-  select(!any_of(CBCL_YSR_items_vec))
 
-workspace.size <- function() {
-  ws <- sum(sapply(ls(envir=globalenv()), function(x)object.size(get(x))))
-  class(ws) <- "object_size"
-  ws
+
+data_age_vars_final <- data_CBCL_filter2 %>%
+  left_join(data_with_QoL, by = "FISNumber") %>%
+  select(FISNumber, twzyg, contains("age")) %>%
+  select(!(ea4_age_agg))
+
+table(data_age_vars_final$twzyg, useNA = "ifany")
+
+data_age_vars_final <- data_age_vars_final %>%
+  filter(!is.na(twzyg))
+
+ncol(data_age_vars_final)
+
+## tables of distribution of age when survey was administered
+for(col in 3:ncol(data_age_vars_final)){
+  cat("frequencies variable", "'", colnames(data_age_vars_final)[col], "'", "\n",
+      paste(names(table(data_age_vars_final[,col], useNA = "ifany")),
+            table(data_age_vars_final[,col], useNA = "ifany"),
+            sep = ": ", collapse = "\n"),
+      "\n\n")
 }
 
-workspace.size()
-## At this point objects in working environment almost sum up to 1GB,
-## make sure to clean unnecessary objects in the process (objects can always
-## be saved and loaded back in later)
+## Here is one more important thing! The QoL measure needs to be filled out
+## AFTER the last YNTR, so when calculating the time lag and there is a 
+## negative result, either this participant needs to be dropped or later QoL
+## measure needs to be taken and time-lag recalculated!
+
+## plots of age distribution
+ANTR_age_cols <- c("age8", "age10", "age12", "age14")
+plot_age_list_final <- vector('list', ncol(data_age_vars_final) - 1)
+for(i in 1:(ncol(data_age_vars_final) - 1)) {
+  col_name <- names(data_age_vars_final)[i + 2]  # Get the column name
+  if(col_name %in% ANTR_age_cols){
+    age_desired <- mean(data_age_vars_final[, i + 2], na.rm = TRUE)
+    subtitle <- "ANTR wave,
+horizontal line indicates mean age of participants"
+  } else {
+    age_desired <- as.numeric(regmatches(col_name,
+                                         gregexpr("[0-9]+", col_name)))
+    subtitle <- "YNTR wave,
+horizontal line indicates age when survey was supposed to take place"
+  }
+  plot_age_list_final[[i]] <- ggplot(data_age_vars_final,
+                                         aes(x = .data[[col_name]])) +
+    geom_histogram() + 
+    geom_vline(xintercept = age_desired, linewidth = 2) + 
+    labs(subtitle = subtitle)
+}
+show <- FALSE
+if(show){
+  plot_age_list_final[[1]]
+  plot_age_list_final[[2]]
+  plot_age_list_final[[3]]
+  plot_age_list_final[[4]]
+  plot_age_list_final[[5]]
+  plot_age_list_final[[6]]
+  plot_age_list_final[[7]]
+  plot_age_list_final[[8]]
+  plot_age_list_final[[9]]
+  plot_age_list_final[[10]]
+  plot_age_list_final[[11]]
+}
+
+rm(data_age_vars_final)
 
 #------------------------------------------------------------------------------
 
@@ -526,45 +729,19 @@ for (col_name in names(data_CBCL_filter2
 summary_df <- summary_df %>%
   mutate(perc_answers = n / nrow(data_CBCL_filter2)) %>%
   mutate(perc_missing_answers = 1 - perc_answers) %>%
-  mutate(VC = sd / mean)
+  mutate(VC = sd / mean) %>%
+  mutate(variance = sd^2)
 
 ## merging the question label to the corresponding item codes, might take 
 ## some help from it
-
-## inspecting the summary dataframe
-
-# bottom 10 % variance
-summary_df %>% 
-  mutate(variance = sd^2) %>%
-  arrange(variance) %>%
-  select(variable, variance) %>%
-  head(round(nrow(summary_df) * 0.1))
-
-## top 10 % items with highest kurtosis
-summary_df %>%
-  arrange(desc(kurtosis)) %>%
-  select(variable, kurtosis) %>%
-  head(round(nrow(summary_df) * 0.1))
-## Some items have extremely high kurtosis, points towards outliers
-## check all those measures again after applying the MCD filter
-
-## top 10 % highest skew
-summary_df %>%
-  arrange(desc(skew)) %>%
-  select(variable, skew) %>%
-  head(round(nrow(summary_df) * 0.1))
-
-
-## checking variables with low or near zero variance
-caret::nzv(data_CBCL_filter2)
-length(caret::nzv(data_CBCL_filter2))
-
 
 #--------------------------------------------------------------
 
 ## plots 
 
+plots <- FALSE
 # Define the number of plots per page
+if(plots){
 plots_per_page <- 25
 data_plot <- data_CBCL_filter2 %>% 
   select(all_of(CBCL_YSR_items_vec)) %>% 
@@ -604,11 +781,131 @@ do.call(grid.arrange, c(list(pspy14, pspy16), ncol = 2))
 
 dev.off()
 
+}
 ## Correlation matrix
-cor_matrix_CBCL <- cor(cbind(data_plot, data_CBCL_filter2 %>%
-                                          select(spybs14:spybs16)),
-                       use = "pairwise.complete.obs")
+cor_matrix_CBCL <- data_CBCL_filter2 %>%
+  select(!c(1, 453:454)) %>%
+  cor(use = "pairwise.complete.obs")
 ## heatmap(cor_matrix_CBCL, main = "Correlation Heatmap")
 
 ## heatmap doesn't really make sense with this many dimensions 
+
+
+## Attaching question labels to summary df
+
+## creating dataframe with itemcode and question
+CBCL_ages <- grep("Age", names(CBCL_items_table), value = TRUE)
+CBCL_item_question_age <- data.frame()
+for(row in 1:nrow(CBCL_items_table)){  
+  for(col in CBCL_ages) {
+    variable <- as.character(CBCL_items_table[row, col])
+    question <- CBCL_items_table[row, "question_number"]
+    age <- col
+    set <- unlist(unname(c(variable, question, age)))
+    # concatenating all information together, turning it into vector instead of 
+    # list
+    CBCL_item_question_age <- rbind(CBCL_item_question_age, set)
+  }
+}
+names(CBCL_item_question_age) <- c("variable", "question_number", "age")
+
+## Important: question_number is then what to loop over when doing the
+## longitudinal modeling
+
+
+## attach to summary df
+summary_df <- summary_df %>%
+  left_join(CBCL_item_question_age %>% filter(!is.na(variable)), by = "variable")
+
+## changing column order so question appears in front
+summary_df <- summary_df[, c(1, 2, 19, 20, 3:5, 18, 6:17)]
+
+
+workspace.size()
+## workspace of 0.65 GB occupied, is okay
+
+## Creating vector list for all items per CBCL question
+CBCL_questions_list <- vector("list")
+for(question in unique(CBCL_item_question_age$question_number)){
+  CBCL_questions_list[[question]] <- CBCL_item_question_age %>%
+    filter(question_number == question) %>%
+    filter(!is.na(variable)) %>% 
+    select(variable) %>%
+    pull
+}
+
+
+## inspecting the summary dataframe
+
+# bottom 10 % variance
+summary_df %>% 
+  arrange(variance) %>%
+  select(variable, variance) %>%
+  head(round(nrow(summary_df) * 0.1))
+
+## top 10 % items with highest kurtosis
+summary_df %>%
+  arrange(desc(kurtosis)) %>%
+  select(variable, kurtosis) %>%
+  head(round(nrow(summary_df) * 0.1))
+## Some items have extremely high kurtosis, points towards outliers
+## check all those measures again after applying the MCD filter
+
+## top 10 % highest skew
+summary_df %>%
+  arrange(desc(skew)) %>%
+  select(variable, skew) %>%
+  head(round(nrow(summary_df) * 0.1))
+
+## highest and lowest percentage filled out
+summary_df %>%
+  arrange(desc(perc_answers)) %>%
+  select(variable, perc_answers, n) %>%
+  head(round(nrow(summary_df) * 0.1))
+
+summary_df %>%
+  arrange(desc(perc_missing_answers)) %>%
+  select(variable, perc_missing_answers, n) %>%
+  head(round(nrow(summary_df) * 0.1))
+
+## filtering for > 50% missing
+summary_df %>%
+  arrange(desc(perc_missing_answers)) %>%
+  select(variable, perc_missing_answers, n) %>%
+  filter(perc_missing_answers > 0.5)
+## 157 items at this step with more than 50% missing, most from ysr items
+
+
+## checking variables with low or near zero variance
+caret::nzv(data_CBCL_filter2)
+caret::nzv(data_CBCL_filter2, names = TRUE)
+length(caret::nzv(data_CBCL_filter2))
+## 118 CBCL items with very low variance, also overlap with the high kurtosis
+## variables, likely to be eliminated later
+
+
+## Now there is list of vectors per CBCL questions which variable are part of 
+## it, can also be saved for filtering and the longitudinal modeling later
+
+# summary dataframe
+save(summary_df, file = here::here("scripts", "summary_CBCL.RData"))
+
+# table with possible item codes
+save(labels_table, file = here::here("scripts", "labels_table.RData"))
+
+# list of items per CBCL question
+save(CBCL_questions_list,
+     file = here::here("scripts", "CBCL_questions_list.RData"))
+
+## These can be loaded when continuing working on the analysis
+
+
+## TO DOS: 
+# - make more comments that describe the steps you took
+
+
+
+
+
+
 
