@@ -54,44 +54,35 @@ load(here::here("scripts", "summary_CBCL.RData"))
 ## loading in list of CBCL items per question
 load(here::here("scripts", "CBCL_questions_list.RData"))
 
+## loading in covariate data for further filtering
+load(here::here("scripts", "data_covariates.RData"))
+## loading in covariate names 
+load(here::here("scripts", "names_covariates.RData"))
+
 nrow(data)
 # Initially 92969 participants in dataset
 
-## Filtering steps: 
+## filtering data in one compact function, outputting dropped participants 
+## after each filtering step
+data_filtered <- filter_CBCL(df = data, CBCL_YSR_items_vec = CBCL_YSR_items_vec,
+                             data_covariates = data_covariates)
 
-# 1) Remove all participants with no outcome
-data1 <- data %>% 
-  filter(!is.na(levenc8) | !is.na(levenc10) |
-         !is.na(levenc12) | !is.na(levenc14))
 
-nrow(data1)
-nrow(data) - nrow(data1)
-## 39764 participants with wellbeing / QoL data are available
-rm(data)
+## ---------------------------------------------------------------------------
 
-# 2) Filter all participants who did not participate in any YNTR survey
-data2 <- data1 %>%
-  filter(!is.na(in_YS_3M) | !is.na(in_YS_5) | !is.na(in_YS_7M) |
-         !is.na(in_YS_10M) | !is.na(in_YS_12M) | !is.na(in_YS_DHBQ14) | 
-         !is.na(in_YS_DHBQ16))
+## recoding items that are on different scale!
 
-nrow(data2)
-nrow(data1) - nrow(data2)
-## After second filtering step, still 11169 participants, 28595 were dropped
-
-rm(data1)
-
-## recoding YNTR5 variables (from 1-5 to 0-2)
 CBCL_items_table_y5 <- CBCL_items_table %>%
   filter(!is.na(Age5))
 
 CBCL_items_CBCL103 <- unname(unlist(c(CBCL_items_table_y5[1, 1:7])))
 CBCL_items_CBCL50 <- unname(unlist(c(CBCL_items_table_y5[2, 1:7])))
 ## CBCL question 57 was not asked at age 3
-CBCL_items_CBCL57 <- unname(unlist(c(CBCL_items_table_y5[3, 1:7])))[!is.na(unname(unlist(c(CBCL_items_table_y5[3, 1:7]))))]
+CBCL_items_CBCL57 <- unname(unlist(c(CBCL_items_table_y5[3, 1:7])))[!is.na(
+  unname(unlist(c(CBCL_items_table_y5[3, 1:7]))))]
 
 # filtering data for only those variables
-data_CBCL_103 <- data2 %>% 
+data_CBCL_103 <- data_filtered %>% 
   select(all_of(CBCL_items_CBCL103))
 
 for(variable in CBCL_items_CBCL103){
@@ -100,7 +91,7 @@ print(prop.table(table(data_CBCL_103 %>% select(variable) %>%
   
 }
 
-data_CBCL_50 <- data2 %>% 
+data_CBCL_50 <- data_filtered %>% 
   select(all_of(CBCL_items_CBCL50))
 
 for(variable in CBCL_items_CBCL50){
@@ -109,7 +100,7 @@ for(variable in CBCL_items_CBCL50){
   
 }
 
-data_CBCL_57 <- data2 %>% 
+data_CBCL_57 <- data_filtered %>% 
   select(all_of(CBCL_items_CBCL57))
 
 for(variable in CBCL_items_CBCL57){
@@ -125,7 +116,7 @@ for(variable in CBCL_items_CBCL57){
 ## Recoding the items 
 q5 <- c("q13m5", "q11m5", "q4m5")
 
-data2a <- data2 %>%
+data_filtered_recoded <- data_filtered %>%
   mutate(across(all_of(q5), 
          ~ case_when(. == 1 | . == 2 ~ 0,
                      . == 3 | . == 4 ~ 1,
@@ -133,110 +124,124 @@ data2a <- data2 %>%
                      .default = NA)))
 
 ## checking if recoding went properly
-table(data2$q13m5, useNA = "ifany")
-table(data2a$q13m5, useNA = "ifany")
+table(data_filtered$q13m5, useNA = "ifany")
+table(data_filtered_recoded$q13m5, useNA = "ifany")
 
-table(data2$q11m5, useNA = "ifany")
-table(data2a$q11m5, useNA = "ifany")
+table(data_filtered$q11m5, useNA = "ifany")
+table(data_filtered_recoded$q11m5, useNA = "ifany")
 
-table(data2$q4m5, useNA = "ifany")
-table(data2a$q4m5, useNA = "ifany")
+table(data_filtered$q4m5, useNA = "ifany")
+table(data_filtered_recoded$q4m5, useNA = "ifany")
 
 ## it worked out correctly
 
+## removing intermediary objects
+rm(list = c("data_CBCL_103", "data_CBCL_50", "data_CBCL_57"))
 
-## further filtering steps
-
-## removing participants with only NAs in CBCL variables
-all_na_rows <- apply(data2 %>%
-  dplyr::select(all_of(CBCL_YSR_items_vec)), 1, function(x) all(is.na(x)))
-
-data3 <- data2[!all_na_rows, ]
-
-nrow(data3) 
-nrow(data2) - nrow(data3)
-## another 48 participants filtered out because they had no 
-## CBCL variables even though participating in YNTR
-
-##--------------------------------------------------------------------------
-
-## filtering out participants where QoL was assessed before ysr16
-
-## loading in covariate data for further filtering
-load(here::here("scripts", "data_covariates.RData"))
-## loading in covariate names 
-load(here::here("scripts", "names_covariates.RData"))
-
-## merging covariates with raw data
-data3a <- data3 %>%
-  left_join(data_covariates, by = c("FISNumber", "sex", "twzyg",
-                                    "ea4fa_agg", "ea4mo_agg"))
-## joining by FISNumber and
-## covariates that were already contained in the raw data
-
-
-## Next filtering step: Filter out those participants where QoL assessment 
-## happened before ysr16 
-data3b <- data3a %>%
-  filter(time_lag > 0 | is.na(time_lag))
-
-nrow(data3b)
-
-nrow(data3) - nrow(data3b)
-## another 33 participants filtered out 
-
-
-## Question: There are still participants where QoL was assessed before age 18! 
-## filter those out as well? 
-
-## Potential additional filtering step: filtering out those participants
-# data3c <- data3b %>%
-#   filter(age_qol >= 18 | is.na(age_qol))
-
-##----------------------------------------------------------------------------
-
-
-## removing +50% missings
-## KNN impute for e.g. covariates and PGSs...
+#-----------------------------------------------------------------------------
 
 ## KNN imputation
 
-data4 <- data3 %>%
-  dplyr::select(all_of(CBCL_YSR_items_vec)) %>%
-  mutate(across(everything(), as.numeric))
 
-## removing rows with +50% missing
-threshold <- 0.5
-rows_with_excessive_na <- apply(data4, 1, function(x) mean(is.na(x)) > threshold)
-filtered_data4 <- data4[!rows_with_excessive_na, ]
+## Preparation and execution of KNN imputation
 
-## Selecting IDs of participants which are not dropped
-filtered_data4_id <- data3[!rows_with_excessive_na, ] %>%
-  dplyr::select(FISNumber)
+## Select only CBCL item columns for KNN Imputation procedure
+## Remember to later join back with the full column CBCL data
+## when removing the outliers!!! 
 
+
+## In the following lines, the names of the dffs still nede to be adjusted
 
 ## Removing columns with +50% missings to see if that changes anything
 col_threshold <- 0.5
-cols_with_excessive_na <- sapply(filtered_data4, function(x) mean(is.na(x)) > col_threshold)
-filtered_data4 <- filtered_data4[, !cols_with_excessive_na]
+
+## keeping Ids
+data_ids_filtered <- data_filtered_recoded %>%
+  select(FISNumber)
+
+## preparing the filtering
+data_CBCL <- data_filtered_recoded %>%
+  select(all_of(CBCL_YSR_items_vec)) %>%
+  mutate(across(everything(), as.numeric))
+
+cols_with_excessive_na <- sapply(data_CBCL %>% select(
+  all_of(CBCL_YSR_items_vec)),
+                                 function(x) mean(is.na(x)) > col_threshold)
+
+data_CBCL_cols <- data_CBCL[, !cols_with_excessive_na]
+## 12 items from CBCL filtered
+
+CBCL_items_keep <- colnames(data_CBCL_cols)
+
+## vector of columns to drop for later
+CBCL_items_drop <- setdiff(CBCL_YSR_items_vec, CBCL_items_keep)
+
 
 ## This actually worked! Possible that the list of CBCL question to 
 ## perform longitudinal modeling on needs to be reduced! 
 
 
-pre_model <- preProcess(filtered_data4, method = "knnImpute", k = 5,
+## Alternative KNN imputation with the vim package
+library(VIM)
+
+data_imputed_vim <- kNN(
+  data_CBCL_cols,
+  variable = colnames(data_CBCL_cols),
+  k = 5,
+  dist_var = colnames(data_CBCL_cols),
+  weights = NULL,
+  numFun = median,
+  catFun = maxCat,
+  makeNA = NULL,
+  NAcond = NULL,
+  impNA = TRUE,
+  donorcond = NULL,
+  mixed = vector(),
+  mixed.constant = NULL,
+  trace = FALSE,
+  imp_var = TRUE,
+  imp_suffix = "imp",
+  addRF = FALSE,
+  onlyRF = FALSE,
+  addRandom = FALSE,
+  useImputedDist = TRUE,
+  weightDist = FALSE,
+  methodStand = "range",
+  ordFun = medianSamp
+)
+## takes very long to run! 
+
+##---------------------------------------------------------------------------
+
+
+
+pre_model <- preProcess(data_CBCL_cols, method = "knnImpute", k = 5,
                         verbose = TRUE)
 
 print(pre_model$mean)
 print(pre_model$std)
 
-imputed <- predict(pre_model, newdata = filtered_data4)
+imputed <- predict(pre_model, newdata = data_CBCL_cols)
 ## Imputation worked but the values are strange now
+for(col in 1:220){
+  cat("variable: ", colnames(imputed[col]), "\n",
+      min(imputed[, col]), "\n",
+      max(imputed[, col]), "\n", "\n")
+}
+
+for(col in 221:439){
+  cat("variable: ", colnames(imputed[col]), "\n",
+      min(imputed[, col]), "\n",
+      max(imputed[, col]), "\n", "\n")
+}
+
+## particularly questions 101 and 105 seem to be very off (Truant and taking
+## drugs), furthermore 97 and 91 (threatens other people, talks suicide)
 
 ## Binding with ID column again
-data4 <- bind_cols(filtered_data4_id, imputed)
-nrow(data4)
-nrow(data3) - nrow(data4)
+data_imputed <- bind_cols(data_ids_filtered, imputed)
+nrow(data_imputed)
+nrow(data_CBCL_cols) - nrow(data_imputed)
 
 # [...]
 
@@ -260,32 +265,30 @@ t1 <- Sys.time()
 ## indicate package before calling function (dplyr::select)
 
 ## saving IDs
-data_mcd_toy_ID <- data4 %>%
+data_mcd_toy_ID <- data_imputed %>%
   dplyr::select(FISNumber)
 
-data_mcd_toy <- data4 %>%
-  dplyr::select(any_of(CBCL_YSR_items_vec)) #%>% 
-  ## any_of instead of all_of because some of  the CBCL variables were dropped
-  # dplyr::select(5:6) %>%
-  # mutate(across(everything(), ~ (.) + 10)) %>%
-  # mutate(across(everything(), ~ log(.)))
+data_mcd_toy <- data_imputed %>%
+  dplyr::select(any_of(CBCL_items_keep))
 
-## Since many of the variables have IQr = 0, they don't help in distinguishing
+## Since many of the variables have IQR = 0, they don't help in distinguishing
 ## outliers, thus identify outliers only based on the columns 
-
-## deleting columns that have IQR = 0
-ncol(data_mcd_toy)
 
 ## saving order of columns (will be applied to final dataframe later so that it
 ## has the same order of columns)
 column_order <- names(data_mcd_toy)
 
 
-## here is the steo! This needs to be named differently!! CONTINUE HERE
+## deleting columns that have IQR = 0
+ncol(data_mcd_toy)
+
+## still adjust the names of the MCD intermediary datasets, potentially also
+## write this into a custom function
+
 data_mcd_toy1 <- data_mcd_toy[, sapply(data_mcd_toy, function(col) IQR(col) > 0)]
 
 ncol(data_mcd_toy1)
-## only 163 columns still remaining for calculation of mcd
+## only 159 columns still remaining for calculation of mcd
 
 
 ## IMPORTANT: The MCD functions can only be applied after imputation! Missings
@@ -357,14 +360,18 @@ excluded <- names_outliers_MCD75_5
 
 data_mcd2_toy1 <- data_mcd_toy1[-excluded, ]
 data_mcd2_toy_ID <- data.frame(FISNumber = data_mcd_toy_ID[-excluded, ])
+
+t2 <- Sys.time()
+
+print(t2 - t1)
   
 ## binding ID and data
-data5 <- bind_cols(data_mcd2_toy_ID, data_mcd2_toy1)
-nrow(data_mcd2_toy)
+data_cleaned_CBCL <- bind_cols(data_mcd2_toy_ID, data_mcd2_toy1)
+nrow(data_mcd2_toy1)
 nrow(data_mcd2_toy_ID)
-nrow(data5)
+nrow(data_cleaned)
 
-## This ensures that there are still 6225 participants in the data (if only
+## This ensures that there are still 5957 participants in the data (if only
 ## removing the mcd75 top 5% filter to the CBCL data!)
 
 
@@ -374,18 +381,23 @@ nrow(data5)
 ## columns go back to the dataframe also make an order of the columns before the 
 ## deletion and apply again after the merge so that the dataframe has 
 ## the same column order 
-data6 <- bind_cols(data5, data_mcd_toy[-excluded,
-                                       sapply(data_mcd_toy,
-                                              function(col) IQR(col) <= 0)])
+data_cleaned <- bind_cols(data_cleaned_CBCL, data_mcd_toy[-excluded,
+                              sapply(data_mcd_toy,
+                                     function(col) IQR(col) <= 0)])
 
 ## changing column order
-data6 <- data6[, c("FISNumber", column_order)]
+data_cleaned <- data_cleaned[, c("FISNumber", column_order)]
 
-dropped_cols <- setdiff(CBCL_YSR_items_vec, names(data6))
-## The CBCL Items ultimately dropped from the analysis
+dropped_cols <- setdiff(CBCL_YSR_items_vec, names(data_cleaned))
+## The CBCL Items ultimately dropped from the analysis, the same as 
+## CBCL_items_drop
 
-## Next step: Clean up this script, maybe write custom function to 
-## pack all of this instead of a dozen of intermediary objects
 ## Still figure out what is with the KNN imputed values!
+
+
+## Next step: matching it with the covariate data with left_join 
+## or with rest of data that was cut out at the beginning of the imputation 
+## procedure
+
 
 

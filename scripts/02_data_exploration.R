@@ -375,8 +375,6 @@ rm(data_ANTR_participate2)
 
 #-----------------------------------------------------------------------------
 
-## CONTINUE HERE
-
 ## Next: Inspection of ea (educational attainment; proxy for SES) 
 ## variables
 data_ea <- data_with_QoL %>%
@@ -741,8 +739,6 @@ for (col_name in names(data_CBCL_filter2
   summary_df <- rbind(summary_df, summary_var)
   ## only variable name still missing
 }
-
-## CONTINUE HERE: Still add IQR 
 
 ## This summary df can be used to identify variables with suspicious 
 ## distributions!

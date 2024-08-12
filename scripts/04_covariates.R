@@ -82,23 +82,18 @@ data_zyg <- data1 %>%
 data_ea <- data1 %>%
   select(ea4fa_agg, ea4mo_agg)
 
-
-## time lag: This is a bit more complicated (age at first ANTR survey - age at
-## last YNTR (ysr16))
-
+## calculating the time lag between the last YNTR assessment and the first 
+## QoL assessment of participants (relevant covariate in the analysis!)
 
 ## first: assigning QoL measure to the first QoL measure taken of participant
-## Tricky: Needs to be earliest assessment of QoL unless this early assessment
+## Needs to be earliest assessment of QoL unless this early assessment
 ## took place before the YNTR 16, then first that came after YNTR 16
 
-## New approach: Instead of 1000 cases, simply calculate the 
+## approach: simply calculate the 
 ## QoL as being the earliest available ANTR measure, 
 ## then calculate time lag variable, if negative, change the QoL and calculate
 ## the time lag var again, also make extra variable that indicates which 
 ## ANTR measure was taken for QoL
-
-
-
 
 ## Next: Indicate which measure was taken (copy the same case when but assign
 ## character string, with the help of this, the difference can be calculated)
@@ -137,7 +132,6 @@ data1 <- data1 %>%
 sum(data1$time_lag <= 0, na.rm = TRUE)
 
 ## Now there are negatives that need to be handled next  
-
 
 ## Changing the QoL measure if the earliest QoL measure was filled out before
 ## ysr 16
