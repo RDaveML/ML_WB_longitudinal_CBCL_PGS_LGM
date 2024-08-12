@@ -70,7 +70,7 @@ ncol_data <- ncol(data)
 ## Missings? 
 colMeans(is.na(data))
 rowMeans(is.na(data))
-## Issue, very many missings, maybe threshold needs to be raised
+## Issue, very many missings, maybe threshold needs to be raised?
 
 # Next step: checking the codes of the variables
 
@@ -375,7 +375,10 @@ rm(data_ANTR_participate2)
 
 #-----------------------------------------------------------------------------
 
-## Next: Reliability inspection of ea variables
+## CONTINUE HERE
+
+## Next: Inspection of ea (educational attainment; proxy for SES) 
+## variables
 data_ea <- data_with_QoL %>%
   select(FISNumber, starts_with("ea4"))
 
@@ -391,9 +394,9 @@ rm(data_ea)
 
 ## Next: Age distribution variables - What is distribution of ages 
 ## at every timepoint survey was filled out?
-## Tables but also plot distributions
-## Are there outliers? Inspect those cases
-## age at filling out survey variables, check distributions
+## tables are printed and plots are plotted
+## Are there outliers regarding age? Inspect those cases
+## age at filling out survey variables, checking distributions
 data_age_vars <- data_with_QoL %>%
   select(FISNumber, contains("age")) %>%
   select(!(ea4_age_agg))
@@ -447,7 +450,13 @@ plot_age_list[[11]]
 
 rm(data_age_vars)
 
+## There seem to be some outliers regarding the age
+## This might be due to the fact that DHBQ (where ysr questions are contained)
+## were also sent to siblings of participating twins who had a different age
+
 ## Plotting again, now separate for twins vs. non-twins
+
+## Twins (if twzyg == NA, this means subject is not a twin)
 data_age_vars_twins <- data_with_QoL %>%
   filter(!is.na(twzyg)) %>%
   select(FISNumber, contains("age")) %>%
@@ -558,6 +567,8 @@ if(show){
 ## Those participants will be discarded anyway because they did not participate
 ## in the first 5 YNTR surveys, insufficient data for longitudinal modeling!
 
+## Thus outliers in age pf participation no concern
+
 rm(data_age_vars_non_twins)
 
 #------------------------------------------------------------------------------
@@ -566,7 +577,7 @@ rm(data_age_vars_non_twins)
 ## Calculating how many people have responses in YNTR surveys
 data_YNTR_participate2 <- data_with_QoL %>% 
   select(FISNumber, starts_with("in_YS")) %>%
-  select(!(in_YS_DHBQ18)) %>%
+  select(!(in_YS_DHBQ18)) %>% # DHBQ18 not part of the analysis
   mutate(n_missing_surveys = rowSums(is.na(.))) %>%
   mutate(perc_surveys_missing = n_missing_surveys / 7)
 
@@ -579,11 +590,9 @@ table(round(data_YNTR_participate2$perc_surveys_missing, 2))
 
 rm(data_YNTR_participate2)
 
-## Calculation how many measurements per CBCL / YSR question there are
-CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
+##----------------------------------------------------------------------------
 
-## This is still to be continued! 
-
+## Final inspection of variables that do not belong to the CBCL assessments
 
 data_not_CBCL <- data_with_QoL %>%
   select(!any_of(CBCL_YSR_items_vec))
@@ -605,6 +614,9 @@ table(data_CBCL_filter$var_mis)
 table(data_CBCL_filter$miss50)
 ## When applying the 50% filter to only the CBCL items, 33209 participants
 ## need to be discarded, 6555 participants still left!
+
+## plotting proportions of missings per column for columns with more than 50%
+## missing
 if(show){
 colMeans(is.na(data_CBCL_filter))[colMeans(is.na(data_CBCL_filter)) > 0.5]
 colMeans(is.na(data_CBCL_filter))[colMeans(is.na(data_CBCL_filter)) > 0.5] %>%
@@ -613,10 +625,8 @@ colMeans(is.na(data_CBCL_filter))
 colMeans(is.na(data_CBCL_filter)) %>%
   length()
 }
-## Huge issue: all CBCL features in the dataset have more than 50% missing! 
-## filter needs to be more permissive
-
-## Only take participants with only one or two missing surveys? 
+## Huge issue: all CBCL features in the current dataset have more than 
+## 50% missing! 
 
 ## Trying again when removing participants with only missing YNTR surveys
 data_CBCL_filter2 <- data_CBCL_filter %>%
@@ -637,7 +647,10 @@ colMeans(is.na(data_CBCL_filter2)) %>%
   length()
 }
 
+## Filtering out all participants who did not answer CBCL helps
 
+## Plotting the distribution of age at the time of the surveys 
+## again after applying filter to exclude participants with no CBCL responses
 
 data_age_vars_final <- data_CBCL_filter2 %>%
   left_join(data_with_QoL, by = "FISNumber") %>%
@@ -686,6 +699,9 @@ horizontal line indicates age when survey was supposed to take place"
     geom_vline(xintercept = age_desired, linewidth = 2) + 
     labs(subtitle = subtitle)
 }
+
+# Plots
+
 show <- FALSE
 if(show){
   plot_age_list_final[[1]]
@@ -709,14 +725,16 @@ rm(data_age_vars_final)
 ## Based participants with at least one QoL measure and at least one YNTR
 ## participation
 
-## Basic summary function looping over variables
+## Basic summary function looping over variables outputting basic
+## summary statistics
 summary_df <- data.frame()
 for (col_name in names(data_CBCL_filter2
      [names(data_CBCL_filter2) %notin% c("FISNumber", "var_mis", "miss50")])) {
   #cat("Summary of", col_name, ":\n")
   #print(describe(data_CBCL_filter2[[col_name]]))
   #cat("\n")
-  summary_var <- as.data.frame(describe(data_CBCL_filter2[[col_name]])) 
+  summary_var <- as.data.frame(describe(data_CBCL_filter2[[col_name]], 
+                                        IQR = TRUE)) 
   summary_var <- rownames_to_column(summary_var)
   summary_var[1,1] <- col_name
   names(summary_var)[1] <- "variable"
@@ -724,20 +742,20 @@ for (col_name in names(data_CBCL_filter2
   ## only variable name still missing
 }
 
+## CONTINUE HERE: Still add IQR 
+
 ## This summary df can be used to identify variables with suspicious 
-## distributions! 
+## distributions!
+## Adding further variables
 summary_df <- summary_df %>%
   mutate(perc_answers = n / nrow(data_CBCL_filter2)) %>%
   mutate(perc_missing_answers = 1 - perc_answers) %>%
   mutate(VC = sd / mean) %>%
   mutate(variance = sd^2)
 
-## merging the question label to the corresponding item codes, might take 
-## some help from it
-
 #--------------------------------------------------------------
 
-## plots 
+## plots (histograms of distributions)
 
 plots <- FALSE
 # Define the number of plots per page
@@ -790,6 +808,8 @@ cor_matrix_CBCL <- data_CBCL_filter2 %>%
 
 ## heatmap doesn't really make sense with this many dimensions 
 
+## Reading in CBCL items overview table
+CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
 ## Attaching question labels to summary df
 
@@ -815,10 +835,11 @@ names(CBCL_item_question_age) <- c("variable", "question_number", "age")
 
 ## attach to summary df
 summary_df <- summary_df %>%
-  left_join(CBCL_item_question_age %>% filter(!is.na(variable)), by = "variable")
+  left_join(CBCL_item_question_age %>% filter(!is.na(variable)),
+            by = "variable")
 
 ## changing column order so question appears in front
-summary_df <- summary_df[, c(1, 2, 19, 20, 3:5, 18, 6:17)]
+summary_df <- summary_df[, c(1, 2, 20, 21, 3:5, 19, 6:18)]
 
 
 workspace.size()
@@ -833,6 +854,8 @@ for(question in unique(CBCL_item_question_age$question_number)){
     select(variable) %>%
     pull
 }
+## Now there is list of vectors per CBCL questions which variable are part of 
+## it, can also be saved for filtering and the longitudinal modeling later
 
 
 ## inspecting the summary dataframe
@@ -883,10 +906,6 @@ length(caret::nzv(data_CBCL_filter2))
 ## 118 CBCL items with very low variance, also overlap with the high kurtosis
 ## variables, likely to be eliminated later
 
-
-## Now there is list of vectors per CBCL questions which variable are part of 
-## it, can also be saved for filtering and the longitudinal modeling later
-
 # summary dataframe
 save(summary_df, file = here::here("scripts", "summary_CBCL.RData"))
 
@@ -898,14 +917,3 @@ save(CBCL_questions_list,
      file = here::here("scripts", "CBCL_questions_list.RData"))
 
 ## These can be loaded when continuing working on the analysis
-
-
-## TO DOS: 
-# - make more comments that describe the steps you took
-
-
-
-
-
-
-
