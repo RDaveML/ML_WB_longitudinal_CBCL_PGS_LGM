@@ -4,17 +4,18 @@
 # Year, 2024
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2024-07-31
+# Date: 2024-08-13
 #
-# Script Name: 03_data_cleaning01_filtering1
+# Script Name: 0x_kNN_imputation_MCD (still to be adjusted)
 #
-# Script Description: This script contains the first steps of data cleaning
-# for the project: 
-## Combining longitudinal change features of childhood psychopathology 
-## with Polygenic scores in machine learning models of adult wellbeing
+# Script Description: In this script, knn-imputation and outlier removal 
+# based on the Minimum-covariance determinant (MCD),
+# a more robust version of Mahalanobis' distance (Leys et al., 2018) will be
+# performed as preparation steps for machine learning
 #
-# Notes: Filtering procedure may still be adjusted after consultation with the 
-# supervisors and after receiving PGS data
+#
+# Notes:
+#
 #
 
 # Set options
@@ -24,23 +25,17 @@ options(scipen = 999)
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table", "caret")
-
-## printing and changing working directory if needed
-getwd()
-
-here::here()
-
-getwd() == here::here()
-
-## loading in custom functions
-source(here::here("scripts", "functions", "functions.R"))
+               "stringr", "readxl", "data.table", "VIM", "caret")
 
 
-## reading in datafile (if necessary, change filepath to where file is located)
-data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
-  as.data.frame()
+## loading in filtered data and LGM calculated data (Different from simply
+## filtered raw data)
 
+# data <- #load(data_filtered_)
+
+  
+## loading in variable and name vectors that make selection easier
+  
 ## loading in refined variable table (with labels and description of CBCL items)
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
@@ -54,93 +49,20 @@ load(here::here("scripts", "summary_CBCL.RData"))
 ## loading in list of CBCL items per question
 load(here::here("scripts", "CBCL_questions_list.RData"))
 
+## Those might be removed still
+
 ## loading in covariate data for further filtering
 load(here::here("scripts", "data_covariates.RData"))
 ## loading in covariate names 
 load(here::here("scripts", "names_covariates.RData"))
-
-nrow(data)
-# Initially 92969 participants in dataset
-
-## filtering data in one compact function, outputting dropped participants 
-## after each filtering step
-data_filtered <- filter_CBCL(df = data, CBCL_YSR_items_vec = CBCL_YSR_items_vec,
-                             data_covariates = data_covariates)
-
-
-## ---------------------------------------------------------------------------
-
-## recoding items that are on different scale!
-
-CBCL_items_table_y5 <- CBCL_items_table %>%
-  filter(!is.na(Age5))
-
-CBCL_items_CBCL103 <- unname(unlist(c(CBCL_items_table_y5[1, 1:7])))
-CBCL_items_CBCL50 <- unname(unlist(c(CBCL_items_table_y5[2, 1:7])))
-## CBCL question 57 was not asked at age 3
-CBCL_items_CBCL57 <- unname(unlist(c(CBCL_items_table_y5[3, 1:7])))[!is.na(
-  unname(unlist(c(CBCL_items_table_y5[3, 1:7]))))]
-
-# filtering data for only those variables
-data_CBCL_103 <- data_filtered %>% 
-  select(all_of(CBCL_items_CBCL103))
-
-for(variable in CBCL_items_CBCL103){
-print(prop.table(table(data_CBCL_103 %>% select(variable) %>%
-                         filter(!is.na(variable)))))
   
-}
-
-data_CBCL_50 <- data_filtered %>% 
-  select(all_of(CBCL_items_CBCL50))
-
-for(variable in CBCL_items_CBCL50){
-  print(prop.table(table(data_CBCL_50 %>% select(variable) %>%
-                           filter(!is.na(variable)))))
-  
-}
-
-data_CBCL_57 <- data_filtered %>% 
-  select(all_of(CBCL_items_CBCL57))
-
-for(variable in CBCL_items_CBCL57){
-  print(prop.table(table(data_CBCL_57 %>% select(variable) %>%
-                           filter(!is.na(variable)))))
-  
-}
-
-## Inspection of the frequency distributions suggests the 
-## following recoding for the YNTR5 questions: 
-## 1-2 to 0; 3-4 to 1; 5 - 2
-
-## Recoding the items 
-q5 <- c("q13m5", "q11m5", "q4m5")
-
-data_filtered_recoded <- data_filtered %>%
-  mutate(across(all_of(q5), 
-         ~ case_when(. == 1 | . == 2 ~ 0,
-                     . == 3 | . == 4 ~ 1,
-                     . == 5 ~ 2,
-                     .default = NA)))
-
-## checking if recoding went properly
-table(data_filtered$q13m5, useNA = "ifany")
-table(data_filtered_recoded$q13m5, useNA = "ifany")
-
-table(data_filtered$q11m5, useNA = "ifany")
-table(data_filtered_recoded$q11m5, useNA = "ifany")
-
-table(data_filtered$q4m5, useNA = "ifany")
-table(data_filtered_recoded$q4m5, useNA = "ifany")
-
-## it worked out correctly
-
-## removing intermediary objects
-rm(list = c("data_CBCL_103", "data_CBCL_50", "data_CBCL_57"))
 
 #-----------------------------------------------------------------------------
 
 ## KNN imputation
+
+#-----------------------------------------------------------------------------
+
 
 
 ## Preparation and execution of KNN imputation
@@ -153,22 +75,25 @@ rm(list = c("data_CBCL_103", "data_CBCL_50", "data_CBCL_57"))
 ## In the following lines, the names of the dffs still nede to be adjusted
 
 ## Removing columns with +50% missings to see if that changes anything
+## NOte: This already happens in cleaning script, likely to not
+## be necessary later
 col_threshold <- 0.5
 
 ## keeping Ids
-data_ids_filtered <- data_filtered_recoded %>%
+data_ids <- data %>%
   select(FISNumber)
 
 ## preparing the filtering
-data_CBCL <- data_filtered_recoded %>%
-  select(all_of(CBCL_YSR_items_vec)) %>%
+data_CBCL <- data %>%
+  select(any_of(CBCL_YSR_items_vec)) %>% ## also add vector of LGM features here (In case after LGM modeling)
   mutate(across(everything(), as.numeric))
 
 cols_with_excessive_na <- sapply(data_CBCL %>% select(
-  all_of(CBCL_YSR_items_vec)),
-                                 function(x) mean(is.na(x)) > col_threshold)
+  any_of(CBCL_YSR_items_vec)),
+  function(x) mean(is.na(x)) > col_threshold)
 
 data_CBCL_cols <- data_CBCL[, !cols_with_excessive_na]
+## check if this is still necessary! 
 ## 12 items from CBCL filtered
 
 CBCL_items_keep <- colnames(data_CBCL_cols)
@@ -184,6 +109,8 @@ CBCL_items_drop <- setdiff(CBCL_YSR_items_vec, CBCL_items_keep)
 ## Alternative KNN imputation with the vim package
 library(VIM)
 
+
+## Try this first with small subset!!! 
 data_imputed_vim <- kNN(
   data_CBCL_cols,
   variable = colnames(data_CBCL_cols),
@@ -209,7 +136,7 @@ data_imputed_vim <- kNN(
   methodStand = "range",
   ordFun = medianSamp
 )
-## takes very long to run! 
+## takes very long to run! Adjust arguments
 
 ##---------------------------------------------------------------------------
 
@@ -239,7 +166,7 @@ for(col in 221:439){
 ## drugs), furthermore 97 and 91 (threatens other people, talks suicide)
 
 ## Binding with ID column again
-data_imputed <- bind_cols(data_ids_filtered, imputed)
+data_imputed <- bind_cols(data_ids, imputed)
 nrow(data_imputed)
 nrow(data_CBCL_cols) - nrow(data_imputed)
 
@@ -250,13 +177,12 @@ nrow(data_CBCL_cols) - nrow(data_imputed)
 
 
 
+
 ## Outlier removal: Calculation of the Minimum-covariance determinant (MCD),
 ## a more robust version of Mahalanobis' distance (Leys et al., 2018)
 
 ## For now only do this with the CBCL data, dataset fed will later be adjusted
 
-## For now: Toy data, only two columns to check if original df value 
-## and function work in general
 
 library(MASS)
 
@@ -265,29 +191,32 @@ t1 <- Sys.time()
 ## indicate package before calling function (dplyr::select)
 
 ## saving IDs
-data_mcd_toy_ID <- data_imputed %>%
+data_mcd_ID <- data_imputed %>%
   dplyr::select(FISNumber)
 
-data_mcd_toy <- data_imputed %>%
-  dplyr::select(any_of(CBCL_items_keep))
+data_mcd <- data_imputed %>%
+  dplyr::select(any_of(CBCL_items_keep)) ## here also add LGM features if created in advance
 
 ## Since many of the variables have IQR = 0, they don't help in distinguishing
 ## outliers, thus identify outliers only based on the columns 
 
 ## saving order of columns (will be applied to final dataframe later so that it
 ## has the same order of columns)
-column_order <- names(data_mcd_toy)
+column_order <- names(data_mcd)
 
 
 ## deleting columns that have IQR = 0
-ncol(data_mcd_toy)
+ncol(data_mcd)
 
 ## still adjust the names of the MCD intermediary datasets, potentially also
 ## write this into a custom function
 
-data_mcd_toy1 <- data_mcd_toy[, sapply(data_mcd_toy, function(col) IQR(col) > 0)]
+## Those columns might also need to be removed in advance! IN this case, adjust 
+## names afterwards
 
-ncol(data_mcd_toy1)
+data_mcd1 <- data_mcd[, sapply(data_mcd, function(col) IQR(col) > 0)]
+
+ncol(data_mcd1)
 ## only 159 columns still remaining for calculation of mcd
 
 
@@ -298,20 +227,20 @@ ncol(data_mcd_toy1)
 
 # Creating covariance matrix for MCD («data_mcd» is the matrix containing  
 # data with no indicator variable
-output50 <- cov.mcd(data_mcd_toy1, quantile.used = nrow(data_mcd_toy1)* .5)
+output50 <- cov.mcd(data_mcd1, quantile.used = nrow(data_mcd1)* .5)
 ## If column has IQR 0! Not possible to calculate this
 ## Might happen that system is exactly singular (Not in this case)
 ## With high number of variables, calculating this takes long to run! 
 
-output75 <- cov.mcd(data_mcd_toy1, quantile.used = nrow(data_mcd_toy1)* .75)
+output75 <- cov.mcd(data_mcd1, quantile.used = nrow(data_mcd1)* .75)
 
 ## with two columns that do have IQR != 0, this worked
 
 
 # Distances from centroid for each matrix
-md <- mahalanobis(data_mcd_toy1, colMeans(data_mcd_toy1), cov(data_mcd_toy1))
-mhmcd50 <- mahalanobis(data_mcd_toy1, output50$center, output50$cov)
-mhmcd75 <- mahalanobis(data_mcd_toy1, output75$center, output75$cov)
+md <- mahalanobis(data_mcd1, colMeans(data_mcd1), cov(data_mcd1))
+mhmcd50 <- mahalanobis(data_mcd1, output50$center, output50$cov)
+mhmcd75 <- mahalanobis(data_mcd1, output75$center, output75$cov)
 
 # Detecting outliers for each method
 # The index of each detected outlier is recorded for each method for a 
@@ -321,7 +250,7 @@ mhmcd75 <- mahalanobis(data_mcd_toy1, output75$center, output75$cov)
 
 alpha <-.05 ## less conservative than Leys at al
 
-cutoff <- (qchisq(p = 1 - alpha, df = ncol(data_mcd_toy1))) ## ADJUST THIS! 
+cutoff <- (qchisq(p = 1 - alpha, df = ncol(data_mcd1))) ## ADJUST THIS! 
 names_outliers_MH <- which(md > cutoff)
 names_outliers_MCD50 <- which(mhmcd50 > cutoff)
 names_outliers_MCD75 <- which(mhmcd75 > cutoff)
@@ -358,17 +287,17 @@ excluded <- names_outliers_MCD75_5
 
 ## dropping the outliers according to top 5% MCD
 
-data_mcd2_toy1 <- data_mcd_toy1[-excluded, ]
-data_mcd2_toy_ID <- data.frame(FISNumber = data_mcd_toy_ID[-excluded, ])
+data_mcd2_1 <- data_mcd1[-excluded, ]
+data_mcd2_ID <- data.frame(FISNumber = data_mcd_ID[-excluded, ])
 
 t2 <- Sys.time()
 
 print(t2 - t1)
-  
+
 ## binding ID and data
-data_cleaned_CBCL <- bind_cols(data_mcd2_toy_ID, data_mcd2_toy1)
-nrow(data_mcd2_toy1)
-nrow(data_mcd2_toy_ID)
+data_cleaned_CBCL <- bind_cols(data_mcd2_ID, data_mcd2_1)
+nrow(data_mcd2_1)
+nrow(data_mcd2_ID)
 nrow(data_cleaned)
 
 ## This ensures that there are still 5957 participants in the data (if only
@@ -381,9 +310,12 @@ nrow(data_cleaned)
 ## columns go back to the dataframe also make an order of the columns before the 
 ## deletion and apply again after the merge so that the dataframe has 
 ## the same column order 
-data_cleaned <- bind_cols(data_cleaned_CBCL, data_mcd_toy[-excluded,
-                              sapply(data_mcd_toy,
-                                     function(col) IQR(col) <= 0)])
+
+
+## This step might be removed! 
+data_cleaned <- bind_cols(data_cleaned_CBCL, data_mcd[-excluded,
+                                                          sapply(data_mcd,
+                                                                 function(col) IQR(col) <= 0)])
 
 ## changing column order
 data_cleaned <- data_cleaned[, c("FISNumber", column_order)]
@@ -392,12 +324,20 @@ dropped_cols <- setdiff(CBCL_YSR_items_vec, names(data_cleaned))
 ## The CBCL Items ultimately dropped from the analysis, the same as 
 ## CBCL_items_drop
 
+## checking near zero variance columns after imputation and 
+## MCD removal
+caret::nzv(data_cleaned)
+## still 118 columns with nzv, those were the ones not used for the MCD removal!
+
+
 ## Still figure out what is with the KNN imputed values!
 
 
 ## Next step: matching it with the covariate data with left_join 
 ## or with rest of data that was cut out at the beginning of the imputation 
 ## procedure
+data_final <- data_cleaned %>%
+  left_join(data_covariates, by = "FISNumber")
 
-
-
+nrow(data_final)
+## final sample size of 5957 subjects

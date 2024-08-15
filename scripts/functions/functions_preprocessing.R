@@ -24,7 +24,7 @@ options(scipen = 999)
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table")
+               "stringr", "readxl", "data.table", "purrr")
 
 
 ## negation operator
@@ -37,6 +37,64 @@ workspace.size <- function() {
   ws
 }
 
+
+
+## Function to assign QoL variable and calculating time lag the correct way
+## QoL needs to be assessed after last YNTR participation and participants 
+## need to be at least 18 years old at age of QoL, will then be filtered
+calculate_qol <- function(data) {
+  data %>%
+    mutate(
+      ## QoL measure should be the earliest available measure
+      QoL_simple = case_when(
+        !is.na(levenc8) ~ levenc8,
+        !is.na(levenc10) ~ levenc10,
+        !is.na(levenc12) ~ levenc12,
+        !is.na(levenc14) ~ levenc14,
+        ## default will a priori be assigned to NA
+        .default = QoL_simple
+      ),
+      ## creating indicator which QoL measure was taken
+      QoL_indicator = case_when(
+        !is.na(levenc8) ~ "ANTR8",
+        !is.na(levenc10) ~ "ANTR10",
+        !is.na(levenc12) ~ "ANTR12",
+        !is.na(levenc14) ~ "ANTR14",
+        .default = QoL_indicator
+      )
+    )
+}
+
+## function to calculate time_lag between QoL assessment and latest available
+## YNTR assessment - will be used to update QoL in case it happened before YNTR
+calculate_time_lag <- function(data) {
+  data %>%
+    mutate(
+      time_lag = case_when(
+        QoL_indicator == "ANTR8" ~ ifelse(!is.na(ages16), age8 - ages16,
+                                          ifelse(!is.na(ages14), age8 - ages14,
+                                                 ifelse(!is.na(agem12), age8 - agem12,
+                                                        ifelse(!is.na(agem10), age8 - agem10,
+                                                               NA_real_)))),
+        QoL_indicator == "ANTR10" ~ ifelse(!is.na(ages16), age10 - ages16,
+                                           ifelse(!is.na(ages14), age10 - ages14,
+                                                  ifelse(!is.na(agem12), age10 - agem12,
+                                                         ifelse(!is.na(agem10), age10 - agem10,
+                                                                NA_real_)))),
+        QoL_indicator == "ANTR12" ~ ifelse(!is.na(ages16), age12 - ages16,
+                                           ifelse(!is.na(ages14), age12 - ages14,
+                                                  ifelse(!is.na(agem12), age12 - agem12,
+                                                         ifelse(!is.na(agem10), age12 - agem10,
+                                                                NA_real_)))),
+        QoL_indicator == "ANTR14" ~ ifelse(!is.na(ages16), age14 - ages16,
+                                           ifelse(!is.na(ages14), age14 - ages14,
+                                                  ifelse(!is.na(agem12), age14 - agem12,
+                                                         ifelse(!is.na(agem10), age14 - agem10,
+                                                                NA_real_)))),
+        TRUE ~ NA_real_
+      )
+    )
+}
 
 ## Data filtering function that does not create intermediate objects and
 ## puts out at every step how many participants were dropped
@@ -86,8 +144,8 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
       "Sample size after filtering: ", nrow(data3), "\n",
       "participants dropped: ", nrow(data2) - nrow(data3), "\n", "\n")
   
-  ## filtering out participants where QoL was assessed before ysr16
-  cat("Removing participants where only QoL assessment happened before ysr16",
+  ## filtering out participants where QoL was assessed before age 18
+  cat("Removing participants where only QoL assessment happened before last YNTR participation",
       "\n", "\n")
   ## joining with covariate data
   data4 <- data3 %>%
@@ -103,11 +161,12 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
   
   
   ## Optional: filtering out participants where QoL was assessed before age 18
-  cat("Removing participants where QoL assessment happened before age18",
+  ## or where no information about age at 
+  cat("Removing participants where QoL assessment happened before age18 or no info",
       "\n", "\n")
   
   data5 <- data4 %>%
-    filter(age_qol >= 18 | is.na(age_qol))
+    filter(age_qol >= 18 & !is.na(age_qol))
   
   ## outputting updated sample size
   cat("Sample size before filtering: ", nrow(data4), "\n",
@@ -134,7 +193,9 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
   ## returning final df (which will then be given to perform KNN imputation)
  cat("Returning final data frame after filtering operations with sample size: ",
      nrow(data6))
+ 
  return(data6) 
 }
+
 
 

@@ -26,6 +26,8 @@ options(scipen = 999)
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "lubridate")
 
+## loading in custom functions
+source(here::here("scripts", "functions", "functions_preprocessing.R"))
 
 ## loading in refined variable table (with labels and description of CBCL items)
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
@@ -95,92 +97,75 @@ data_ea <- data1 %>%
 ## the time lag var again, also make extra variable that indicates which 
 ## ANTR measure was taken for QoL
 
-## Next: Indicate which measure was taken (copy the same case when but assign
-## character string, with the help of this, the difference can be calculated)
-data1 <- data1 %>%
-  mutate(QoL_simple = case_when(
-    !is.na(levenc8) ~ levenc8,
-    !is.na(levenc10) ~ levenc10,
-    !is.na(levenc12) ~ levenc12,
-    !is.na(levenc14) ~ levenc14,
-    .default = NA
-))
-
-## indicator variable which ANTR wave was used for QoL assessment
-data1 <- data1 %>%
-  mutate(QoL_indicator = case_when(
-    !is.na(levenc8) ~ "ANTR8",
-    !is.na(levenc10) ~ "ANTR10",
-    !is.na(levenc12) ~ "ANTR12",
-    !is.na(levenc14) ~ "ANTR14",
-    .default = NA
-  ))
+## Applying calculate_QoL function to different waves
 
 
-## calculating time lag variable
-## taking fill-in year instead of age has no effect on missings, 
-## thus only taking age as it has better resolution
+# Initialize columns with NA
 data1 <- data1 %>%
-  mutate(time_lag = case_when(
-    QoL_indicator == "ANTR8" ~ age8 - ages16,
-    QoL_indicator == "ANTR10" ~ age10 - ages16,
-    QoL_indicator == "ANTR12" ~ age12 - ages16,
-    QoL_indicator == "ANTR14" ~ age14 - ages16,
-    .default = NA
-  ))
+  mutate(QoL_simple = NA_real_, QoL_indicator = NA_character_,
+         time_lag = NA_real_)
+
+## Assigning QoL_measure for the first time
+data1 <- calculate_qol(data1)
+
+## calculating time_lag for the first time, now there are negatives
+data1 <- calculate_time_lag(data1)
 
 sum(data1$time_lag <= 0, na.rm = TRUE)
 
-## Now there are negatives that need to be handled next  
+## Now there are 156 negatives that need to be handled next  
 
-## Changing the QoL measure if the earliest QoL measure was filled out before
-## ysr 16
+sum(is.na(data1$time_lag))
+# 748 participants with no time lag variable
+
+table(data1$QoL_simple, useNA = "ifany")
+table(data1$QoL_indicator, useNA = "ifany")
+
+
+## Adjusting the QoL measure and indicator variable in case time_lag is negative
+## or 0 (QoL assessment must not have happened before the last YNTR participation)
 data1 <- data1 %>%
   mutate(QoL_simple = case_when(
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc10) ~ levenc10,
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc12) ~ levenc12,
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc14) ~ levenc14,
+    QoL_indicator == "ANTR8" & time_lag <= 0 & is.na(levenc14) ~ QoL_simple,
     QoL_indicator == "ANTR10" & time_lag <= 0 & !is.na(levenc12) ~ levenc12,
     QoL_indicator == "ANTR10" & time_lag <= 0 & !is.na(levenc14) ~ levenc14,
+    QoL_indicator == "ANTR10" & time_lag <= 0 & is.na(levenc14) ~ QoL_simple,
     QoL_indicator == "ANTR12" & time_lag <= 0 & !is.na(levenc14) ~ levenc14,
+    QoL_indicator == "ANTR12" & time_lag <= 0 & is.na(levenc14) ~ QoL_simple,
     .default = QoL_simple
-  ))
-
-## re-assign QoL indicator variable
-data1 <- data1 %>%
-  mutate(QoL_indicator = case_when(
+          ),
+        QoL_indicator = case_when(
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc10) ~ "ANTR10",
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc12) ~ "ANTR12",
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc14) ~ "ANTR14",
+    QoL_indicator == "ANTR8" & time_lag <= 0 & is.na(levenc14) ~ QoL_indicator,
     QoL_indicator == "ANTR10" & time_lag <= 0 & !is.na(levenc12) ~ "ANTR12",
     QoL_indicator == "ANTR10" & time_lag <= 0 & !is.na(levenc14) ~ "ANTR14",
+    QoL_indicator == "ANTR10" & time_lag <= 0 & is.na(levenc14) ~ QoL_indicator,
     QoL_indicator == "ANTR12" & time_lag <= 0 & !is.na(levenc14) ~ "ANTR14",
+    QoL_indicator == "ANTR12" & time_lag <= 0 & is.na(levenc14) ~ QoL_indicator,
     .default = QoL_indicator
-  ))
+        )
+  )
 
-## recalculating time_lag
-data1 <- data1 %>%
-  mutate(time_lag = case_when(
-    QoL_indicator == "ANTR8" ~ age8 - ages16,
-    QoL_indicator == "ANTR10" ~ age10 - ages16,
-    QoL_indicator == "ANTR12" ~ age12 - ages16,
-    QoL_indicator == "ANTR14" ~ age14 - ages16,
-    .default = time_lag
-  ))
+## recalculating time_lag variable, now there should be no more negatives
+data1 <- calculate_time_lag(data1)
 
-## checking negatives again
 sum(data1$time_lag <= 0, na.rm = TRUE)
-data1 %>%
-  filter(QoL_indicator == "ANTR8" & time_lag <= 0) %>%
-  select(starts_with("levenc"), QoL_simple, QoL_indicator,
-         time_lag, age8, ages16)
-## Those are the negatives are the cases where only one QoL assessment is 
-## available and this one happened before or at the same time 
-## of the ysr assessment
-## Those need to be discarded as the study is interested in the longitudinal
-## effect of childhood psychopathology
+## Now still 33 negatives Those are the cases where there is no other QoL 
+## measure available. Those need to be filtered out in the filtering function!
 
-## One more covariate: Age at wellbeing assessment, might also be used for 
+sum(is.na(data1$time_lag))
+# 748 participants with no time lag variable
+
+table(data1$QoL_simple, useNA = "ifany")
+table(data1$QoL_indicator, useNA = "ifany")
+
+
+## One more covariate: Age at wellbeing assessment, will also be used for 
 ## filtering and is an important covariate for the wellbeing
 data1 <- data1 %>%
   mutate(age_qol = case_when(
@@ -188,8 +173,20 @@ data1 <- data1 %>%
     QoL_indicator == "ANTR10" ~ age10,
     QoL_indicator == "ANTR12" ~ age12,
     QoL_indicator == "ANTR14" ~ age14,
-    .default = NA
+    .default = NA_real_
   ))
+
+sum(is.na(data1$age_qol))
+## one individual with no age at QoL assessment, should probably be 
+## removed as well
+
+table(data1$age_qol, useNA = "ifany")
+
+data1 %>% filter(age_qol < 18) %>% nrow()
+## 764 participants where QoL assessment was below 18 years
+data1 %>% filter(time_lag <= 0) %>% nrow()
+## 33 participants where time_lag < 0, those need to be removed as well
+
 
 ## saving covariates dataframe, later merge it with 
 ## main data (after all the preprocessing and LGM with left_join)
@@ -223,12 +220,9 @@ save(covariates_names, file = here::here("scripts", "names_covariates.RData"))
 
 ## Issue: many NAs also in covariates, imputation not really possible
 colMeans(is.na(data_covariates))
-## time lag has more than 50% missings! 
 
-
-
-
-
+## now, only 6% missing in time_lag variable due to ascription of last 
+## available YNTR age for difference calculation
 
 
 
