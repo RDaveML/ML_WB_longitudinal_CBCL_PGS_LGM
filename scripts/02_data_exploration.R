@@ -903,7 +903,7 @@ length(caret::nzv(data_CBCL_filter2))
 ## variables, likely to be eliminated later
 
 # summary dataframe
-save(summary_df, file = here::here("scripts", "summary_CBCL.RData"))
+save(summary_df, file = here::here("scripts", "summary_CBCL_pre.RData"))
 
 # table with possible item codes
 save(labels_table, file = here::here("scripts", "labels_table.RData"))

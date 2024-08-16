@@ -18,7 +18,8 @@
 # prediction of adult wellbeing (Qualitý of life)
 #
 #
-# Notes:
+# Notes: This steps needs to happen after the splitting of the dataset
+# in training and test data
 #
 #
 
@@ -29,14 +30,17 @@ options(scipen = 999)
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table")
+               "stringr", "readxl", "data.table", "MplusAutomation")
 
 
-## loading in necessary dataset and vectors / tables of variables 
-load(here::here("data", "intermediate", "data_LGM.RData"))
+## loading in necessary dataset and vectors / tables of variables
+
+## loading in training set
+load(here::here("data", "intermediate", "train_data.RData"))
 
 ## loading in refined variable table (with labels and description of CBCL items)
-CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
+CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) %>%
+  as.data.frame()
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
@@ -71,11 +75,16 @@ CBCL_items_table <- CBCL_items_table %>%
   ungroup() %>%
   filter(n_items_available >= 4)
 ## 80 questions might still be used for latent growth modeling
+## (If IQR = 0 columns are not removed)
 
+## shrinking down: table to contain only the variable names and the question
+## names
+CBCL_items_table_reduced <- CBCL_items_table %>%
+  select(starts_with("Age"), question_number)
 
 
 ## Checking structure of missing:
-colMeans(is.na(data_LGM)) %>% as.data.frame() %>% View()
+# colMeans(is.na(data_LGM)) %>% as.data.frame() %>% View()
 
 
 ## Now: With one item test it out: Pivot data, calculate all you 
@@ -84,4 +93,19 @@ colMeans(is.na(data_LGM)) %>% as.data.frame() %>% View()
 ## then lapply or sapply it over the items and then bind together all
 ## the resulting dfs
 
+
+## Important: before any analyses, permute Family IDs and FISNumbers so
+## you remain blind to the actual content of the data! 
+
+
+
+## sampling test Question
+test_q <- na.omit(as.character(sample_n(CBCL_items_table_reduced, 1)))
+
+
+
+
+
+test_df <- train_data %>%
+  select(FISNumber, FamilyNumber, twzyg, any_of(test_q))
 
