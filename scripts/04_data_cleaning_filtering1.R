@@ -148,6 +148,40 @@ table(data_filtered_recoded$q4m5, useNA = "ifany")
 ## removing intermediary objects
 rm(list = c("data_CBCL_103", "data_CBCL_50", "data_CBCL_57"))
 
+#----------------------------------------------------------------------------
+
+## Imputing age variables: If individual has no value for age at assessment
+## CBCL, impute with the mean
+
+age_CBCL_cols <- c("agem3", "ageq5", "agem7", "agem10", "agem12",
+                   "ages14", "ages16")
+
+in_vars_CBCL <- c("in_YS_3M", "in_YS_5", "in_YS_7M", "in_YS_10M", "in_YS_12M",
+                  "in_YS_DHBQ14", "in_YS_DHBQ16")
+
+means_age_cols <- numeric(length = length(age_CBCL_cols))
+
+for(var in 1:length(means_age_cols)){
+  means_age_cols[var] <- data_filtered_recoded %>%
+    select(!!age_CBCL_cols[var]) %>%
+    pull() %>%
+    mean(na.rm = TRUE)
+}
+
+for(i in 1:length(means_age_cols)){
+    ## fill with function so that NAs where participants did actually 
+    ## participante are imputed with mean age
+    age_col <- sym(age_CBCL_cols[i])
+    in_vars_col <- sym(in_vars_CBCL[i])
+    print(age_col)
+    print(in_vars_col)
+    data_filtered_recoded <- data_filtered_recoded %>%
+      mutate(!!age_col := ifelse(is.na(!!age_col) & !is.na(!!in_vars_col),
+                                means_age_cols[i], 
+                                !!age_col))
+}
+
+## This has almost no influence, still a lot of missings in age
 
 
 ## removing CBCL items with more than 50% missings 
@@ -305,7 +339,4 @@ save(data_LGM, file = here::here("data", "intermediate", "data_LGM.RData"))
 
 #-----------------------------------------------------------------------------
 
-## Re-calculation of the summary df after filtering procedure and column 
-## reduction
-summary_df_final <- data.frame()
 

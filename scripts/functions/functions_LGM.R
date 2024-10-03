@@ -34,5 +34,22 @@ LGM_preprocess <- function(df, CBCL_question){
 }
 
 
+LGM_reshape <- function(df, CBCL_question) {
+  
+
+}
+  
+
+LGM_DV_calculation <- function(df, CBCL_question){
+  
+  
+}
+
+
+LGM_estimation_grid <- function(df, configuration_grid){
+  
+  
+  
+}
 
 

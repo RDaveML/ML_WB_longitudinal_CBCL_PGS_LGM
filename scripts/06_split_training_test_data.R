@@ -36,52 +36,59 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
 load(here::here("data", "intermediate", "data_full.RData"))
 
 
-## Creating the split while still ensuring that participants from the same
-## family stay together
+#------------------------------------------------------------------------------
 
-## idea: create empty data frame, randomly choose participants from the
-## same family and attach it to the training set, 
-## stop once nrow(training) >= 0.8 * nrow(total), then assign all IDs that 
-## are not yet in the training set to the test set, check if sample sizes 
-## are correct, before: set seed! Ask Dirk if anything special regarding random
-## seeds needs to be coded before hand! 
+## Important step before actual analysis: For trial calculations, permute 
+## IDs so one remains blind for data
+permute <- TRUE
+if(permute){
+  data_full <- transform(data_full, FISNumber = sample(FISNumber))
+}
 
-train_data <- data.frame()
-## initializaing test data as full dataset which will continuously be shrunken
-## down by transferring data into the traning set
-## what remains will be the ultimate test set
-testdata <- data_full
+#------------------------------------------------------------------------------
 
-## setting seed (check again if there needs to be something special done before!)
+## Initializing the test data as the full dataset
+## Train and test indices instead of subsetting dataframes repeatedly
 set.seed(1608)
 
-while(nrow(train_data) < 0.8 * nrow(data_full)){
-  
-  ## 1) sampling a random family id that is contained in the test set
-  family_id <- sample(unique(testdata$FamilyNumber), 1)
-  
-  ## 2) create a family data set (filtering test data for only this family ID)
-  family_data <- testdata %>%
-    filter(FamilyNumber == family_id)
-  
-  ## 3) append those family data to the training set
-  train_data <- rbind(train_data, family_data)
-  
-  ## 4) update test set (the family is removed)
-  testdata <- testdata %>%
-    filter(FamilyNumber != family_id)
-}
-rm(family_data)
-rm(family_id)
+family_ids <- unique(data_full$FamilyNumber)
+family_sizes <- table(data_full$FamilyNumber)
+total_rows <- nrow(data_full)
 
-nrow(train_data)
-nrow(testdata)
-## takes very long time to sample! 
+# Initialize empty indices for training data
+train_indices <- integer(0)
+
+# Keep a set of family IDs to sample from
+remaining_family_ids <- family_ids
+
+# While loop to accumulate training data until it's about 80% of the data
+while (length(train_indices) < 0.8 * total_rows) {
+  # Sample a random family ID from remaining families
+  family_id <- sample(remaining_family_ids, 1)
+  
+  # Get indices for this family
+  family_indices <- which(data_full$FamilyNumber == family_id)
+  
+  # Append these indices to the training indices
+  train_indices <- c(train_indices, family_indices)
+  
+  # Remove the chosen family ID from the remaining families
+  remaining_family_ids <- setdiff(remaining_family_ids, family_id)
+}
+
+# Use the indices to create train and test datasets
+train_data <- data_full[train_indices, ]
+test_data <- data_full[-train_indices, ]
+
+
+
+
+
 
 ## saving training and test data
 save(train_data, file = here::here("data", "intermediate", "train_data.RData"))
 
-save(testdata, file = here::here("data", "intermediate", "test_data.RData"))
+save(test_data, file = here::here("data", "intermediate", "test_data.RData"))
 
 
 
