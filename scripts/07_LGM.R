@@ -281,6 +281,7 @@ model_base <- mplusObject(
   "estimator = ML;",
   MODEL = 
   "i s | t1@0 t2@3 t3* t4* t5*;",
+  # alternative: tech1 tech8?
   OUTPUT = "sampstat standardized;",
   usevariables = colnames(test_df), # alternative tech1 tech8;
   rdata = test_df
@@ -371,8 +372,8 @@ model_mixture0 <- update(
 ## regardless how bad it fits, it will be adjusted in the next step
 
 fit_mixture0 <- mplusModeler(model_mixture0,
-                             dataout = here("mplus_files", "model_mixture0.dat"),
-                             modelout = here("mplus_files", "model_mixture0.inp"),
+                             dataout = here("mplus_files", "m_mix0.dat"),
+                             modelout = here("mplus_files", "m_mix0.inp"),
                              check = TRUE, run = TRUE, hashfilename = FALSE,
                              Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
 
@@ -381,7 +382,53 @@ fit_mixture0 <- mplusModeler(model_mixture0,
 ## so definitely, a simple 2 class model is already better than a model that
 ## assumes one homogenous population for this question
 
-## CONTINUE HERE!!!
+## When checking the model fit, also look at error measures (RMSEA, CFI, TLI)
+
+## Fit criteria now negative, is this because the updated model is always 
+## compared against the baseline model? 
+
+## check this by coding the mixture model explicitly and inspecting fit
+## criteria! 
+
+## CONTINUE HERE
+model_mixture0_explicit <- mplusObject(...)
+
+## Next more complicated option: clustering (family level)
+model_mixture_clus0 <- update(
+  model_mixture0, 
+  VARIABLE = 	~ "usevar = t1-t5;
+               CLASSES = c(2);
+               cluster = FamilyNumber; ! might be too long and thus shortened
+               ! categorical = t1-t5;",
+  ANALYSIS = ~"type = mixture complex;
+                 starts = 100 20;",
+  MODEL = 
+    ~"%overall% 
+  ! this is still very unclear! change once read more about GMM
+  b0 by t1@1 t2@1 t3@1 t4@1 t5@1;
+  b1 by t1@0 t2@1 t3@2 t4@3 t5@4;
+  [t1@0 t2@0 t3@0 t4@0 t5@0]; 
+  t1* t2* t3* t4* t5*
+  b0*1;
+  b1*.2;
+  b0 with b1@0;
+  %c#1%
+  [b0*1 b1*.1];
+  %c#2%
+  [b0*5 b1*.1];"
+)
+
+fit_mixture_clus0 <- mplusModeler(
+  model_mixture_clus0,
+  dataout = here("mplus_files", "m_mix_clus0.dat"),
+  modelout = here("mplus_files", "m_mix_clus0.inp"),
+  check = TRUE, run = TRUE, hashfilename = FALSE,
+  Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+## Model is working!, clustering should be taken into account now 
+## at least from families, check if twin status can also be 
+## taken into account, check if models are correctly calculated with AIC 
+## difference
 
 
 ## example code for the update of models! always needs the tilde to 
