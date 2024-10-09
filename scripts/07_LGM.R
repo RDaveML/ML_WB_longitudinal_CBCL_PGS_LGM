@@ -30,7 +30,7 @@ options(scipen = 999)
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table", "MplusAutomation")
+               "stringr", "readxl", "data.table", "MplusAutomation", "glue")
 
 
 ## setting working directory
@@ -272,6 +272,16 @@ colnames(test_df)
 ## again saving vector of longitudinal var names
 var_t <- grep("^t[0-9]", colnames(test_df), value = TRUE)
 
+## changing column names of df (Mplus allows max 8 characters length)
+
+test_df <- test_df %>%
+  dplyr::rename("FamNr" = FamilyNumber,
+                "FISNr" = FISNumber)
+
+## changing ids to avoid large numbers causing trouble with Mplus
+#test_df$FISNr <- c(1:nrow(test_df))
+
+
 
 model_base <- mplusObject(
   VARIABLE =
@@ -302,6 +312,8 @@ fit_base <- mplusModeler(model_base,
 ## removing the .dat file to save memory and not confuse Mplus for the next
 ## model! 
 unlink(list.files(here("mplus_files"), pattern = "\\.dat$", full.names = TRUE))
+
+#-----------------------------------------------------------------------------
 
 old_model <- FALSE
 if(old_model){
@@ -343,30 +355,243 @@ if(old_model){
 }
 
 
-## next step: updating model making it a mixture with 2 latent classes!
 
-model_mixture0 <- update(
-  model_base, 
-  VARIABLE = 	~ "usevar = t1-t5;
-               CLASSES = c(2);
-               ! categorical = t1-t5;",
-  ANALYSIS = ~"type = mixture;
-                 starts = 100 20;",
+## next more complicated model: Multilevel latent growth curve model (no classes)
+## but every cluster (here individual) is allowed to 
+## have their own slope and intercept
+t1 <- Sys.time()
+model_base_ml <- mplusObject(
+  TITLE = "test multilevel LCGM",
+  VARIABLE = 
+    "usevar = t1-t5 FISNr;
+     categorical = t1-t5;
+     cluster = FISNr;",
+  ANALYSIS = 
+    "type = twolevel;
+     algorithm = integration;
+     processors = 7;
+     convergence = 0.01;
+     miterations = 500;",
   MODEL = 
-  ~"%overall% 
-  ! this is still very unclear! change once read more about GMM
-  b0 by t1@1 t2@1 t3@1 t4@1 t5@1;
-  b1 by t1@0 t2@1 t3@2 t4@3 t5@4;
-  [t1@0 t2@0 t3@0 t4@0 t5@0]; 
-  t1* t2* t3* t4* t5*
-  b0*1;
-  b1*.2;
-  b0 with b1@0;
-  %c#1%
-  [b0*1 b1*.1];
-  %c#2%
-  [b0*5 b1*.1];"
+    "%within%
+  iw sw | t1@0 t2@1 t3@2 t4@3 t5@4; !no within covariate (yet)
+    %between%
+  ib sb | t1@0 t2@1 t3@2 t4@3 t5@4;",
+  OUTPUT = "sampstat standardized tech1 tech4 tech8;",
+  usevariables = colnames(test_df), # alternative tech1 tech8;
+  rdata = test_df[1:500,]
 )
+
+## Here, for a simple multilevel model, I needed to specify within and 
+## between
+
+fit_base_ml <- mplusModeler(model_base_ml,
+                            dataout = here("mplus_files", "model_base.dat"),
+                         # note: data needs to be given to model! 
+                         # only solution seems to be to directly delete it 
+                         # afterwards!
+                         modelout = here("mplus_files", "model_base_ml.inp"),
+                         check = TRUE, run = TRUE, hashfilename = FALSE,
+                         Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+
+t2 <- Sys.time()
+
+print(t2 - t1)
+## 4.1 min runtime with adjusted settings (less strict convergence criterion,
+## less iterations, only 10% of sample, definitely needs to be parallelized)
+
+
+##-----------------------------------------------------------------------------
+
+## Next more complicated version: Adding family cluster
+t3 <- Sys.time()
+model_fam_ml <- mplusObject(
+  TITLE = "test multilevel LCGM",
+  VARIABLE = 
+    "usevar = t1-t5 FamNr;
+     categorical = t1-t5;
+     cluster = FamNr;
+     !IDVARIABLE = FISNr;",
+  ANALYSIS = 
+    "type = twolevel;
+     algorithm = integration;
+     processors = 7;
+     convergence = 0.01;
+     miterations = 500;",
+  MODEL = 
+    "%within%
+  iw sw | t1@0 t2@1 t3@2 t4@3 t5@4; !no within covariate (yet)
+  iw (0); ! setting starting value of within intercept at 0
+    %between%
+  ib sb | t1@0 t2@1 t3@2 t4@3 t5@4;",
+  OUTPUT = "sampstat standardized tech1 tech4 tech8;",
+  usevariables = colnames(test_df), # alternative tech1 tech8;
+  rdata = test_df[1:500,]
+)
+
+## Issue: Model seems to be with correct syntax but takes forever to run
+
+fit_fam_ml <- mplusModeler(model_fam_ml,
+                            dataout = here("mplus_files", "model_base.dat"),
+                            # note: data needs to be given to model! 
+                            # only solution seems to be to directly delete it 
+                            # afterwards!
+                            modelout = here("mplus_files", "model_fam_ml.inp"),
+                            check = TRUE, run = TRUE, hashfilename = FALSE,
+                            Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+t4 <- Sys.time()
+
+print(t4 - t3)
+## 3 min running time with adjusted settings (less strict convergence criterion,
+## less iterations, only 10% of sample, definitely needs to be parallelized), 
+## starting value of intercept to 0 helped convergence and made estimation a lot 
+## faster
+
+##-----------------------------------------------------------------------------
+
+## next step: adding the within level covariate (rater)
+
+## explicit coding of the rater: if else block
+
+## last two time points are always self-reports (YSR)
+## note: It makes sense to only do this inside the loop
+## and then within the Mplus model with the glue and the parameters
+## extract the last element of a vector that contains the variable names
+## of the rater coding
+
+
+if(length(test_q) == 4) { ## CBCL measure was taken 4 times
+  test_df <- test_df %>%
+    mutate(ra_t1 = 0, ## do those values need to be made NA if the score is missing?
+           ra_t2 = 0,
+           ra_t3 = 1,
+           ra_t4 = 1)
+} else if(length(test_q) == 5) { ## CBCL measure was taken 5 times
+  test_df <- test_df %>%
+    mutate(ra_t1 = 0,
+           ra_t2 = 0,
+           ra_t3 = 0,
+           ra_t4 = 1,
+           ra_t5 = 1)
+} else { ## CBCL measure was taken 6 times
+  test_df <- test_df %>% 
+    mutate(ra_t1 = 0,
+           ra_t2 = 0,
+           ra_t3 = 0,
+           ra_t4 = 0,
+           ra_t5 = 1,
+           ra_t6 = 1)
+  }
+
+## coding the same model with a within-person time-varying covariate (rater)
+## Next more complicated version: Adding family cluster
+
+## Note: This does not work because all rater coding variables
+## have 0 variance and only one category
+## Needs to be given to a long format variable then!
+
+rater <- FALSE
+
+if(rater){
+t5 <- Sys.time()
+model_rater_ml <- mplusObject(
+  TITLE = "test multilevel LCGM with rater covariate",
+  VARIABLE = 
+    "usevar = t1-t5 ra_t1-ra_t5 FISNr FamNr;
+     categorical = t1-t5 ra_t1-ra_t5; 
+     !nominal = ra_t1-ra_t5;
+     cluster = FamNr;
+     !IDVARIABLE = FISNr;",
+  ANALYSIS = 
+    "type = twolevel;
+     algorithm = integration;
+     processors = 7;
+     convergence = 0.01;
+     miterations = 500;",
+  MODEL = 
+    "%within%
+  iw sw | t1@0 t2@1 t3@2 t4@3 t5@4;
+  t1 on ra_t1;
+  t2 on ra_t2;
+  t3 on ra_t3;
+  t4 on ra_t4;
+  t5 on ra_t5;
+    %between%
+  ib sb | t1@0 t2@1 t3@2 t4@3 t5@4;",
+  OUTPUT = "sampstat standardized tech1 tech4 tech8;",
+  usevariables = colnames(test_df), # alternative tech1 tech8;
+  rdata = test_df[1:500,]
+)
+
+
+fit_rater_ml <- mplusModeler(model_rater_ml,
+                           dataout = here("mplus_files", "model_base.dat"),
+                           # note: data needs to be given to model! 
+                           # only solution seems to be to directly delete it 
+                           # afterwards!
+                           modelout = here("mplus_files", "model_rater_ml.inp"),
+                           check = TRUE, run = TRUE, hashfilename = FALSE,
+                           Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+t6 <- Sys.time()
+
+print(t6 - t5)
+
+## x min running time with adjusted settings (less strict convergence criterion,
+## less iterations, only 10% of sample, definitely needs to be parallelized)
+
+}
+
+##-----------------------------------------------------------------------------
+
+## Next step: updating model making it a mixture with 2 latent classes!
+## However, the family model still is not properly calculated to the end
+## needs to be set right first
+## keeping the option that participants are clustered in families
+
+t5 <- Sys.time()
+
+model_fam_mix <- mplusObject(
+  TITLE = "test 2 class growth mixture model",
+  VARIABLE = 
+    "usevar = t1-t5 FamNr;
+     categorical = t1-t5;
+     cluster = FamNr;
+     classes = c(2);",
+  ANALYSIS = 
+    "type = mixture complex;
+     algorithm = integration;
+     processors = 7;
+     convergence = 0.01;
+     miterations = 500;",
+  MODEL = 
+    "%overall%
+   b0 by t1@1 t2@1 t3@1 t4@1 t5@1;
+   b1 by t1@0 t2@1 t3@2 t4@3 t5@4;
+   [y1@0 y2@0 y3@0 y4@0 y5@0];
+   y1* y2* y3* y4* y5*
+   b0*1;
+   b1*.2;", ## no specification of starting values for the latent 
+  ## classes
+  OUTPUT = "sampstat standardized tech1 tech4 tech8;",
+  usevariables = colnames(test_df), # alternative tech1 tech8;
+  rdata = test_df[1:500,]
+)
+
+## Issue: Model seems to be with correct syntax but takes forever to run
+
+fit_fam_ml <- mplusModeler(model_fam_ml,
+                           dataout = here("mplus_files", "model_base.dat"),
+                           # note: data needs to be given to model! 
+                           # only solution seems to be to directly delete it 
+                           # afterwards!
+                           modelout = here("mplus_files", "model_fam_ml.inp"),
+                           check = TRUE, run = TRUE, hashfilename = FALSE,
+                           Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+
 ## note that the starting values are totally arbitrary, more material will be 
 ## helpful, now the only priority is that the model will run, 
 ## regardless how bad it fits, it will be adjusted in the next step
@@ -376,6 +601,9 @@ fit_mixture0 <- mplusModeler(model_mixture0,
                              modelout = here("mplus_files", "m_mix0.inp"),
                              check = TRUE, run = TRUE, hashfilename = FALSE,
                              Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+t6 <- Sys.time()
+
 
 ## It worked! 
 ## The model fit even got better! 
@@ -390,8 +618,75 @@ fit_mixture0 <- mplusModeler(model_mixture0,
 ## check this by coding the mixture model explicitly and inspecting fit
 ## criteria! 
 
-## CONTINUE HERE
-model_mixture0_explicit <- mplusObject(...)
+model_mixture0_explicit <- mplusObject(
+  VARIABLE =
+    "usevar = t1-t5;
+     CLASSES = c(2);
+     categorical = t1-t5;",
+  ANALYSIS = 
+    "type = mixture;
+     algorithm = integration;
+     starts = 100 20;",
+  MODEL = 
+    "%overall% 
+  i s | t1@0 t2@1 t3@2 t4@3 t5@4;",
+  OUTPUT = "sampstat standardized tech4;", # alternative tech1 tech8;
+  usevariables = colnames(test_df),
+  rdata = test_df
+)
+
+fit_mixture0_expl <- mplusModeler(model_mixture0_explicit,
+                             dataout = here("mplus_files", "m_mix0_expl.dat"),
+                             modelout = here("mplus_files", "m_mix0_expl.inp"),
+                             check = TRUE, run = TRUE, hashfilename = FALSE,
+                             Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+
+## This specification leads to solution with non-defined positive covariance
+## matrix between b0 and b1
+
+##-----------------------------------------------------------------------------
+
+## another option: Loop over models with 1-3 classes, BUT DON'T DEFINE 
+## THE MODEL PARAMETERs
+models_mix0_loop  <- lapply(1:5, function(k) {
+  model_enum  <- mplusObject(
+    
+    TITLE = glue("Class {k}"), 
+    # the glue function I should probably use for my loops and automatization as well
+    VARIABLE = glue(
+    "usevar = t1-t5;
+     categorical = t1-t5;
+     classes = c({k});"), # !categorical = 
+    
+    ANALYSIS = 
+    "algorithm = integration; 
+    type = mixture;
+    stseed = 5212020;
+    starts = 200 100;",
+    ## note: no specification of the parameters 
+    MODEL = 
+      "%overall% 
+  i s | t1@0 t2@1 t3@2 t4@3 t5@4;",
+    OUTPUT = "sampstat standardized residual tech4 tech11 tech14;",
+    
+    #PLOT = 
+    #  "type = plot3; 
+    #series = Enjoy-Adult(*);",
+    
+    usevariables = colnames(test_df),
+    rdata = test_df)
+  
+  model_enum_fit <- mplusModeler(model_enum, 
+                                 dataout = glue(here("mplus_files",
+                                                     "m_mix0_loop.dat")),
+                               modelout = glue(here("mplus_files",
+                                                    "c{k}_m_mix0_loop.inp")) ,
+                               ## dataout is always the same, modelout specified 
+                               ## according to current value of k
+                               check = TRUE, run = TRUE, hashfilename = FALSE)
+})
+
+## Note: With 200 100 starts, this takes VERY LONG to RUN!!!
 
 ## Next more complicated option: clustering (family level)
 model_mixture_clus0 <- update(
