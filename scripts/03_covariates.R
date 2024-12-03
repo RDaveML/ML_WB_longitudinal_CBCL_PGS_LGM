@@ -6,7 +6,7 @@
 #   
 # Date (begin): 2024-08-05
 #
-# Script Name: 04_covariates.R
+# Script Name: 03_covariates.R
 #
 # Script Description: This script extracts the pre-registered covariates 
 # for the analysis. Those will then be saved and merged to the dataset at a
@@ -209,7 +209,7 @@ covariates_names <- names(data_covariates)[names(data_covariates)
 
 ## saving covariate data and names of covariates to call later in the filtering
 ## script
-save(data_covariates, file = here::here("scripts", "data_covariates.RData"))
+save(data_covariates, file = here::here("data", "intermediate", "data_covariates.RData"))
 save(covariates_names, file = here::here("scripts", "names_covariates.RData"))
 
 ## question still where in filtering script to apply filtering

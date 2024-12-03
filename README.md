@@ -23,3 +23,6 @@ The project contains the following areas of coding and analysis:
 - assessment of model stability
 - model evaluation
 
+Requests for obtaining the raw data need to be sent directly to the NTR (https://ntr-data-request.psy.vu.nl/). A data request needs to
+state for which purposes the data are requested and which safety measures will be taken. Additionally, an analysis or replication plan
+needs to be appended to the data request.

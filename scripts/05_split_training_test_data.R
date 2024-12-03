@@ -39,8 +39,9 @@ load(here::here("data", "intermediate", "data_full.RData"))
 #------------------------------------------------------------------------------
 
 ## Important step before actual analysis: For trial calculations, permute 
-## IDs so one remains blind for data
-permute <- TRUE
+## IDs so one remains blind for data, once creating ML models, permute 
+## first, copy this code and execute it
+permute <- FALSE
 if(permute){
   data_full <- transform(data_full, FISNumber = sample(FISNumber))
 }
@@ -49,7 +50,7 @@ if(permute){
 
 ## Initializing the test data as the full dataset
 ## Train and test indices instead of subsetting dataframes repeatedly
-set.seed(1608)
+set.seed(2911)
 
 family_ids <- unique(data_full$FamilyNumber)
 family_sizes <- table(data_full$FamilyNumber)
@@ -80,9 +81,13 @@ while (length(train_indices) < 0.8 * total_rows) {
 train_data <- data_full[train_indices, ]
 test_data <- data_full[-train_indices, ]
 
+train_ids <- train_data %>%
+  select(FISNumber) %>%
+  pull()
 
-
-
+test_ids <- test_data %>%
+  select(FISNumber) %>%
+  pull()
 
 
 ## saving training and test data
@@ -90,8 +95,12 @@ save(train_data, file = here::here("data", "intermediate", "train_data.RData"))
 
 save(test_data, file = here::here("data", "intermediate", "test_data.RData"))
 
+## saving training and test ids 
+save(train_ids, file = here::here("data", "intermediate", "indices_train.RData"))
 
+save(test_ids, file = here::here("data", "intermediate", "indices_test.RData"))
 
+## end of script
 
 
 
