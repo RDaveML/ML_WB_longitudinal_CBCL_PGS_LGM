@@ -51,37 +51,97 @@ cat("saved indices of participants in training set loaded in; name of object: ",
     "\n", "\n")
 
 
+### NOTE: STILL INSERT the B different splits here: Baseline will be 
+## done with split 1, the rest then runs separate baseline preprocessing
+
+
+## ultimate splitting test and training data
+data_train <- data_model_A %>% 
+  filter(FISNumber %in% train_ids)
+
+data_test <- data_model_A %>%
+  filter(FISNumber %in% test_ids)
+
+
 ## Pre-processing steps
 
-
-## A) Imputing data
-
-## Note: Outlier removal by means of the Minimum covariance determinant (MCD)
-## can only be done with imputed data
-
-
-
-
-
-
-## B) Outlier removal: Minimum covariance determinant (MCD)
-
-
-
-
-
-## C) ML preprocessing
+## A) standard ML preprocessing
 
 ## i) near-zero variance
+nzv_train <- nearZeroVar(data_train)
 
-## ii) high correlation
+data_train <- data_train[-nzv_train]
+
+
+## ii) high correlation (note that all columns must be numeric, df not changed here)
+num_data <- data_train[, sapply(data_train, is.numeric)]
+
+high_cor = findCorrelation(cor(num_data,
+                               use = "pairwise.complete.obs"),
+                           cutoff = .95)
 
 ## iii) multicollinearity
+
+## coding linear model where all variables are predictors, then check VIF, 
+## if higher than 5 (or 10), remove
 
 ## iv) linear dependence
 
 ## v) one-hot encoding categorical features
 
+##----------------------------------------------------------------------------
+
+
+## B) Imputing data
+
+## Note: Outlier removal by means of the Minimum covariance determinant (MCD)
+## can only be done with imputed data
+
+## before imputation: Take out FISNR! it should not be part of the KNN procedure
+df_FISNr_train <- data_train %>%
+  select(FISNumber)
+
+df_FISNr_test <- data_test %>%
+  select(FISNumber)
+
+df_A_train <- data_train %>%
+  select(-FISNumber)
+
+df_A_test <- data_test %>%
+  select(-FISNumber)
+
+
+## KNN imputation: 
+t1 <- Sys.time()
+
+cat("Beginning KNN imputation training data")
+k_pad <- round(sqrt(ncol(df_A_train)))
+train_pre_obj <- preProcess(df_A_train,
+                            method = "knnImpute",
+                            k = k_pad)
+
+t2 <- Sys.time()
+
+cat("duration KNN imputation object: ", difftime(t2, t1, unit = "mins"))
+
+df_A_train_imp <- predict(train_pre_obj, df_A_train)
+
+t3 <- Sys.time()
+
+cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"))
+
+df_A_test_imp <- predict(train_pre_obj, df_A_test)
+
+t4 <- Sys.time()
+
+cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"))
+
+sum(colMeans(is.na(df_A_train_imp)) != 0)
+sum(colMeans(is.na(df_A_test_imp)) != 0)
+
+##-----------------------------------------------------------------------------
+
+## C) feature selection: Elastic net
 
 
 
