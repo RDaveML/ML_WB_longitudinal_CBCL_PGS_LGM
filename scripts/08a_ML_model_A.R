@@ -89,6 +89,7 @@ nzv_train <- nearZeroVar(data_train)
 
 data_train <- data_train[-nzv_train]
 
+## re-adding outcome in case removed
 if("QoL_simple" %in% colnames(data_train)){
   data_train <- data_train
 } else { 
@@ -100,7 +101,7 @@ num_data <- data_train[, sapply(data_train, is.numeric)]
 
 high_cor <- findCorrelation(cor(num_data,
                                use = "pairwise.complete.obs"),
-                           cutoff = .90)
+                           cutoff = .95)
 
 data_train <- data_train[-high_cor]
 
@@ -131,8 +132,6 @@ combos <- findLinearCombos(as.matrix(num_data_imputed))$remove
 
 data_train <- data_train[-combos]
 
-## note: here, outcome was also removed! 
-
 if("QoL_simple" %in% colnames(data_train)){
   data_train <- data_train
 } else { 
@@ -140,12 +139,8 @@ if("QoL_simple" %in% colnames(data_train)){
 }
 
 
-
-
 ## iv) multicollinearity
 vars_no_id <- colnames(data_train)[-1]
-
-
 ## feature selection by means of elastic net also takes care of 
 ## removing highly collinear variables
 
@@ -209,7 +204,22 @@ vars_mult_class
 
 ## all the multilabel classes are likely numeric
 ## those can be recoded 
-## CONTINUE HERE!!! 
+
+## printing unique values of multiclass variables
+for(var in vars_mult_class){
+  print(var)
+  print(unique(data_train[[var]]))
+}
+
+## all those variabels can be recoded to numeric variables
+data_train <- data_train %>%
+  mutate_at(vars_mult_class, as.numeric)
+
+## no more multiclass variables
+
+## same for test data
+data_test <- data_test %>%
+  mutate_at(vars_mult_class, as.numeric)
 
 ##----------------------------------------------------------------------------
 
@@ -217,7 +227,8 @@ vars_mult_class
 ## B) Imputing data
 
 ## Note: Outlier removal by means of the Minimum covariance determinant (MCD)
-## can only be done with imputed data
+## can only be done with imputed data and will only be done as sensitivity
+## analysis after obtaining stable ML models
 
 ## before imputation: Take out FISNR! it should not be part of the KNN procedure
 df_FISNr_train <- data_train %>%
@@ -260,6 +271,7 @@ cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"))
 
 sum(colMeans(is.na(df_A_train_imp)) != 0)
 sum(colMeans(is.na(df_A_test_imp)) != 0)
+## columns in test set are those which are not yet removed
 
 ##-----------------------------------------------------------------------------
 
@@ -268,5 +280,106 @@ sum(colMeans(is.na(df_A_test_imp)) != 0)
 ## Now begin with the actual ML : Find functions to do glm with optimized 
 ## CV alpha and lambda! 
 
+## also: Implement Bayesian optimization of the hypertuning parameters 
+## alpha and lambda
 
+## Also remember that you don't want the FISnr as a predictor! 
+
+## No more preprocessing needed, KNN impute already centered and scaled
+
+## train control object: Adaptive cross-validation, see e.g. Habets et al., 2023
+## Kuhn: caret package
+# Define the train control with adaptive cross-validation
+## 10-fold CV
+adaptControl <- trainControl(method = "adaptive_cv",
+                             number = 10, repeats = 10,
+                             adaptive = list(min = 5, alpha = 0.05, 
+                                             method = "gls", complete = FALSE),
+                             search = "random")
+
+set.seed(7)
+
+# Train an elastic net regression model
+
+## Note: This is adaptive hypertuning, what I want is Bayesian hypertuning
+
+## here: still adjust names and later also work in the random seeds at a 
+## tune length of e.g. 1000 (see Habets et al.)
+t0_el <- Sys.time()
+test_glm <- train(QoL_simple ~ ., data = df_A_train_imp,
+                   method = "glmnet",  # Elastic net regression model
+                   trControl = adaptControl, 
+                   metric = "RMSE", # Metric for regression
+                   tuneLength = 15, # Number of random hyperparameter settings
+                   verbose = TRUE)
+
+# Output the best model and parameters
+print(test_glm)
+
+t1_el <- Sys.time()
+
+cat("duration adaptive hypertuning with length 15: ",
+    difftime(t1_el, t0_el, unit = "mins"))
+
+## Next: extract non-zero coefficients predictors
+
+## CONTINUE HERE!!!
+
+## Comparison with Bayesian hypertuning:
+t0_bayes <- Sys.time()
+
+## defining function that gives out the needed parameters
+
+adjusted <- FALSE
+
+if(adjusted){
+
+# Define the objective function
+elastic_net_bayes <- function(alpha, lambda) {
+  
+  # Train the model using caret with glmnet
+  model <- train(mpg ~ ., 
+                 data = training,
+                 method = "glmnet",
+                 trControl = trainControl(method = "cv", number = 5),  # 5-fold cross-validation
+                 preProc = c("center", "scale"),
+                 tuneGrid = data.frame(alpha = alpha, lambda = lambda))
+  
+  # Return the negative RMSE (Bayesian optimization minimizes by default)
+  list(Score = -min(model$results$RMSE), Pred = 0)
+}
+
+## Run bayesian optimization
+
+# Set the search bounds for hyperparameters
+bounds <- list(alpha = c(0, 1), lambda = c(0.001, 1))
+
+# Run Bayesian optimization
+set.seed(123)
+opt_results <- bayesOpt(FUN = elastic_net_bayes, bounds = bounds, initPoints = 5, iters.n = 10)
+
+# View the best parameters
+print(opt_results$Best_Pars)
+
+
+# Extract best parameters
+best_params <- opt_results$Best_Pars
+
+# Train the final model using the optimal parameters
+final_model <- train(mpg ~ ., 
+                     data = training,
+                     method = "glmnet",
+                     trControl = trainControl(method = "none"),  # No CV for the final model
+                     preProc = c("center", "scale"),
+                     tuneGrid = data.frame(alpha = best_params$alpha, lambda = best_params$lambda))
+
+# Evaluate the final model on the test set
+## predictions <- predict(final_model, newdata = testing)
+## postResample(predictions, testing$mpg)
+}
+
+t1_bayes <- Sys.time()
+
+cat("duration bayesian hypertuning: ",
+    difftime(t1_bayes, t0_bayes, unit = "mins"))
 
