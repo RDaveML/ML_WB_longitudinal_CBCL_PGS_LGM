@@ -32,7 +32,8 @@ options(scipen = 999, expressions = 50000)
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table", "caret", "car")
+               "stringr", "readxl", "data.table", "caret", "car", "glmnet",
+               "ParBayesianOptimization")
 
 
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
@@ -315,38 +316,45 @@ test_glm <- train(QoL_simple ~ ., data = df_A_train_imp,
 
 # Output the best model and parameters
 print(test_glm)
+test_glm$bestTune
 
 t1_el <- Sys.time()
 
 cat("duration adaptive hypertuning with length 15: ",
     difftime(t1_el, t0_el, unit = "mins"))
 
-## Next: extract non-zero coefficients predictors
+## Next: extract non-zero coefficients predictors, also performance on test set
+## and training set
 
-## CONTINUE HERE!!!
+## -----------------------------------------------------------------------
 
 ## Comparison with Bayesian hypertuning:
 t0_bayes <- Sys.time()
 
 ## defining function that gives out the needed parameters
 
-adjusted <- FALSE
-
-if(adjusted){
-
 # Define the objective function
 elastic_net_bayes <- function(alpha, lambda) {
   
   # Train the model using caret with glmnet
-  model <- train(mpg ~ ., 
-                 data = training,
+  model <- train(QoL_simple ~ ., 
+                 data = df_A_train_imp,
                  method = "glmnet",
-                 trControl = trainControl(method = "cv", number = 5),  # 5-fold cross-validation
-                 preProc = c("center", "scale"),
+                 trControl = trainControl(method = "cv", number = 10), # 10-fold CV
+                 # preProc = c("center", "scale"),
                  tuneGrid = data.frame(alpha = alpha, lambda = lambda))
   
-  # Return the negative RMSE (Bayesian optimization minimizes by default)
-  list(Score = -min(model$results$RMSE), Pred = 0)
+  score <- -min(model$results$RMSE)  # Negative RMSE
+  # Function finds maxima so inverting the output!
+  
+  # Debug: Print the parameters and score
+  
+  ## extracting optimal alpha and lambda from model
+  alpha <- model$bestTune$alpha
+  lambda <- model$bestTune$lambda
+  cat("Alpha:", alpha, "Lambda:", lambda, "Score:", score, "\n")
+  
+  return(list(Score = score, alpha = alpha, lambda = lambda))  # Ensure proper list format
 }
 
 ## Run bayesian optimization
@@ -355,28 +363,45 @@ elastic_net_bayes <- function(alpha, lambda) {
 bounds <- list(alpha = c(0, 1), lambda = c(0.001, 1))
 
 # Run Bayesian optimization
-set.seed(123)
-opt_results <- bayesOpt(FUN = elastic_net_bayes, bounds = bounds, initPoints = 5, iters.n = 10)
+set.seed(7)
+opt_results <- bayesOpt(FUN = elastic_net_bayes, bounds = bounds,
+                        initPoints = 5, iters.n = 10)
 
 # View the best parameters
-print(opt_results$Best_Pars)
+print(opt_results)
 
 
 # Extract best parameters
-best_params <- opt_results$Best_Pars
+
+## This is the command you were looking for! 
+data.frame(getBestPars(opt_results))
+best_params <- getBestPars(opt_results)
+
+
 
 # Train the final model using the optimal parameters
-final_model <- train(mpg ~ ., 
-                     data = training,
+final_model_bayes <- train(QoL_simple ~ ., 
+                     data = df_A_train_imp,
                      method = "glmnet",
                      trControl = trainControl(method = "none"),  # No CV for the final model
-                     preProc = c("center", "scale"),
-                     tuneGrid = data.frame(alpha = best_params$alpha, lambda = best_params$lambda))
+                     # preProc = c("center", "scale"),
+                     tuneGrid = data.frame(alpha = best_params$alpha,
+                                           lambda = best_params$lambda))
+
+## model now runs, check again if it still works if you adjust the optimization
+## function to explicitly include the lambda and alpha! Might want to adjust this 
+## depending on the model you are running! 
+
+## output of model looks a bit weird, still check 
+## what si the model performance on training set 
+
+## CONTINUE HERE, check if the adapted function still picks it up correctly
+
+
 
 # Evaluate the final model on the test set
 ## predictions <- predict(final_model, newdata = testing)
 ## postResample(predictions, testing$mpg)
-}
 
 t1_bayes <- Sys.time()
 
