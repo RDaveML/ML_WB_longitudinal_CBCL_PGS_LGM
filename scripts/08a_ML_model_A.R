@@ -244,13 +244,28 @@ df_A_train <- data_train %>%
 df_A_test <- data_test %>%
   select(-FISNumber)
 
+## IMPORTANT: Do KNN IMPUTATION AGAIN! WITHOUT THE OUTCOME! Calculate anew
+## and safe the workspace again
+
 
 ## KNN imputation: 
 t1 <- Sys.time()
 
+x_train <- df_A_train %>%
+  select(-QoL_simple)
+
+y_train <- df_A_train %>%
+  select(QoL_simple)
+
+x_test <- df_A_test %>%
+  select(-QoL_simple)
+
+y_test <- df_A_test %>%
+  select(QoL_simple)
+
 cat("Beginning KNN imputation training data")
-k_pad <- round(sqrt(ncol(df_A_train)))
-train_pre_obj <- preProcess(df_A_train,
+k_pad <- round(sqrt(ncol(x_train)))
+train_pre_obj <- preProcess(x_train,
                             method = "knnImpute",
                             k = k_pad)
 
@@ -258,25 +273,33 @@ t2 <- Sys.time()
 
 cat("duration KNN imputation object: ", difftime(t2, t1, unit = "mins"))
 
-df_A_train_imp <- predict(train_pre_obj, df_A_train)
+x_train_imp <- predict(train_pre_obj, x_train)
 
 t3 <- Sys.time()
 
 cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"))
 
-df_A_test_imp <- predict(train_pre_obj, df_A_test)
+x_test_imp <- predict(train_pre_obj, x_test)
 
 t4 <- Sys.time()
 
 cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"))
 
-sum(colMeans(is.na(df_A_train_imp)) != 0)
-sum(colMeans(is.na(df_A_test_imp)) != 0)
+sum(colMeans(is.na(x_train_imp)) != 0)
+sum(colMeans(is.na(x_test_imp)) != 0)
 ## columns in test set are those which are not yet removed
 
 ##-----------------------------------------------------------------------------
 
+
+
 ## C) feature selection: Elastic net
+
+## reappending y to x (outcome to training set), for caret functions
+x_train_comb <- cbind(y_train, x_train_imp)
+
+x_test_comb <- cbind(y_test, x_test_imp)
+
 
 ## Now begin with the actual ML : Find functions to do glm with optimized 
 ## CV alpha and lambda! 
@@ -307,7 +330,7 @@ set.seed(7)
 ## here: still adjust names and later also work in the random seeds at a 
 ## tune length of e.g. 1000 (see Habets et al.)
 t0_el <- Sys.time()
-test_glm <- train(QoL_simple ~ ., data = df_A_train_imp,
+glm_adapt <- train(QoL_simple ~ ., data = x_train_comb,
                    method = "glmnet",  # Elastic net regression model
                    trControl = adaptControl, 
                    metric = "RMSE", # Metric for regression
@@ -315,8 +338,8 @@ test_glm <- train(QoL_simple ~ ., data = df_A_train_imp,
                    verbose = TRUE)
 
 # Output the best model and parameters
-print(test_glm)
-test_glm$bestTune
+print(glm_adapt)
+glm_adapt$bestTune
 
 t1_el <- Sys.time()
 
@@ -328,6 +351,8 @@ cat("duration adaptive hypertuning with length 15: ",
 
 ## -----------------------------------------------------------------------
 
+
+
 ## Comparison with Bayesian hypertuning:
 t0_bayes <- Sys.time()
 
@@ -338,7 +363,7 @@ elastic_net_bayes <- function(alpha, lambda) {
   
   # Train the model using caret with glmnet
   model <- train(QoL_simple ~ ., 
-                 data = df_A_train_imp,
+                 data = x_train_comb,
                  method = "glmnet",
                  trControl = trainControl(method = "cv", number = 10), # 10-fold CV
                  # preProc = c("center", "scale"),
@@ -354,7 +379,9 @@ elastic_net_bayes <- function(alpha, lambda) {
   lambda <- model$bestTune$lambda
   cat("Alpha:", alpha, "Lambda:", lambda, "Score:", score, "\n")
   
-  return(list(Score = score, alpha = alpha, lambda = lambda))  # Ensure proper list format
+  return(list(Score = score))  # Ensure proper list format
+  ## here add other components that should be included in the final summary
+  ## table provided by the bayesOpt function
 }
 
 ## Run bayesian optimization
@@ -378,10 +405,15 @@ data.frame(getBestPars(opt_results))
 best_params <- getBestPars(opt_results)
 
 
+t1_bayes <- Sys.time()
+
+cat("duration bayesian hypertuning: ",
+    difftime(t1_bayes, t0_bayes, unit = "mins"))
+
 
 # Train the final model using the optimal parameters
 final_model_bayes <- train(QoL_simple ~ ., 
-                     data = df_A_train_imp,
+                     data = x_train_comb,
                      method = "glmnet",
                      trControl = trainControl(method = "none"),  # No CV for the final model
                      # preProc = c("center", "scale"),
@@ -392,19 +424,39 @@ final_model_bayes <- train(QoL_simple ~ .,
 ## function to explicitly include the lambda and alpha! Might want to adjust this 
 ## depending on the model you are running! 
 
-## output of model looks a bit weird, still check 
-## what si the model performance on training set 
-
-## CONTINUE HERE, check if the adapted function still picks it up correctly
 
 
+t2_bayes <- Sys.time()
 
-# Evaluate the final model on the test set
-## predictions <- predict(final_model, newdata = testing)
-## postResample(predictions, testing$mpg)
+cat("duration model training after bayesian hypertuning: ",
+    difftime(t2_bayes, t1_bayes, unit = "mins"))
 
-t1_bayes <- Sys.time()
 
-cat("duration bayesian hypertuning: ",
-    difftime(t1_bayes, t0_bayes, unit = "mins"))
 
+
+## evaluating both models on test set and check if performance is
+## significantly different (You have this somewhere in your resources)
+
+## adaptive tuning
+predictions_adapt <- predict(glm_adapt, newdata = x_test_comb)
+
+## Bayesian hypertuning
+predictions_bayes <- predict(final_model_bayes, newdata = x_test_comb)
+
+## extracting measures (note: both arguments need to be vectors!)
+perf_measures_adapt <- postResample(pred = predictions_adapt,
+                                    obs = y_test$QoL_simple)
+print(perf_measures_adapt)
+perf_measures_bayes <- postResample(predictions_bayes,
+                                    obs = y_test$QoL_simple)
+print(perf_measures_bayes)
+
+
+## compare outcomes (statistically compare the performances)
+t.test(perf_measures_adapt, perf_measures_bayes, paired = TRUE)
+
+## t-test indicates no significant difference: 
+
+## NEXT UP: compare the CIs
+
+## CONTINUE HERE
