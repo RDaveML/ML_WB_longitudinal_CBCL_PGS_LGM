@@ -412,7 +412,7 @@ cat("duration bayesian hypertuning: ",
 
 
 # Train the final model using the optimal parameters
-final_model_bayes <- train(QoL_simple ~ ., 
+model_bayes <- train(QoL_simple ~ ., 
                      data = x_train_comb,
                      method = "glmnet",
                      trControl = trainControl(method = "none"),  # No CV for the final model
@@ -441,7 +441,7 @@ cat("duration model training after bayesian hypertuning: ",
 predictions_adapt <- predict(glm_adapt, newdata = x_test_comb)
 
 ## Bayesian hypertuning
-predictions_bayes <- predict(final_model_bayes, newdata = x_test_comb)
+predictions_bayes <- predict(model_bayes, newdata = x_test_comb)
 
 ## extracting measures (note: both arguments need to be vectors!)
 perf_measures_adapt <- postResample(pred = predictions_adapt,
@@ -457,6 +457,122 @@ t.test(perf_measures_adapt, perf_measures_bayes, paired = TRUE)
 
 ## t-test indicates no significant difference: 
 
-## NEXT UP: compare the CIs
+## for this elastic net modeling, both hypertuning approaches seem to work 
+## equally well, now, extrcating the coefficients, see which model gives 
+## more feature selection
 
-## CONTINUE HERE
+
+## extracting features with non-zero coefficients
+
+final_model_adapt <- glm_adapt$finalModel
+
+# cv tuned lambda
+best_lambda_adapt <- glm_adapt$bestTune$lambda
+
+# Extract the coefficients for tuned lambda
+coef_matrix_adapt <- coef(final_model_adapt, s = best_lambda_adapt)
+
+# Convert to df
+coef_df_adapt <- as.data.frame(as.matrix(coef_matrix_adapt))
+coef_df_adapt$Predictor <- rownames(coef_df_adapt)
+rownames(coef_df_adapt) <- NULL
+
+# Filter for non-zero coefficients
+non_zero_coef_adapt <- coef_df_adapt[coef_df_adapt[, 1] != 0, ]
+
+# Display the predictors with non-zero coefficients
+non_zero_predictors_adapt <- non_zero_coef_adapt$Predictor
+non_zero_predictors_adapt
+
+cat("count of non-0 coefficient predictors from elastic net with
+    adaptive hypertuning: ", length(non_zero_predictors_adapt))
+
+
+## same for bayesian optimized tuned model
+final_model_bayes <- model_bayes$finalModel
+
+# cv tuned lambda
+best_lambda_bayes <- final_model_bayes$lambdaOpt
+
+# Extract the coefficients for tuned lambda
+coef_matrix_bayes <- coef(final_model_bayes, s = best_lambda_bayes)
+
+# Convert to df
+coef_df_bayes <- as.data.frame(as.matrix(coef_matrix_bayes))
+coef_df_bayes$Predictor <- rownames(coef_df_bayes)
+rownames(coef_df_bayes) <- NULL
+
+# Filter for non-zero coefficients
+non_zero_coef_bayes <- coef_df_bayes[coef_df_bayes[, 1] != 0, ]
+
+# Display the predictors with non-zero coefficients
+non_zero_predictors_bayes <- non_zero_coef_bayes$Predictor
+non_zero_predictors_bayes
+
+cat("count of non-0 coefficient predictors from elastic net with
+    bayesian hypertuning: ", length(non_zero_predictors_bayes))
+
+intersect(non_zero_predictors_adapt, non_zero_predictors_bayes)
+intersect_count <- 0
+for(predictor in non_zero_predictors_adapt){
+  if(predictor %in% non_zero_predictors_bayes){
+    cat(predictor, " contained in non zero predictors Bayes", "\n", "\n")
+    intersect_count <- intersect_count + 1
+  }
+}
+intersect_count
+
+## features remaining after adaptive hypertuning: 40
+
+## features remaining after Bayesian hypertuning: 118
+## (40 from adaptive + 78 additional)
+
+predictors_A_adapt <- grep("(Intercept)",
+                          non_zero_predictors_adapt,
+                          value = TRUE, invert = TRUE)
+
+
+predictors_A_bayes <- grep("(Intercept)",
+                          non_zero_predictors_bayes,
+                          value = TRUE, invert = TRUE)
+
+
+save(predictors_A_bayes,
+     file = here::here("data", "intermediate", "predictors_model_A.RData"))
+
+## Predictor set saved: Next up: training the level one models to check for
+## stability
+
+
+## ----------------------------------------------------------------------------
+
+## Next: On reduced training set (only features in non-zero predictors), train 
+## the baseline models 
+
+
+## A) Random forest (with Bayesian parameter hypertuning)
+
+
+
+## B) Support vector regression (with bayesian parameter hypertuning)
+
+
+
+
+## C) XGBoost (with bayesian parameter hypertuning)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
