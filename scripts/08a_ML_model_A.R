@@ -33,7 +33,7 @@ options(scipen = 999, expressions = 50000)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
-               "ParBayesianOptimization")
+               "ParBayesianOptimization", "ranger", "e1071")
 
 
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
@@ -54,6 +54,11 @@ temp <- load(here::here("data", "intermediate", "indices_test.RData"))
 cat("saved indices of participants in training set loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
+## loading in df with FISNr and FamilyNumber
+load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
+temp <- load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
+cat("saved df with FISNr and FamilyNumber loaded in; name of object: ", "'", temp, "'",
+    "\n", "\n")
 
 ### NOTE: STILL INSERT the B different splits here: Baseline will be 
 ## done with split 1, the rest then runs separate baseline preprocessing
@@ -296,9 +301,11 @@ sum(colMeans(is.na(x_test_imp)) != 0)
 ## C) feature selection: Elastic net
 
 ## reappending y to x (outcome to training set), for caret functions
-x_train_comb <- cbind(y_train, x_train_imp)
+x_train_comb <- cbind(df_FISNr_train, y_train, x_train_imp) %>%
+  left_join(df_FIS_fam, by = "FISNumber")
 
-x_test_comb <- cbind(y_test, x_test_imp)
+x_test_comb <- cbind(y_test, x_test_imp) %>%
+  left_join(df_FIS_fam, by = "FISNumber")
 
 
 ## Now begin with the actual ML : Find functions to do glm with optimized 
@@ -315,13 +322,26 @@ x_test_comb <- cbind(y_test, x_test_imp)
 ## Kuhn: caret package
 # Define the train control with adaptive cross-validation
 ## 10-fold CV
+
+# Create custom 10-fold cross-validation keeping families together
+folds <- groupKFold(group = x_train_comb$FamilyNumber, k = 10)
+
 adaptControl <- trainControl(method = "adaptive_cv",
                              number = 10, repeats = 10,
                              adaptive = list(min = 5, alpha = 0.05, 
                                              method = "gls", complete = FALSE),
-                             search = "random")
+                             search = "random",
+                             index = folds)
 
 set.seed(7)
+
+
+# Define predictors by excluding ID and FamilyNumber and outcome
+predictor_vars <- setdiff(names(x_train_comb), c("FISNumber", "FamilyNumber",
+                                                 "QoL_simple"))
+
+# Create a formula dynamically
+formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " + ")))
 
 # Train an elastic net regression model
 
@@ -330,7 +350,8 @@ set.seed(7)
 ## here: still adjust names and later also work in the random seeds at a 
 ## tune length of e.g. 1000 (see Habets et al.)
 t0_el <- Sys.time()
-glm_adapt <- train(QoL_simple ~ ., data = x_train_comb,
+glm_adapt <- train(formula, ## use of formula here as FISNr and Family number needed to be excluded!
+                   data = x_train_comb,
                    method = "glmnet",  # Elastic net regression model
                    trControl = adaptControl, 
                    metric = "RMSE", # Metric for regression
@@ -344,14 +365,12 @@ glm_adapt$bestTune
 t1_el <- Sys.time()
 
 cat("duration adaptive hypertuning with length 15: ",
-    difftime(t1_el, t0_el, unit = "mins"))
+    difftime(t1_el, t0_el, unit = "mins"), " minutes")
 
 ## Next: extract non-zero coefficients predictors, also performance on test set
 ## and training set
 
 ## -----------------------------------------------------------------------
-
-
 
 ## Comparison with Bayesian hypertuning:
 t0_bayes <- Sys.time()
@@ -362,10 +381,12 @@ t0_bayes <- Sys.time()
 elastic_net_bayes <- function(alpha, lambda) {
   
   # Train the model using caret with glmnet
-  model <- train(QoL_simple ~ ., 
+  model <- train(formula, 
                  data = x_train_comb,
                  method = "glmnet",
-                 trControl = trainControl(method = "cv", number = 10), # 10-fold CV
+                 trControl = trainControl(method = "cv",
+                                          number = 10,
+                                          index = folds), # 10-fold CV
                  # preProc = c("center", "scale"),
                  tuneGrid = data.frame(alpha = alpha, lambda = lambda))
   
@@ -408,11 +429,11 @@ best_params <- getBestPars(opt_results)
 t1_bayes <- Sys.time()
 
 cat("duration bayesian hypertuning: ",
-    difftime(t1_bayes, t0_bayes, unit = "mins"))
+    difftime(t1_bayes, t0_bayes, unit = "mins"), " minutes")
 
 
 # Train the final model using the optimal parameters
-model_bayes <- train(QoL_simple ~ ., 
+model_bayes <- train(formula, 
                      data = x_train_comb,
                      method = "glmnet",
                      trControl = trainControl(method = "none"),  # No CV for the final model
@@ -429,7 +450,7 @@ model_bayes <- train(QoL_simple ~ .,
 t2_bayes <- Sys.time()
 
 cat("duration model training after bayesian hypertuning: ",
-    difftime(t2_bayes, t1_bayes, unit = "mins"))
+    difftime(t2_bayes, t1_bayes, unit = "mins"), " minutes")
 
 
 
@@ -458,7 +479,7 @@ t.test(perf_measures_adapt, perf_measures_bayes, paired = TRUE)
 ## t-test indicates no significant difference: 
 
 ## for this elastic net modeling, both hypertuning approaches seem to work 
-## equally well, now, extrcating the coefficients, see which model gives 
+## equally well, now, extracting the coefficients, see which model gives 
 ## more feature selection
 
 
@@ -477,11 +498,35 @@ coef_df_adapt <- as.data.frame(as.matrix(coef_matrix_adapt))
 coef_df_adapt$Predictor <- rownames(coef_df_adapt)
 rownames(coef_df_adapt) <- NULL
 
+## Adressing the issue that there are factors in the dataset, those need
+## to keep their original name, otherwise, the vector cannot be used for
+## filtering the training set for the non-0 predictors
+factor_predictors <- names(x_train_comb)[sapply(x_train_comb, is.factor)]
+
+# Add an extra column to track the original predictor name
+coef_df_adapt$OriginalPredictor <- coef_df_adapt$Predictor
+
+# Check if the predictor is a factor level and strip the factor level part
+coef_df_adapt$OriginalPredictor <- sapply(coef_df_adapt$Predictor, function(predictor) {
+  # Check if the predictor matches any factor column name pattern
+  match <- factor_predictors[sapply(factor_predictors, function(factor) startsWith(predictor, factor))]
+  if (length(match) > 0) {
+    # If matched, return the original factor column name
+    return(match[1])
+  } else {
+    # If not a factor, return the predictor as is
+    return(predictor)
+  }
+})
+
+
 # Filter for non-zero coefficients
 non_zero_coef_adapt <- coef_df_adapt[coef_df_adapt[, 1] != 0, ]
 
+# Get the unique original column names for predictors with non-zero coefficients
+non_zero_predictors_adapt <- unique(non_zero_coef_adapt$OriginalPredictor)
+
 # Display the predictors with non-zero coefficients
-non_zero_predictors_adapt <- non_zero_coef_adapt$Predictor
 non_zero_predictors_adapt
 
 cat("count of non-0 coefficient predictors from elastic net with
@@ -502,11 +547,38 @@ coef_df_bayes <- as.data.frame(as.matrix(coef_matrix_bayes))
 coef_df_bayes$Predictor <- rownames(coef_df_bayes)
 rownames(coef_df_bayes) <- NULL
 
+## Adressing the issue that there are factors in the dataset, those need
+## to keep their original name, otherwise, the vector cannot be used for
+## filtering the training set for the non-0 predictors
+factor_predictors <- names(x_train_comb)[sapply(x_train_comb, is.factor)]
+
+# Add an extra column to track the original predictor name
+coef_df_bayes$OriginalPredictor <- coef_df_bayes$Predictor
+
+# Check if the predictor is a factor level and strip the factor level part
+coef_df_bayes$OriginalPredictor <- sapply(coef_df_bayes$Predictor, function(predictor) {
+  # Check if the predictor matches any factor column name pattern
+  match <- factor_predictors[sapply(factor_predictors, function(factor) startsWith(predictor, factor))]
+  if (length(match) > 0) {
+    # If matched, return the original factor column name
+    return(match[1])
+  } else {
+    # If not a factor, return the predictor as is
+    return(predictor)
+  }
+})
+
+
+
+
 # Filter for non-zero coefficients
 non_zero_coef_bayes <- coef_df_bayes[coef_df_bayes[, 1] != 0, ]
 
+# Get the unique original column names for predictors with non-zero coefficients
+non_zero_predictors_bayes <- unique(non_zero_coef_bayes$OriginalPredictor)
+
 # Display the predictors with non-zero coefficients
-non_zero_predictors_bayes <- non_zero_coef_bayes$Predictor
+# non_zero_predictors_bayes <- non_zero_coef_bayes$Predictor
 non_zero_predictors_bayes
 
 cat("count of non-0 coefficient predictors from elastic net with
@@ -514,9 +586,9 @@ cat("count of non-0 coefficient predictors from elastic net with
 
 intersect(non_zero_predictors_adapt, non_zero_predictors_bayes)
 intersect_count <- 0
-for(predictor in non_zero_predictors_adapt){
-  if(predictor %in% non_zero_predictors_bayes){
-    cat(predictor, " contained in non zero predictors Bayes", "\n", "\n")
+for(predictor in non_zero_predictors_bayes){
+  if(predictor %in% non_zero_predictors_adapt){
+    cat(predictor, " contained in non zero predictors adapt", "\n", "\n")
     intersect_count <- intersect_count + 1
   }
 }
@@ -524,8 +596,7 @@ intersect_count
 
 ## features remaining after adaptive hypertuning: 40
 
-## features remaining after Bayesian hypertuning: 118
-## (40 from adaptive + 78 additional)
+## features remaining after Bayesian hypertuning: 23
 
 predictors_A_adapt <- grep("(Intercept)",
                           non_zero_predictors_adapt,
@@ -549,8 +620,137 @@ save(predictors_A_bayes,
 ## Next: On reduced training set (only features in non-zero predictors), train 
 ## the baseline models 
 
+## vector for relevant variables in the actual round of machine learning
+vars_ML <- c("FISNumber", "FamilyNumber", "QoL_simple", predictors_A_bayes)
+
+
+
+## creating definitive training set for the level 1 models (formula will eliminate)
+## the ID variables and outcome from predictors
+x_train_ML <- x_train_comb %>%
+  select(all_of(vars_ML))
+
+## check if column names add up
+ncol(x_train_ML) == length(predictors_A_bayes) + 3
+
+# Define predictors by excluding ID and FamilyNumber and outcome
+predictor_vars <- setdiff(names(x_train_ML), c("FISNumber", "FamilyNumber",
+                                               "QoL_simple"))
+# Create a formula dynamically
+formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " + ")))
+
+# Create custom 10-fold cross-validation keeping families together
+set.seed(7)
+folds <- groupKFold(group = x_train_ML$FamilyNumber, k = 10)
+
+
 
 ## A) Random forest (with Bayesian parameter hypertuning)
+set.seed(7)
+
+
+## hypertuning parameters that need to be tuned (as pre-registered):
+
+## -	Number of trees
+## -	Maximum number of features to consider at each split
+## -	Maximum depth of a tree
+## -	Minimum number of samples required to split a node 
+## -	Minimum number of samples required at each leaf node (in ranger the same
+## as Minimum number of samples required to split a node)
+
+t0_bayes_rf <- Sys.time()
+
+## defining function that gives out the needed parameters
+
+# Define the objective function
+rf_bayes <- function(num.trees, mtry, max.depth, min.node.size) {
+  
+  # Train the model using caret with glmnet
+  model <- train(formula, 
+                 data = x_train_ML,
+                 method = "ranger",
+                 trControl = trainControl(method = "cv",
+                                          number = 10,
+                                          index = folds), # 10-fold CV
+                 # preProc = c("center", "scale"),
+                 tuneGrid = data.frame(num.trees = num.trees,
+                                       mtry = mtry,
+                                       max.depth = max.depth,
+                                       min.node.size = min.node.size,
+                                       splitrule = "variance")) ## no variation of splitrule
+  
+  score <- -min(model$results$RMSE)  # Negative RMSE
+  # Function finds maxima so inverting the output!
+  
+  ## extracting optimal hyperparamters
+  #alpha <- model$bestTune$alpha
+  #lambda <- model$bestTune$lambda
+  #cat("Alpha:", alpha, "Lambda:", lambda, "Score:", score, "\n")
+  
+  return(list(Score = score))  # Ensure proper list format
+  ## here add other components that should be included in the final summary
+  ## table provided by the bayesOpt function
+}
+
+## Run bayesian optimization
+
+# Set the search bounds for hyperparameters
+bounds_rf <- list(num.trees = c(100, 1500),
+                  mtry = c(1, ncol(x_train_ML) - 3),
+                  max.depth = c(3, 30),
+                  min.node.size = c(5, 50))
+
+# Run Bayesian optimization
+set.seed(7)
+
+
+## This now throws an error, Fehler in bayesOpt(FUN = rf_bayes, bounds = bounds_rf, initPoints = 5,  : 
+## Errors encountered in initialization are listed above. 
+## 5: The tuning parameter grid should have columns mtry, splitrule, min.node.size
+
+opt_results_rf <- bayesOpt(FUN = rf_bayes, bounds = bounds_rf,
+                           initPoints = 5, iters.n = 10)
+
+# View the best parameters
+print(opt_results_rf)
+
+
+# Extract best parameters
+
+## This is the command you were looking for! 
+data.frame(getBestPars(opt_results_rf))
+best_params_rf <- getBestPars(opt_results_rf)
+
+
+t1_bayes_rf <- Sys.time()
+
+cat("duration bayesian hypertuning (random forest): ",
+    difftime(t1_bayes_rf, t0_bayes_rf, unit = "mins"), " minutes")
+
+
+# Train the final model using the optimal parameters
+model_bayes_rf <- train(formula, 
+                        data = x_train_ML,
+                        method = "ranger",
+                        trControl = trainControl(method = "none"),
+                        # No CV for the final model
+                        tuneGrid = data.frame(num.trees = ,
+                                              mtry = ,
+                                              max.depth = ,
+                                              min.node.size = ))
+
+
+
+
+t2_bayes_rf <- Sys.time()
+
+cat("duration model training (random forest) after bayesian hypertuning: ",
+    difftime(t2_bayes_rf, t1_bayes_rf, unit = "mins"), " minutes")
+
+
+
+
+
 
 
 
@@ -558,9 +758,10 @@ save(predictors_A_bayes,
 
 
 
-
 ## C) XGBoost (with bayesian parameter hypertuning)
 
+## How to do this is in your vault where you inspect Bayesian hypertuning
+## there is an XGBoost example
 
 
 

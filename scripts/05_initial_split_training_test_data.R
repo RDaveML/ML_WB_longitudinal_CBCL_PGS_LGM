@@ -35,6 +35,12 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
 ## loading in full cleaned dataset (CBLC + IDs + covariates, PGS still missing)
 load(here::here("data", "intermediate", "data_full.RData"))
 
+## initial step: saving df with FISNr and FamilyNumber (needed later when
+## creating training folds
+df_FIS_fam <- data_full %>%
+  select(FISNumber, FamilyNumber)
+save(df_FIS_fam, file = here::here("data", "intermediate", "FIS_fam_nr.RData"))
+
 
 #------------------------------------------------------------------------------
 
