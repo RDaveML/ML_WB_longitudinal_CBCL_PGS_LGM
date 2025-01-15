@@ -33,7 +33,7 @@ options(scipen = 999, expressions = 50000)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
-               "ParBayesianOptimization", "ranger", "e1071")
+               "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC")
 
 
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
@@ -452,9 +452,6 @@ t2_bayes <- Sys.time()
 cat("duration model training after bayesian hypertuning: ",
     difftime(t2_bayes, t1_bayes, unit = "mins"), " minutes")
 
-
-
-
 ## evaluating both models on test set and check if performance is
 ## significantly different (You have this somewhere in your resources)
 
@@ -651,75 +648,71 @@ set.seed(7)
 
 ## hypertuning parameters that need to be tuned (as pre-registered):
 
-## -	Number of trees
-## -	Maximum number of features to consider at each split
-## -	Maximum depth of a tree
-## -	Minimum number of samples required to split a node 
+## -	Number of trees: num.trees
+## -	Maximum number of features to consider at each split: mtry
+## -	Maximum depth of a tree: max.depth
+## -	Minimum number of samples required to split a node: min.node.size
 ## -	Minimum number of samples required at each leaf node (in ranger the same
 ## as Minimum number of samples required to split a node)
 
 t0_bayes_rf <- Sys.time()
 
 ## defining function that gives out the needed parameters
-
-# Define the objective function
-rf_bayes <- function(num.trees, mtry, max.depth, min.node.size) {
+# Define the objective function for Bayesian optimization
+rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
   
-  # Train the model using caret with glmnet
-  model <- train(formula, 
-                 data = x_train_ML,
-                 method = "ranger",
-                 trControl = trainControl(method = "cv",
-                                          number = 10,
-                                          index = folds), # 10-fold CV
-                 # preProc = c("center", "scale"),
-                 tuneGrid = data.frame(num.trees = num.trees,
-                                       mtry = mtry,
-                                       max.depth = max.depth,
-                                       min.node.size = min.node.size,
-                                       splitrule = "variance")) ## no variation of splitrule
+  # Convert parameters to integers
+  mtry <- as.integer(mtry)
+  max.depth <- as.integer(max.depth)
+  min.node.size <- as.integer(min.node.size)
+  num.trees <- as.integer(num.trees)
   
-  score <- -min(model$results$RMSE)  # Negative RMSE
-  # Function finds maxima so inverting the output!
+  # Train the random forest model
+  model <- ranger(
+    formula = formula,
+    data = x_train_ML,
+    mtry = mtry,
+    max.depth = max.depth,
+    min.node.size = min.node.size,
+    num.trees = num.trees
+  )
   
-  ## extracting optimal hyperparamters
-  #alpha <- model$bestTune$alpha
-  #lambda <- model$bestTune$lambda
-  #cat("Alpha:", alpha, "Lambda:", lambda, "Score:", score, "\n")
+  # Calculate predictions and RMSE
+  predictions <- model$predictions
+  actuals <- x_train_ML$QoL_simple  # Extract target variable
+  rmse <- sqrt(mean((actuals - predictions)^2))
   
-  return(list(Score = score))  # Ensure proper list format
-  ## here add other components that should be included in the final summary
-  ## table provided by the bayesOpt function
+  # Return negative RMSE (Bayesian optimization minimizes the score)
+  return(list(Score = -rmse))
 }
 
-## Run bayesian optimization
-
-# Set the search bounds for hyperparameters
-bounds_rf <- list(num.trees = c(100, 1500),
-                  mtry = c(1, ncol(x_train_ML) - 3),
-                  max.depth = c(3, 30),
-                  min.node.size = c(5, 50))
+# Define the search bounds for hyperparameters
+bounds_rf <- list(
+  mtry = c(1L, ncol(x_train_ML) - 3L),
+  max.depth = c(3L, 30L),
+  min.node.size = c(1L, 50L),
+  num.trees = c(100L, 1500L)
+)
 
 # Run Bayesian optimization
 set.seed(7)
-
-
-## This now throws an error, Fehler in bayesOpt(FUN = rf_bayes, bounds = bounds_rf, initPoints = 5,  : 
-## Errors encountered in initialization are listed above. 
-## 5: The tuning parameter grid should have columns mtry, splitrule, min.node.size
-
-opt_results_rf <- bayesOpt(FUN = rf_bayes, bounds = bounds_rf,
-                           initPoints = 5, iters.n = 10)
+opt_results_rf <- bayesOpt(
+  FUN = rf_bayes,
+  bounds = bounds_rf,
+  initPoints = 5,
+  iters.n = 10,
+  acq = "ei"
+)
 
 # View the best parameters
 print(opt_results_rf)
 
-
-# Extract best parameters
-
-## This is the command you were looking for! 
-data.frame(getBestPars(opt_results_rf))
+# Extract the best parameters
 best_params_rf <- getBestPars(opt_results_rf)
+print(best_params_rf)
+
+
+## Run bayesian optimization
 
 
 t1_bayes_rf <- Sys.time()
@@ -728,19 +721,35 @@ cat("duration bayesian hypertuning (random forest): ",
     difftime(t1_bayes_rf, t0_bayes_rf, unit = "mins"), " minutes")
 
 
+
+## CONTINUE HERE!!!
+
 # Train the final model using the optimal parameters
+## I can still train the final model with caret! 
 model_bayes_rf <- train(formula, 
                         data = x_train_ML,
                         method = "ranger",
                         trControl = trainControl(method = "none"),
                         # No CV for the final model
-                        tuneGrid = data.frame(num.trees = ,
-                                              mtry = ,
-                                              max.depth = ,
-                                              min.node.size = ))
+                        tuneGrid = data.frame(num.trees = seq(100, 500, 100),
+                                              mtry = c(1:3),
+                                              max.depth = seq(3, 30, 3),
+                                              min.node.size = seq(5, 50, 5),
+                                              splitrule = c("variance", "extratrees")))
 
 
-
+model_rf_stand <- train(formula, 
+                        data = x_train_ML,
+                        method = "ranger",
+                        trControl = trainControl(
+                          method = "cv", number = 10,
+                          index = folds),
+                        # No CV for the final model
+                        tuneGrid = expand.grid(# num.trees = seq(100, 500, 100),
+                                              mtry = c(1:3),
+                                              # max.depth = seq(3, 30, 3),
+                                              min.node.size = seq(5, 50, 5),
+                                              splitrule = c("variance", "extratrees")))
 
 t2_bayes_rf <- Sys.time()
 
@@ -750,8 +759,31 @@ cat("duration model training (random forest) after bayesian hypertuning: ",
 
 
 
+t1_adapt_rf <- Sys.time()
+
+adaptControl_rf <- trainControl(method = "adaptive_cv",
+                                number = 10, repeats = 10, ## 10-fold CV
+                                adaptive = list(min = 5, alpha = 0.05, 
+                                                method = "gls",
+                                                complete = FALSE),
+                                search = "random",
+                                index = folds)
+
+model_adapt_rf <- train(formula, 
+                        data = x_train_ML,
+                        method = "ranger",
+                        trControl = adaptControl_rf, 
+                        metric = "RMSE", # Metric for regression
+                        tuneLength = 15, # Number of random hyperparameter settings
+                        verbose = TRUE)
+
+t2_adapt_rf <- Sys.time()
+
+cat("duration model training (rf) after adaptive hypertuning: ",
+    difftime(t2_adapt_rf, t1_adapt_rf, unit = "mins"), " minutes")
 
 
+model_adapt_rf$bestTune
 
 
 ## B) Support vector regression (with bayesian parameter hypertuning)
