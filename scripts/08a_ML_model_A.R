@@ -677,6 +677,8 @@ rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
     num.trees = num.trees
   )
   
+  ## STILL BUILD IN CROSS VALIDATION!!!!
+  
   # Calculate predictions and RMSE
   predictions <- model$predictions
   actuals <- x_train_ML$QoL_simple  # Extract target variable
@@ -721,44 +723,10 @@ cat("duration bayesian hypertuning (random forest): ",
     difftime(t1_bayes_rf, t0_bayes_rf, unit = "mins"), " minutes")
 
 
+## alternative: adaptive hypertuning, code might be reused, now silenced
 
-## CONTINUE HERE!!!
-
-# Train the final model using the optimal parameters
-## I can still train the final model with caret! 
-model_bayes_rf <- train(formula, 
-                        data = x_train_ML,
-                        method = "ranger",
-                        trControl = trainControl(method = "none"),
-                        # No CV for the final model
-                        tuneGrid = data.frame(num.trees = seq(100, 500, 100),
-                                              mtry = c(1:3),
-                                              max.depth = seq(3, 30, 3),
-                                              min.node.size = seq(5, 50, 5),
-                                              splitrule = c("variance", "extratrees")))
-
-
-model_rf_stand <- train(formula, 
-                        data = x_train_ML,
-                        method = "ranger",
-                        trControl = trainControl(
-                          method = "cv", number = 10,
-                          index = folds),
-                        # No CV for the final model
-                        tuneGrid = expand.grid(# num.trees = seq(100, 500, 100),
-                                              mtry = c(1:3),
-                                              # max.depth = seq(3, 30, 3),
-                                              min.node.size = seq(5, 50, 5),
-                                              splitrule = c("variance", "extratrees")))
-
-t2_bayes_rf <- Sys.time()
-
-cat("duration model training (random forest) after bayesian hypertuning: ",
-    difftime(t2_bayes_rf, t1_bayes_rf, unit = "mins"), " minutes")
-
-
-
-
+adapt <- FALSE
+if(adapt){
 t1_adapt_rf <- Sys.time()
 
 adaptControl_rf <- trainControl(method = "adaptive_cv",
@@ -785,9 +753,146 @@ cat("duration model training (rf) after adaptive hypertuning: ",
 
 model_adapt_rf$bestTune
 
+}
+
+
+
+## CONTINUE HERE!!!
+
+# Train the final model using the optimal parameters
+## I can still train the final model with caret! 
+model_bayes_rf <- train(formula, 
+                        data = x_train_ML,
+                        method = "ranger",
+                        trControl = trainControl(method = "none"),
+                        # No CV for the final model
+                        splitrule = "variance",
+                        ## here, insert input from the optimal parameters!
+                        ...)
+
+
+t2_bayes_rf <- Sys.time()
+
+cat("duration model training (random forest) after bayesian hypertuning: ",
+    difftime(t2_bayes_rf, t1_bayes_rf, unit = "mins"), " minutes")
+
+
+
+
+
+##-----------------------------------------------------------------------------
 
 ## B) Support vector regression (with bayesian parameter hypertuning)
 
+## Idea for checking 1 categorical tuning parameter: run model with the 
+## grid of continuous parameters for all options of the categorical parameter
+## then, save only the best performing, in the end, also save the categorical
+## parameter alongside the optimized score!
+
+## parameters to hypertune:
+## -	C parameter (penalty for each misclassified datapoint)
+## -	Kernel function (transformation method to allow linear separation of data points)
+## -	Gamma parameter (similarity radius)
+
+
+## Run again, CONTINUE HERE!!!
+
+t0_bayes_svr <- Sys.time()
+
+
+# Training control
+train_control <- trainControl(
+  method = "cv",
+  number = 10,
+  verboseIter = FALSE
+)
+
+## defining function that gives out the needed parameters
+# define the objective function for Bayesian optimization
+svr_bayes <- function(C, sigma, degree, scale, method) {
+  
+  # Dynamically select parameters based on the method
+  method <- ifelse(method < 0.5, "svmRadial", "svmPoly")
+  ## also use this later to select the method
+  
+  if(method == "svmRadial") {
+    tune_grid <- expand.grid(
+      C = C,
+      sigma = sigma
+    )
+    model_method <- "svmRadial"
+  } else if (method == "svmPoly") {
+    tune_grid <- expand.grid(
+      C = C,
+      degree = degree,
+      scale = scale
+    )
+    model_method <- "svmPoly"
+  }
+  
+  # Train the model
+  set.seed(7)
+  model <- train(
+    formula,
+    data = x_train_ML,
+    method = model_method,
+    trControl = train_control,
+    tuneGrid = tune_grid
+  )
+  
+  score <- -min(model$results$RMSE)
+  
+  # Return negative RMSE (Bayesian optimization minimizes the score)
+  return(list(Score = score))
+  
+}
+
+# Define the search bounds for hyperparameters
+bounds_svr <- list(
+  C = c(0.1, 10),            # Range for C
+  sigma = c(0.001, 0.1),     # Range for sigma
+  degree = c(2, 4),          # Range for degree
+  scale = c(0.001, 0.1),     # Range for scale
+  method = c(0, 1)           # Encodes categorical: 0 = Radial, 1 = Poly
+)
+
+# Run Bayesian optimization
+set.seed(7)
+opt_results_svr <- bayesOpt(
+  FUN = svr_bayes,
+  bounds = bounds_svr,
+  initPoints = 10,
+  iters.n = 30,
+  acq = "ei",
+  verbose = TRUE
+)
+
+# View the best parameters
+print(opt_results_svr)
+
+# Extract the best parameters
+best_params_svr <- getBestPars(opt_results_svr)
+print(best_params_svr)
+
+
+t1_bayes_svr <- Sys.time()
+
+cat("duration bayesian hypertuning (support vector regression): ",
+    difftime(t1_bayes_svr, t0_bayes_svr, unit = "mins"), " minutes")
+
+
+## train final model
+
+if(best_params_svr$method < 0.5) {
+  method_svr <- "svmRadial"
+  ## here also add other parameters
+} else {
+  method_svr <- "svmPoly"
+  ## here also add other parameters
+}
+
+
+##-----------------------------------------------------------------------------
 
 
 ## C) XGBoost (with bayesian parameter hypertuning)
