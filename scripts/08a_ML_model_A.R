@@ -33,7 +33,8 @@ options(scipen = 999, expressions = 50000)
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
-               "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC")
+               "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
+               "xgboost")
 
 
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
@@ -713,6 +714,15 @@ print(opt_results_rf)
 best_params_rf <- getBestPars(opt_results_rf)
 print(best_params_rf)
 
+tune_grid_rf <- data.frame(
+  ## note: tuneGrid only accepts mtry, min.node.size and splitrule for rf
+  mtry = best_params_rf$mtry,
+  # max.depth = best_params_rf$max.depth,
+  min.node.size = best_params_rf$min.node.size,
+  # num.trees = best_params_rf$num.trees,
+  splitrule = "variance"
+)
+
 
 ## Run bayesian optimization
 
@@ -757,8 +767,6 @@ model_adapt_rf$bestTune
 
 
 
-## CONTINUE HERE!!!
-
 # Train the final model using the optimal parameters
 ## I can still train the final model with caret! 
 model_bayes_rf <- train(formula, 
@@ -766,9 +774,12 @@ model_bayes_rf <- train(formula,
                         method = "ranger",
                         trControl = trainControl(method = "none"),
                         # No CV for the final model
-                        splitrule = "variance",
-                        ## here, insert input from the optimal parameters!
-                        ...)
+                        tuneGrid = tune_grid_rf,
+                        ## this needs to added separately in caret / ranger
+                        max.depth = best_params_rf$max.depth, 
+                        num.trees = best_params_rf$num.trees
+                        ###...
+                        )
 
 
 t2_bayes_rf <- Sys.time()
@@ -776,6 +787,9 @@ t2_bayes_rf <- Sys.time()
 cat("duration model training (random forest) after bayesian hypertuning: ",
     difftime(t2_bayes_rf, t1_bayes_rf, unit = "mins"), " minutes")
 
+## model run! now extract measures!
+
+## cONTINUE HERE!!!
 
 
 
@@ -795,7 +809,7 @@ cat("duration model training (random forest) after bayesian hypertuning: ",
 ## -	Gamma parameter (similarity radius)
 
 
-## Run again, CONTINUE HERE!!!
+## Run again,
 
 t0_bayes_svr <- Sys.time()
 
@@ -804,7 +818,7 @@ t0_bayes_svr <- Sys.time()
 train_control <- trainControl(
   method = "cv",
   number = 10,
-  verboseIter = FALSE
+  verboseIter = TRUE
 )
 
 ## defining function that gives out the needed parameters
@@ -885,17 +899,197 @@ cat("duration bayesian hypertuning (support vector regression): ",
 
 if(best_params_svr$method < 0.5) {
   method_svr <- "svmRadial"
-  ## here also add other parameters
+  tune_grid_svr <- data.frame(
+    C = best_params_svr$C, ## optimal C
+    sigma = best_params_svr$sigma ## optimal sigma
+  )
+  ## here also add other parameters (or not)
 } else {
   method_svr <- "svmPoly"
+  tune_grid_svr <- data.frame(
+    C = best_params_svr$C, ## optimal C
+    degree = best_params_svr$degree, ## optimal degree
+    scale = best_params_svr$scale # ## optimal scale,
+  )
   ## here also add other parameters
 }
+
+
+model_bayes_svr <- train(formula, 
+                        data = x_train_ML,
+                        method = method_svr,
+                        trControl = trainControl(method = "none"),
+                        # No CV for the final model
+                        tuneGrid = tune_grid_svr #,
+                        ## ...
+                        )
+
+
+t2_bayes_svr <- Sys.time()
+
+cat("duration model training (support vector regression)", "\n", 
+    "after bayesian hypertuning: ",
+    difftime(t2_bayes_svr, t1_bayes_svr, unit = "mins"), " minutes")
+
+
+## extract output
+
+## CONTINUE HERE!!!
 
 
 ##-----------------------------------------------------------------------------
 
 
 ## C) XGBoost (with bayesian parameter hypertuning)
+
+## note: default option of booster argument ("gbtree") will be used
+
+## parameters to hypertune:
+## Tree-specific:
+
+  ## -	Number of trees:
+    ## num_parallel_tree
+
+  ## -	Maximum depth of a tree: 
+    ## max_depth
+
+  ## -	Minimum sum of instance weight required to create new node in a tree: 
+    ## min_child_weight
+
+  ## -	Percentage of cases (rows) used for each tree construction:
+    ## subsample
+
+  ## -	Percentage of predictors (columns) used for each tree construction:
+    ## colsample_bytree
+
+## Learning task-specific (controlling the overall behavior and the learning process of the model):
+
+  ## -	Learning rate eta (step size shrinkage used in updates to prevent overfitting):
+    ## eta
+
+  ## -	Gamma (minimum loss reduction required to make a further partition on a leaf node of the tree:
+    ## gamma
+
+  ## -	Lambda (L2 regularization term on weights)
+    ## lambda
+
+  ## -	Alpha (L1 regularization term on weights):
+    ## alpha
+         
+
+xgb_adapted <- FALSE
+
+?xgb.cv
+?xgboost
+## this code now needs to be adapted to run the bayesian hypertuning for 
+## an XGBoost model!
+
+if(xgb_adapted){ ## linter the indentation away after the function is finished
+  scoringFunction <- function(
+    num_parallel_tree, max_depth, min_child_weight, subsample, colsample_bytree,
+    eta, gamma, lambda, alpha) {
+    
+    dtrain <- xgboost::xgb.DMatrix(as.matrix(x_train_ML),
+                                   label = as.matrix(x_train_ML$QoL_simple))
+    
+
+    
+    Pars <- list(
+      booster = "gbtree",
+      ## using default option, no variation of this parameter
+      num_parallel_tree = num_parallel_tree,
+      max_depth = max_depth,
+      min_child_weight = min_child_weight,
+      subsample = subsample,
+      colsample_bytree = colsample_bytree,
+      eta = eta,
+      gamma = gamma,
+      lambda = lambda,
+      alpha = alpha, 
+      objective = 'reg:squarederror', ## default option, sensible? 
+      eval_metric = "rmse"
+    )
+    
+    ## remember that you still have to work in the folds here!
+    
+    xgbcv <- xgb.cv(
+      params = Pars,
+      data = dtrain,
+      nround = 100,
+      folds = Folds,
+      early_stopping_rounds = 100,
+      maximize = TRUE,
+      verbose = 1
+    )
+    
+    return(
+      list(Score = min(xgbcv$evaluation_log$test_rmse_mean)
+           , nrounds = xgbcv$best_iteration
+      )
+    )
+    
+  }
+  
+  #------------------------------------------------------------------------------#
+  #### Bounds
+  #------------------------------------------------------------------------------#
+  
+  
+## CONTINUE HERE!!!
+  
+  ## This is to be worked out: How to sensibly set the bounds?
+  bounds <- list(
+    num_parallel_tree = num_parallel_tree,
+    max_depth = c(1L, 5L),
+    min_child_weight = c(0, 25),
+    subsample = c(0.1, 1),
+    colsample_bytree = c(0.5,1L),
+    eta = c(0.01,0.1),
+    gamma = c(0.1,50L), 
+    lambda = lambda,
+    alpha = alpha
+  )
+  
+  
+  #------------------------------------------------------------------------------#
+  #### To run in parallel
+  #------------------------------------------------------------------------------#
+  
+  ## Still check how exactly this works
+  
+  
+  cl <- makeCluster(parallel::detectCores() - 1)
+  registerDoParallel(cl)
+  clusterExport(cl,c('Folds','train_x', "train_y"))
+  clusterEvalQ(cl,expr= {
+    library(xgboost)
+  })
+  
+  tWithPar <- system.time(
+    optObj <- bayesOpt(
+      FUN = scoringFunction
+      , bounds = bounds
+      , initPoints = 7 
+      , iters.n = (parallel::detectCores() - 1)*2 
+      , iters.k = (parallel::detectCores() - 1)*2 
+      , parallel = TRUE
+      , verbose = 1
+    )
+  )
+  
+  
+  stopCluster(cl)
+  registerDoSEQ()
+  
+  
+  #------------------------------------------------------------------------------#
+  #### Printing results
+  #------------------------------------------------------------------------------#
+  optObj$scoreSummary
+  getBestPars(optObj)
+}
+
+
 
 ## How to do this is in your vault where you inspect Bayesian hypertuning
 ## there is an XGBoost example
