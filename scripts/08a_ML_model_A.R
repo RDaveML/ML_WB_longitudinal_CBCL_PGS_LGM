@@ -22,6 +22,9 @@
 #
 #
 
+## getting complete duration
+t00 <- Sys.time()
+
 # Set options
 cat("SETTING OPTIONS... \n\n", sep = "")
 
@@ -34,7 +37,7 @@ options(scipen = 999, expressions = 50000)
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
-               "xgboost")
+               "xgboost", "parallel", "doParallel")
 
 
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
@@ -305,9 +308,41 @@ sum(colMeans(is.na(x_test_imp)) != 0)
 x_train_comb <- cbind(df_FISNr_train, y_train, x_train_imp) %>%
   left_join(df_FIS_fam, by = "FISNumber")
 
-x_test_comb <- cbind(y_test, x_test_imp) %>%
+x_test_comb <- cbind(df_FISNr_test, y_test, x_test_imp) %>%
   left_join(df_FIS_fam, by = "FISNumber")
 
+
+## Preprocessing step: One hot encode factor columns
+
+
+one_hot <- TRUE ## change this to True when running the entire script
+## again on cluster
+
+if(one_hot){
+
+  factor_cols <- names(x_train_comb)[sapply(x_train_comb, is.factor)]
+  
+  one_hot_encoded <- model.matrix(~ . - 1, data = x_train_comb[, factor_cols,
+                                                               drop = FALSE])
+  
+  # Remove the original factor column from the dataset
+  x_train_comb <- x_train_comb %>% select(-all_of(factor_cols))
+  
+  # [, !names(x_train_comb) %in% factor_cols]
+  
+  # Combine the one-hot encoded columns with the rest of the dataset
+  x_train_comb <- cbind(x_train_comb, one_hot_encoded)
+  
+  ## same for test set
+  one_hot_encoded <- model.matrix(~ . - 1, data = x_test_comb[, factor_cols,
+                                                               drop = FALSE])
+  
+  # Remove the original factor column from the dataset
+  x_test_comb <- x_test_comb[, !names(x_test_comb) %in% factor_cols]
+  
+  # Combine the one-hot encoded columns with the rest of the dataset
+  x_test_comb <- cbind(x_test_comb, one_hot_encoded)
+}
 
 ## Now begin with the actual ML : Find functions to do glm with optimized 
 ## CV alpha and lambda! 
@@ -372,6 +407,8 @@ cat("duration adaptive hypertuning with length 15: ",
 ## and training set
 
 ## -----------------------------------------------------------------------
+
+## CONTINUE HERE!!! 2025-01-24 (run all overnight)
 
 ## Comparison with Bayesian hypertuning:
 t0_bayes <- Sys.time()
@@ -499,6 +536,14 @@ rownames(coef_df_adapt) <- NULL
 ## Adressing the issue that there are factors in the dataset, those need
 ## to keep their original name, otherwise, the vector cannot be used for
 ## filtering the training set for the non-0 predictors
+
+## Note, this was fixed by one-hot encoding earlier
+
+## earlier pice of code to adjust name of predictors, not needed anymore 
+## because factors a priori one-hot encoded
+factor_conversion <- TRUE
+
+if(factor_conversion == FALSE){
 factor_predictors <- names(x_train_comb)[sapply(x_train_comb, is.factor)]
 
 # Add an extra column to track the original predictor name
@@ -517,6 +562,7 @@ coef_df_adapt$OriginalPredictor <- sapply(coef_df_adapt$Predictor, function(pred
   }
 })
 
+}
 
 # Filter for non-zero coefficients
 non_zero_coef_adapt <- coef_df_adapt[coef_df_adapt[, 1] != 0, ]
@@ -545,11 +591,22 @@ coef_df_bayes <- as.data.frame(as.matrix(coef_matrix_bayes))
 coef_df_bayes$Predictor <- rownames(coef_df_bayes)
 rownames(coef_df_bayes) <- NULL
 
+
+## CONTINUE HERE!! You need to run this all again before correctly doing xgb
+## because the variables changed, instead of 1 factor, 4 dummies! 
+## run again! 
+
 ## Adressing the issue that there are factors in the dataset, those need
 ## to keep their original name, otherwise, the vector cannot be used for
 ## filtering the training set for the non-0 predictors
 factor_predictors <- names(x_train_comb)[sapply(x_train_comb, is.factor)]
 
+
+## earlier pice of code to adjust name of predictors, not needed anymore 
+## because factors a priori one-hot encoded
+factor_conversion <- TRUE
+
+if(factor_conversion == FALSE){
 # Add an extra column to track the original predictor name
 coef_df_bayes$OriginalPredictor <- coef_df_bayes$Predictor
 
@@ -566,7 +623,7 @@ coef_df_bayes$OriginalPredictor <- sapply(coef_df_bayes$Predictor, function(pred
   }
 })
 
-
+}
 
 
 # Filter for non-zero coefficients
@@ -628,6 +685,9 @@ vars_ML <- c("FISNumber", "FamilyNumber", "QoL_simple", predictors_A_bayes)
 x_train_ML <- x_train_comb %>%
   select(all_of(vars_ML))
 
+x_test_ML <- x_test_comb %>%
+  select(all_of(vars_ML))
+
 ## check if column names add up
 ncol(x_train_ML) == length(predictors_A_bayes) + 3
 
@@ -668,28 +728,97 @@ rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
   min.node.size <- as.integer(min.node.size)
   num.trees <- as.integer(num.trees)
   
-  # Train the random forest model
-  model <- ranger(
-    formula = formula,
-    data = x_train_ML,
-    mtry = mtry,
-    max.depth = max.depth,
-    min.node.size = min.node.size,
-    num.trees = num.trees
-  )
   
-  ## STILL BUILD IN CROSS VALIDATION!!!!
+  ## initiating cross-validation by hand
+  # Initialize an empty vector to store RMSE for each fold
+  
+  cv_rmse_rf <- numeric(length(folds))
+  
+  # Loop over each fold
+  for (i in seq_along(folds)) {
+    # Get the training and validation indices
+    indices_x_train_ML <- unlist(folds[-i]) # All except the current fold
+    indices_val <- folds[[i]]          # Current fold for validation
+    
+    # Split the data into training and validation sets
+    train_data <- x_train_ML[indices_x_train_ML, ]
+    val_data <- x_train_ML[indices_val, ]
+    
+    # Train the ranger model
+    model <- ranger(
+      formula = formula,
+      data = train_data,
+      mtry = mtry,
+      max.depth = max.depth,
+      min.node.size = min.node.size,
+      num.trees = num.trees
+    )
+    
+    # Make predictions on the validation set
+    predictions <- predict(model, data = val_data)$predictions
+    
+    # Calculate RMSE for the current fold
+    true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
+    fold_rmse <- sqrt(mean((predictions - true_values)^2))
+    
+    # Store the RMSE
+    cv_rmse_rf[i] <- fold_rmse
+  }
+  
+  # Calculate overall cross-validated RMSE
+  mean_cv_rmse <- mean(cv_rmse_rf)
+  
+  
+  ## check if this works
+  
+  ## ADJUST!!! ## Try running again after SVR finished
+  #model <- train(
+  #  formula = formula,
+  #  data = x_train_ML,
+  #  method = "ranger",
+  #  trControl = trainControl(
+  #    method = "cv",
+  #    number = 10,
+  #    index = folds # Ensure families stay together
+  #  ),
+  #  tuneGrid = expand.grid(
+  #    mtry = mtry,
+  #    splitrule = "variance", # no variation of splitrule
+      #num.trees = num.trees,
+      #max.depth = max.depth,
+  #    min.node.size = min.node.size 
+  #  ),
+  #  num.trees = num.trees,
+  #  max.depth = max.depth
+  #)
+  
+  ## DOES NOT WORK, NEEDS TO BE ADJUSTED!!! 
+  
+  ## Alternative is to build in Cross-validation by hand
   
   # Calculate predictions and RMSE
-  predictions <- model$predictions
-  actuals <- x_train_ML$QoL_simple  # Extract target variable
-  rmse <- sqrt(mean((actuals - predictions)^2))
+  #predictions <- model$predictions
+  #actuals <- x_train_ML$QoL_simple  # Extract target variable
+  #rmse <- sqrt(mean((actuals - predictions)^2))
+  
+  score <- -min(mean_cv_rmse)
+  
+  # score <- -min(model$results$RMSE)  # Negative RMSE
+  # Function finds maxima so inverting the output!
   
   # Return negative RMSE (Bayesian optimization minimizes the score)
-  return(list(Score = -rmse))
+  # return(list(Score = -rmse))
+  return(list(Score = score))
 }
 
 # Define the search bounds for hyperparameters
+
+## NOTE: When the bayesian hypertuning of the elastic net has been
+## adjusted, you might end up with a different number of features and then
+## also adjust the bounds, this holds for all bounds!
+
+## CONTINUE HERE
+
 bounds_rf <- list(
   mtry = c(1L, ncol(x_train_ML) - 3L),
   max.depth = c(3L, 30L),
@@ -809,16 +938,16 @@ cat("duration model training (random forest) after bayesian hypertuning: ",
 ## -	Gamma parameter (similarity radius)
 
 
-## Run again,
 
 t0_bayes_svr <- Sys.time()
 
 
 # Training control
-train_control <- trainControl(
+train_control_svr <- trainControl(
   method = "cv",
   number = 10,
-  verboseIter = TRUE
+  verboseIter = TRUE,
+  index = folds ## making sure the family split is still applied 
 )
 
 ## defining function that gives out the needed parameters
@@ -850,7 +979,7 @@ svr_bayes <- function(C, sigma, degree, scale, method) {
     formula,
     data = x_train_ML,
     method = model_method,
-    trControl = train_control,
+    trControl = train_control_svr,
     tuneGrid = tune_grid
   )
   
@@ -939,6 +1068,7 @@ cat("duration model training (support vector regression)", "\n",
 
 ##-----------------------------------------------------------------------------
 
+t0_bayes_xgb <- Sys.time()
 
 ## C) XGBoost (with bayesian parameter hypertuning)
 
@@ -977,19 +1107,53 @@ cat("duration model training (support vector regression)", "\n",
     ## alpha
          
 
-xgb_adapted <- FALSE
+xgb_adapted <- TRUE
 
-?xgb.cv
-?xgboost
+#?xgb.cv
+#?xgboost
 ## this code now needs to be adapted to run the bayesian hypertuning for 
 ## an XGBoost model!
 
+## one hot encode factor columns (might be placed earlier!)
+# Identify factor columns
+
+## NOTE: PLACE THIS AT BEGINNING OF ML part!
+## That also spares you the hickups with the factor earlier where you had
+## to remove a root
+
+one_hot <- FALSE
+
+if(one_hot){
+factor_cols <- names(x_train_ML)[sapply(x_train_ML, is.factor)]
+
+one_hot_encoded <- model.matrix(~ . - 1, data = x_train_ML[, factor_cols, drop = FALSE])
+
+# Remove the original factor column from the dataset
+x_train_ML <- x_train_ML[, !names(x_train_ML) %in% factor_cols]
+
+# Combine the one-hot encoded columns with the rest of the dataset
+x_train_ML <- cbind(x_train_ML, one_hot_encoded)
+}
+
 if(xgb_adapted){ ## linter the indentation away after the function is finished
-  scoringFunction <- function(
+  
+  xgb_bayes <- function(
     num_parallel_tree, max_depth, min_child_weight, subsample, colsample_bytree,
     eta, gamma, lambda, alpha) {
     
-    dtrain <- xgboost::xgb.DMatrix(as.matrix(x_train_ML),
+    ## converting all integer inputs to integers.
+    num_parallel_tree <- round(num_parallel_tree)
+    max_depth <- round(max_depth)
+    min_child_weight <- round(min_child_weight)
+    
+    
+    ## NOW IT IS CORRECT!! CONTINUE HERE!!!
+    
+    columns_exclude <- c("FamilyNumber", "FISNumber", "QoL_simple")
+    
+    ## making sure that only predictor columns are contained in training set!
+    dtrain <- xgboost::xgb.DMatrix(as.matrix(x_train_ML %>%
+                                               select(-all_of(columns_exclude))),
                                    label = as.matrix(x_train_ML$QoL_simple))
     
 
@@ -1010,21 +1174,19 @@ if(xgb_adapted){ ## linter the indentation away after the function is finished
       eval_metric = "rmse"
     )
     
-    ## remember that you still have to work in the folds here!
-    
     xgbcv <- xgb.cv(
       params = Pars,
       data = dtrain,
       nround = 100,
-      folds = Folds,
+      folds = folds,
       early_stopping_rounds = 100,
       maximize = TRUE,
       verbose = 1
     )
     
     return(
-      list(Score = min(xgbcv$evaluation_log$test_rmse_mean)
-           , nrounds = xgbcv$best_iteration
+      list(Score = -min(xgbcv$evaluation_log$test_rmse_mean),
+           nrounds = xgbcv$best_iteration
       )
     )
     
@@ -1038,16 +1200,16 @@ if(xgb_adapted){ ## linter the indentation away after the function is finished
 ## CONTINUE HERE!!!
   
   ## This is to be worked out: How to sensibly set the bounds?
-  bounds <- list(
-    num_parallel_tree = num_parallel_tree,
-    max_depth = c(1L, 5L),
-    min_child_weight = c(0, 25),
+  bounds_xgb <- list(
+    num_parallel_tree = c(1L, 100L),
+    max_depth = c(3L, 6L),
+    min_child_weight = c(5L, 10L),
     subsample = c(0.1, 1),
-    colsample_bytree = c(0.5,1L),
-    eta = c(0.01,0.1),
-    gamma = c(0.1,50L), 
-    lambda = lambda,
-    alpha = alpha
+    colsample_bytree = c(0.5, 1),
+    eta = c(0.01, 0.3),
+    gamma = c(0, 5), 
+    lambda = c(0, 10),
+    alpha = c(0, 10)
   )
   
   
@@ -1060,20 +1222,24 @@ if(xgb_adapted){ ## linter the indentation away after the function is finished
   
   cl <- makeCluster(parallel::detectCores() - 1)
   registerDoParallel(cl)
-  clusterExport(cl,c('Folds','train_x', "train_y"))
+  clusterExport(cl,c('folds','x_train_ML'))
   clusterEvalQ(cl,expr= {
     library(xgboost)
+    library(caret)
+    library(dplyr)
   })
+  clusterEvalQ(cl, ls())
   
   tWithPar <- system.time(
-    optObj <- bayesOpt(
-      FUN = scoringFunction
-      , bounds = bounds
-      , initPoints = 7 
-      , iters.n = (parallel::detectCores() - 1)*2 
-      , iters.k = (parallel::detectCores() - 1)*2 
-      , parallel = TRUE
-      , verbose = 1
+    opt_results_xgb <- bayesOpt(
+      FUN = xgb_bayes,
+      bounds = bounds_xgb,
+      initPoints = 10,
+      ## initPoints must be greater than the number of FUN inputs
+      iters.n = (parallel::detectCores() - 1)*2,
+      iters.k = (parallel::detectCores() - 1)*2,
+      parallel = TRUE,
+      verbose = 1
     )
   )
   
@@ -1085,19 +1251,97 @@ if(xgb_adapted){ ## linter the indentation away after the function is finished
   #------------------------------------------------------------------------------#
   #### Printing results
   #------------------------------------------------------------------------------#
-  optObj$scoreSummary
-  getBestPars(optObj)
+  opt_results_xgb$scoreSummary
+  getBestPars(opt_results_xgb)
 }
 
+
+## DOES NOT WORK!!! I GET THE ERROR invalid argument to unary operator
+
+## CONTINUE HERE
+
+## testing, run this again, here is where it goes wrong with the as.matrix part
+model_test_xgb <- xgb_bayes(10, 5, 7, 0.8, 0.9, 0.1, 2, 1, 1)
+
+
+# View the best parameters
+print(opt_results_xgb)
+
+# Extract the best parameters
+best_params_xgb <- getBestPars(opt_results_xgb)
+print(best_params_xgb)
+
+
+t1_bayes_xgb <- Sys.time()
+
+cat("duration bayesian hypertuning (XGBoost): ",
+    difftime(t1_bayes_xgb, t0_bayes_xgb, unit = "mins"), " minutes")
+
+## took ~400 minutes!
+
+## train final model
+
+
+## Next: Train final model
+
+## Converting training data to xgb Matrix
+columns_exclude <- c("FamilyNumber", "FISNumber", "QoL_simple")
+
+## making sure that only predictor columns are contained in training set!
+dtrain_xgb <- xgboost::xgb.DMatrix(as.matrix(x_train_ML %>%
+                                             select(-all_of(columns_exclude))),
+                               label = as.matrix(x_train_ML$QoL_simple))
+
+dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(x_test_comb %>%
+                                               select(-all_of(columns_exclude))),
+                                   label = as.matrix(x_train_ML$QoL_simple))
+
+par_xgb <- list(
+  booster = "gbtree",
+  num_parallel_tree = best_params_xgb$num_parallel_tree,
+  max_depth = best_params_xgb$max_depth,
+  min_child_weight = best_params_xgb$min_child_weight,
+  subsample = best_params_xgb$subsample,
+  colsample_bytree = best_params_xgb$colsample_bytree,
+  eta = best_params_xgb$eta,
+  gamma = best_params_xgb$gamma,
+  lambda = best_params_xgb$lambda,
+  alpha = best_params_xgb$alpha
+)
+
+watchlist <- list(train = dtrain_xgb, eval = dtest)
+
+## caret does not allow for the hyperparameter tuning as wished,
+## final model trained with xgb
+model_bayes_xgb <- xgboost(
+  data = dtrain_xgb,
+  nrounds = 100,
+  verbose = 2
+)
+
+## How is it here with the nrounds? When setting to 500, the train-rmse 
+## keeps diminishing, but isn't that simply overfitting?
+
+
+t2_bayes_xgb <- Sys.time()
+
+cat("duration model training (XGBoost)", "\n", 
+    "after bayesian hypertuning: ",
+    difftime(t2_bayes_xgb, t1_bayes_xgb, unit = "mins"), " minutes")
 
 
 ## How to do this is in your vault where you inspect Bayesian hypertuning
 ## there is an XGBoost example
 
+t01 <- Sys.time()
 
 
+cat("duration entire script: ",
+    difftime(t01, t00, unit = "mins"), " minutes")
 
+##-----------------------------------------------------------------------------
 
+## Bootstrapping assessment of model stability
 
 
 
