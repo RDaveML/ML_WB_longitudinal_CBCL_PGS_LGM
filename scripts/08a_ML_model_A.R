@@ -64,6 +64,115 @@ temp <- load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
 cat("saved df with FISNr and FamilyNumber loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
+## loading in covariate names
+load(here::here("scripts", "names_covariates.RData"))
+temp <- load(here::here("scripts", "names_covariates.RData"))
+cat("vector with names of covariates loaded in; name of object: ", "'", temp, "'",
+    "\n", "\n")
+
+
+## inspecting classes and unique values of covariates
+for(covariate in covariates_names){
+  print(covariate); print(class(data_model_A[, covariate]))
+  print(unique(data_model_A[, covariate]))
+  }
+
+## further distinction: numeric and factor covariates
+num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
+                    grep("age_qol", covariates_names, value = TRUE))
+
+factor_covariates <- setdiff(covariates_names, num_covariates)
+
+## factor conversion of factor_covariates
+for(covariate in factor_covariates){
+  data_model_A[, covariate] <- as.factor(data_model_A[, covariate])
+}
+
+## check if conversion worked
+for(covariate in factor_covariates){
+  print(covariate); print(class(data_model_A[, covariate]))
+}
+
+## worked! All are factors
+
+## Counting factor columns
+vars_mult_class <- vector()
+vars_factor <- vector()
+length_factor_vars <- 0
+length_mult_class <- 0
+for(var in 1:ncol(data_model_A)){
+  variable <- data_model_A[, var]
+  if(length(class(variable)) > 1) {
+    cat("multiclass variable; variable ", colnames(data_model_A[var]),
+        " is class: ", class(variable), "\n", "\n")
+    vars_mult_class <- c(vars_mult_class, colnames(data_model_A[var]))
+    length_mult_class <- length_mult_class + 1
+  }
+  else if(class(variable) == "factor"){
+    vars_factor <- c(vars_factor, colnames(data_model_A[var]))
+    length_factor_vars <- length_factor_vars + 1
+  } else {
+    next
+  }
+}
+print(vars_factor)
+print(length_factor_vars)
+
+## Dummy coding of factor variables and saving the names of the resulting 
+## variables + the numeric covariates so they can be held out later
+## when filtering and imputing
+
+one_hot <- FALSE ## change this to True when running the entire script
+## again on cluster
+
+if(one_hot){
+  
+  #factor_cols <- names(data_model_A)[sapply(data_model_A, is.factor)]
+  
+  ## explicitly coding missing as factor level (recode back later!)
+  data_model_A[vars_factor] <- lapply(data_model_A[vars_factor], function(col) {
+    if (is.factor(col)) {
+      levels(col) <- c(levels(col), "Missing") # Add "Missing" as a level
+    }
+    replace(col, is.na(col), "Missing")       # Replace NA with "Missing"
+  })
+  
+  one_hot_list <- lapply(vars_factor, function(factor_var) {
+    # Create one-hot encoding for the current factor
+    mat <- model.matrix(~ . + 0, data = data_model_A[, factor_var, drop = FALSE])
+    
+    # Update column names to include the original variable name
+    colnames(mat) <- paste0(factor_var, levels(data_model_A[[factor_var]]))
+    
+    return(mat)
+  })
+  
+  one_hot_encoded <- do.call(cbind, one_hot_list)
+  
+  names_dummy <- colnames(one_hot_encoded)
+  
+  # Remove the original factor column from the dataset
+  data_model_A <- data_model_A %>% select(-all_of(vars_factor))
+  
+  # [, !names(x_train_comb) %in% factor_cols]
+  
+  # Combine the one-hot encoded columns with the rest of the dataset
+  data_model_A <- cbind(data_model_A, one_hot_encoded)
+  
+  ## appending names of newly created dummy columns with numeric covariates 
+  ## resulting in a vector that can be used to prevent these variables 
+  ## from being excluded when ML preprocessing, they should remain in the model
+  names_covariates <- c(names_dummy, num_covariates)
+  
+  print(names_covariates)
+
+}
+
+## Now. all factor covariates are dummy coded (no level dropped), 
+## and there is a vector of all covariates names that are still in the
+## dataset
+
+
 ### NOTE: STILL INSERT the B different splits here: Baseline will be 
 ## done with split 1, the rest then runs separate baseline preprocessing
 
@@ -76,6 +185,7 @@ data_test <- data_model_A %>%
   filter(FISNumber %in% test_ids)
 
 ## Rearranging Columns (ID, outcome and covariates in beginning)
+## Should they be avoided in feature selection?
 data_train <- data_train %>%
   select(FISNumber, QoL_simple, sex, twzyg, ea4fa_agg, ea4mo_agg, QoL_indicator,
          time_lag, age_qol, everything())
@@ -83,6 +193,9 @@ data_train <- data_train %>%
 data_test <- data_test %>%
   select(FISNumber, QoL_simple, sex, twzyg, ea4fa_agg, ea4mo_agg, QoL_indicator,
          time_lag, age_qol, everything())
+
+## IMPORTANT: COVARIATES NEED TO BE CODED AS FACTORS, THEN DUMMY CODED! 
+## CONTINUE HERE
 
 
 ## Pre-processing steps
@@ -103,6 +216,7 @@ data_train <- data_train[-nzv_train]
 if("QoL_simple" %in% colnames(data_train)){
   data_train <- data_train
 } else { 
+  cat("Re-appending outcome", "\n")
   data_train <- cbind(data_train, outcome_QoL)
 }
 
@@ -113,12 +227,25 @@ high_cor <- findCorrelation(cor(num_data,
                                use = "pairwise.complete.obs"),
                            cutoff = .95)
 
+pos_high_cor <- which(colnames(data_train) == "QoL_indicator")
+## correcting the column indices in high cor because QoL_indicator is 
+## column 7 in data_train: all column indices from 7 onwards in high cor 
+## need + 1
+for(col in 1:length(high_cor)){
+  if(high_cor[col] < pos_high_cor){
+    high_cor[col] <- high_cor[col]
+  } else {
+    high_cor[col] <- high_cor[col] + 1
+  }
+}
+
 data_train <- data_train[-high_cor]
 
 if("QoL_simple" %in% colnames(data_train)){
   data_train <- data_train
 } else { 
   data_train <- cbind(data_train, outcome_QoL)
+  cat("Re-appending outcome", "\n")
 }
 
 ## iii) linear dependence
@@ -140,12 +267,34 @@ for (col in preProcessObj$method$ignore) {
 
 combos <- findLinearCombos(as.matrix(num_data_imputed))$remove
 
+
+## Also adjust this, CONTINUE HERE
+
+pos_combos <- which(colnames(data_train) == "QoL_indicator")
+## correcting the column indices in high cor because QoL_indicator is 
+## column 7 in data_train: all column indices from 7 onwards in high cor 
+## need + 1
+for(col in 1:length(combos)){
+  if(combos[col] < pos_combos){
+    combos[col] <- combos[col]
+  } else {
+    combos[col] <- combos[col] + 1
+  }
+}
+
+## ISSUE: AT THIS STEP, also a lot of the covariates are removed, 
+## ASK DIRK about this, if that should be prevented!
+## CONTINUE HERE ONLY AFTER SOFTING THIS OUT
+
+## Make dummies from covariates and do not remove them from the analysis
+
 data_train <- data_train[-combos]
 
 if("QoL_simple" %in% colnames(data_train)){
   data_train <- data_train
 } else { 
   data_train <- cbind(data_train, outcome_QoL)
+  cat("Re-appending outcome", "\n")
 }
 
 
@@ -690,6 +839,11 @@ x_test_ML <- x_test_comb %>%
 
 ## check if column names add up
 ncol(x_train_ML) == length(predictors_A_bayes) + 3
+
+
+## something went wrong here! go back and see where CONTINUE HERE
+
+## Likely: Factor conversion too late, needs to happen before the elastic net
 
 # Define predictors by excluding ID and FamilyNumber and outcome
 predictor_vars <- setdiff(names(x_train_ML), c("FISNumber", "FamilyNumber",
