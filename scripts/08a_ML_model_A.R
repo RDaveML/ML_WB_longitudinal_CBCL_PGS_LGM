@@ -37,7 +37,7 @@ options(scipen = 999, expressions = 50000)
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
-               "xgboost", "parallel", "doParallel")
+               "xgboost", "parallel", "doParallel", "fastDummies")
 
 
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
@@ -122,6 +122,17 @@ print(length_factor_vars)
 ## variables + the numeric covariates so they can be held out later
 ## when filtering and imputing
 
+data_dummies <- dummy_cols(data_model_A,
+                           select_columns = vars_factor,
+                           remove_first_dummy = TRUE,
+                           remove_selected_columns = TRUE,
+                           ignore_na = TRUE) ## not own column, but missing
+## information here will be imputed as well
+
+dummy_vars <- setdiff(colnames(data_dummies), colnames(data_model_A))
+
+covariates_full <- c(num_covariates, dummy_vars)
+
 one_hot <- FALSE ## change this to True when running the entire script
 ## again on cluster
 
@@ -172,81 +183,92 @@ if(one_hot){
 ## and there is a vector of all covariates names that are still in the
 ## dataset
 
+##-----------------------------------------------------------------------------
 
 ### NOTE: STILL INSERT the B different splits here: Baseline will be 
 ## done with split 1, the rest then runs separate baseline preprocessing
 
+##-----------------------------------------------------------------------------
+
 
 ## ultimate splitting test and training data
-data_train <- data_model_A %>% 
+data_train <- data_dummies %>% 
   filter(FISNumber %in% train_ids)
 
-data_test <- data_model_A %>%
+data_test <- data_dummies %>%
   filter(FISNumber %in% test_ids)
 
 ## Rearranging Columns (ID, outcome and covariates in beginning)
 ## Should they be avoided in feature selection?
 data_train <- data_train %>%
-  select(FISNumber, QoL_simple, sex, twzyg, ea4fa_agg, ea4mo_agg, QoL_indicator,
-         time_lag, age_qol, everything())
+  select(FISNumber, QoL_simple, all_of(covariates_full), everything())
 
 data_test <- data_test %>%
-  select(FISNumber, QoL_simple, sex, twzyg, ea4fa_agg, ea4mo_agg, QoL_indicator,
-         time_lag, age_qol, everything())
-
-## IMPORTANT: COVARIATES NEED TO BE CODED AS FACTORS, THEN DUMMY CODED! 
-## CONTINUE HERE
-
+  select(FISNumber, QoL_simple, all_of(covariates_full), everything())
 
 ## Pre-processing steps
 
-## saving outcome 
-outcome_QoL <- data_train %>% select(QoL_simple)
+## saving IDs
 
-data_train$QoL_indicator <- factor(data_train$QoL_indicator)
+df_FISNr_train <- data_train %>%
+  select(FISNumber)
+
+df_FISNr_test <- data_test %>%
+  select(FISNumber)
+
+## saving outcome 
+y_train <- data_train %>% select(QoL_simple)
+
+y_test <- data_test %>% select(QoL_simple)
 
 ## A) standard ML preprocessing
+
+## note: here, covariates need to be held out! 
+
+data_covariates_train <- data_train %>%
+  select(FISNumber, all_of(covariates_full))
+
+data_covariates_test <- data_test %>%
+  select(FISNumber, all_of(covariates_full))
+
+## append this back to the dataset after removing columns!
+
+
+## For preprocessing: Remove all columns that are not supposed to be removed 
+## by the preprocessing steps, based on the training data, later
+## filter test data with remaining variables and append FISNumber again when 
+## needed
+data_train <- data_train %>%
+  select(-all_of(covariates_full), -FISNumber, -QoL_simple)
+
 
 ## i) near-zero variance
 nzv_train <- nearZeroVar(data_train)
 
+ncol(data_train)
+
 data_train <- data_train[-nzv_train]
 
-## re-adding outcome in case removed
-if("QoL_simple" %in% colnames(data_train)){
-  data_train <- data_train
-} else { 
-  cat("Re-appending outcome", "\n")
-  data_train <- cbind(data_train, outcome_QoL)
-}
+cat(length(nzv_train), " columns removed (near zero variance)", "\n")
+
+ncol(data_train)
+
 
 ## ii) high correlation (note that all columns must be numeric, df not changed here)
+## Note: here no non-numeric column, still kept in in case changes
+
 num_data <- data_train[, sapply(data_train, is.numeric)]
 
 high_cor <- findCorrelation(cor(num_data,
                                use = "pairwise.complete.obs"),
                            cutoff = .95)
 
-pos_high_cor <- which(colnames(data_train) == "QoL_indicator")
-## correcting the column indices in high cor because QoL_indicator is 
-## column 7 in data_train: all column indices from 7 onwards in high cor 
-## need + 1
-for(col in 1:length(high_cor)){
-  if(high_cor[col] < pos_high_cor){
-    high_cor[col] <- high_cor[col]
-  } else {
-    high_cor[col] <- high_cor[col] + 1
-  }
-}
+num_data <- num_data[-high_cor]
 
-data_train <- data_train[-high_cor]
+cat(length(high_cor), " columns removed (high correlation; .95)", "\n")
 
-if("QoL_simple" %in% colnames(data_train)){
-  data_train <- data_train
-} else { 
-  data_train <- cbind(data_train, outcome_QoL)
-  cat("Re-appending outcome", "\n")
-}
+## re-appending non-numeric columns (here: none)
+data_train <- cbind(data_train[, !sapply(data_train, is.numeric)], num_data)
 
 ## iii) linear dependence
 
@@ -268,41 +290,32 @@ for (col in preProcessObj$method$ignore) {
 combos <- findLinearCombos(as.matrix(num_data_imputed))$remove
 
 
-## Also adjust this, CONTINUE HERE
+## conditional in case there were any non-numeric columns
+if(ncol(num_data_imputed) == ncol(data_train)){
 
-pos_combos <- which(colnames(data_train) == "QoL_indicator")
-## correcting the column indices in high cor because QoL_indicator is 
-## column 7 in data_train: all column indices from 7 onwards in high cor 
-## need + 1
-for(col in 1:length(combos)){
-  if(combos[col] < pos_combos){
-    combos[col] <- combos[col]
-  } else {
-    combos[col] <- combos[col] + 1
+  data_train <- data_train[-combos]
+
+} else {
+    num_data_imputed <- num_data_imputed[-combos]
+    data_train <- cbind(
+      data_train[, sapply(data_train, is.numeric)], data_train %>%
+      select(all_of(colnames(num_data_imputed)))) 
   }
-}
 
-## ISSUE: AT THIS STEP, also a lot of the covariates are removed, 
-## ASK DIRK about this, if that should be prevented!
-## CONTINUE HERE ONLY AFTER SOFTING THIS OUT
+cat(length(combos), " columns removed (linear combinations)", "\n")
 
-## Make dummies from covariates and do not remove them from the analysis
-
-data_train <- data_train[-combos]
-
-if("QoL_simple" %in% colnames(data_train)){
-  data_train <- data_train
-} else { 
-  data_train <- cbind(data_train, outcome_QoL)
-  cat("Re-appending outcome", "\n")
-}
+cat(ncol(data_train), " remaining columns in training set", "\n")
 
 
-## iv) multicollinearity
-vars_no_id <- colnames(data_train)[-1]
+## (iv) multicollinearity)
+
 ## feature selection by means of elastic net also takes care of 
 ## removing highly collinear variables
 
+
+## selecting variables in test set that are also contained in training set
+data_test <- data_test %>%
+  select(all_of(colnames(data_train)))
 
 
 ## v) recoding features
@@ -376,7 +389,8 @@ data_train <- data_train %>%
 
 ## no more multiclass variables
 
-## same for test data
+## same for test data (At some point filter test set to contain only variables
+## that are also in training set and do the type conversion as well)
 data_test <- data_test %>%
   mutate_at(vars_mult_class, as.numeric)
 
@@ -390,14 +404,20 @@ data_test <- data_test %>%
 ## analysis after obtaining stable ML models
 
 ## before imputation: Take out FISNR! it should not be part of the KNN procedure
-df_FISNr_train <- data_train %>%
-  select(FISNumber)
 
-df_FISNr_test <- data_test %>%
-  select(FISNumber)
+## Reminder that those datasets already exist
+df_FISNr_train <- df_FISNr_train
+
+df_FIS_fam <- df_FIS_fam
+
+## Rejoining with covariates 
+
+## CONTINUE HERE!!
+
+
 
 df_A_train <- data_train %>%
-  select(-FISNumber)
+  cbind(data_covariates)
 
 df_A_test <- data_test %>%
   select(-FISNumber)
@@ -453,7 +473,8 @@ sum(colMeans(is.na(x_test_imp)) != 0)
 
 ## C) feature selection: Elastic net
 
-## reappending y to x (outcome to training set), for caret functions
+## reappending y to x (outcome to training set), for caret functions, also 
+## family for doing the family split!
 x_train_comb <- cbind(df_FISNr_train, y_train, x_train_imp) %>%
   left_join(df_FIS_fam, by = "FISNumber")
 
