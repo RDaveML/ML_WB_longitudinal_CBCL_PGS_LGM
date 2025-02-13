@@ -111,6 +111,13 @@ cat("df with autocorrelation and autoregression features loaded in; name of obje
     "'", temp, "'", "\n", "\n")
 
 
+## rater means and sds for every participant
+load(here::here("data", "intermediate", "df_rater_covariates.Rdata"))
+temp <- load(here::here("data", "intermediate", "df_rater_covariates.Rdata"))
+cat("df with mean and sd per rater for every participant; name of object: ",
+    "'", temp, "'", "\n", "\n")
+
+
 ## covariates for the analysis (explored and preprocessed in script
 ## 03_covariates.R)
 load(here::here("data", "intermediate", "data_covariates.RData"))
@@ -133,9 +140,15 @@ data_covariates <- data_covariates %>%
 
 
 ## cropping down full data: Only keeping the ID, raw CBCL scores and outcome
+## use this for model A as well
 data_full_raw <- data_full %>%
-  select(FISNumber, all_of(CBCL_items_keep), QoL_simple)
-rm(data_full)
+  select(FISNumber, FamilyNumber, all_of(CBCL_items_keep), QoL_simple) %>%
+  left_join(data_covariates) ## covariates
+
+## saving dataframe with only raw CBCL scores and covariates
+filename <- "data_model_0.Rdata"
+save(data_full_raw, file = here("data", "intermediate", "data_model_0.Rdata"))
+cat("data were saved in file: ", filename)
 
 
 
@@ -144,11 +157,12 @@ data_model_A <- data_full_raw %>% # raw CBCL vars & outcome
   left_join(mean_long_df, by = "FISNumber") %>% ## longitudinal mean & SD
   left_join(rmssd_df1, by = "FISNumber") %>% # RMSSD
   left_join(full_acf_df, by = "FISNumber") %>% ## autocorrelation & autoregression
-  left_join(data_covariates) ## covariates
+  left_join(data_rater, by = "FISNumber")
+
 
 
 dim(data_model_A)
-## 6269 individuals, 2368 features (pre-preprocessing)
+## 5087 individuals, 2373 features (pre-preprocessing)
 
 ## saving dataframe
 filename <- "data_model_A.Rdata"

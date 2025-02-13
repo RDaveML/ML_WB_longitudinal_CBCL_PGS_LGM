@@ -1725,9 +1725,9 @@ dtrain_xgb <- xgboost::xgb.DMatrix(as.matrix(x_train_ML %>%
                                              select(-all_of(columns_exclude))),
                                label = as.matrix(x_train_ML$QoL_simple))
 
-dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(x_test_comb %>%
+dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(x_test_ML %>%
                                                select(-all_of(columns_exclude))),
-                                   label = as.matrix(x_train_ML$QoL_simple))
+                                   label = as.matrix(x_test_ML$QoL_simple))
 
 par_xgb <- list(
   booster = "gbtree",
@@ -1742,7 +1742,7 @@ par_xgb <- list(
   alpha = best_params_xgb$alpha
 )
 
-watchlist <- list(train = dtrain_xgb, eval = dtest)
+watchlist <- list(train = dtrain_xgb, eval = dtest_xgb)
 
 ## caret does not allow for the hyperparameter tuning as wished,
 ## final model trained with xgb
@@ -1761,6 +1761,13 @@ t2_bayes_xgb <- Sys.time()
 cat("duration model training (XGBoost)", "\n", 
     "after bayesian hypertuning: ",
     difftime(t2_bayes_xgb, t1_bayes_xgb, unit = "mins"), " minutes")
+
+
+
+## Calculate performance on test set
+
+## CONTINUE HERE
+
 
 
 ## How to do this is in your vault where you inspect Bayesian hypertuning

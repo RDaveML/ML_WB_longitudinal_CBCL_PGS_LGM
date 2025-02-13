@@ -46,6 +46,8 @@ load(here::here("scripts", "CBCL_questions_list.RData"))
 data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
   as.data.frame()
 
+##-----------------------------------------------------------------------------
+
 
 ## Extraction of all pre-registered covariates for the analysis
 
@@ -72,17 +74,35 @@ data_FIS <- data1 %>%
 
 ## PGS covariates: PCAs + Genotyping platform (dummy coded)
 
+##-----------------------------------------------------------------------------
+
 ## sex
 data_sex <- data1 %>%
   select(sex)
+
+##-----------------------------------------------------------------------------
 
 ## twin status
 data_zyg <- data1 %>%
   select(twzyg)
 
+##-----------------------------------------------------------------------------
+
 ## ea father + ea mother
 data_ea <- data1 %>%
   select(ea4fa_agg, ea4mo_agg)
+
+##-----------------------------------------------------------------------------
+
+## rater covariates: to take rater effect into account, calculate mean and 
+## for all CBCL items answered by caregivers and all YSR items answered by 
+## participants separately
+
+
+## Those will be added in later script since first recoding and 
+## deleting columns with too high NAs needs to take place
+## Will take place in script 04_data_cleaning_filtering1
+
 
 ## calculating the time lag between the last YNTR assessment and the first 
 ## QoL assessment of participants (relevant covariate in the analysis!)
@@ -203,7 +223,7 @@ covariates_names <- names(data_covariates)[names(data_covariates)
                                             %notin% c("FISNumber",
                                                       "QoL_simple")]
 ## removing FISNumber and the outcome from the covariates names, 
-## Which survey surved for outcome might actually be interesting 
+## Which survey served for outcome might actually be interesting 
 ## covariate
 
 

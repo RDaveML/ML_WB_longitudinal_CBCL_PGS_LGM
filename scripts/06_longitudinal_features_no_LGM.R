@@ -207,25 +207,32 @@ save(rmssd_df1, file = here("data", "intermediate", "df_RMSSD.Rdata"))
 ## RMSSD calculation successfully rounded off
 
 
-## loading autocorrelation features
-## (calculated in separate file 05_a_autocorrelation.R)
+##-----------------------------------------------------------------------------
 
-# List objects in the environment before loading
-before_objects <- ls()
+## rater covariates: to take rater effect into account, calculate mean and 
+## for all CBCL items answered by caregivers and all YSR items answered by 
+## participants separately
 
-# Load the RData file
-load(here::here("data", "intermediate", "data_acf_imp_train.Rdata"))
-load(here::here("data", "intermediate", "data_acf_imp_test.Rdata"))
+rater_covariates <- c("m_oth", "sd_oth", "m_self", "sd_self")
 
-# List objects in the environment after loading
-after_objects <- ls()
+data_rater <- data_full %>%
+  select(FISNumber, any_of(CBCL_YSR_items_vec))
 
-# Show the new objects that were loaded
-new_objects <- setdiff(after_objects, before_objects)
-print(new_objects)
+## adapting vector names (not all CBCL / YSR items are contained in df anymore)
+CBCL_items_vec_adapt <- intersect(colnames(data_rater), CBCL_items_vec)
+YSR_items_vec_adapt <- intersect(colnames(data_rater), YSR_items_vec)
 
-temp <- load(here::here("data", "intermediate", "data_acf_imp.Rdata"))
-cat("autocorrelation df loaded in; name of object: ", "'", temp, "'")
+data_rater <- data_rater %>%
+  mutate(m_oth = rowMeans(across(all_of(CBCL_items_vec_adapt)), na.rm = TRUE),
+         sd_oth = apply(across(all_of(CBCL_items_vec_adapt)), 1, sd, na.rm = TRUE),
+         m_self = rowMeans(across(all_of(YSR_items_vec_adapt)), na.rm = TRUE),
+         sd_self = apply(across(all_of(YSR_items_vec_adapt)), 1, sd, na.rm = TRUE)) %>%
+  select(FISNumber, all_of(rater_covariates)) %>%
+  as_tibble()
+
+
+## saving rater_covariates
+save(data_rater, file = here("data", "intermediate", "df_rater_covariates.Rdata"))
 
 
 ## saving df

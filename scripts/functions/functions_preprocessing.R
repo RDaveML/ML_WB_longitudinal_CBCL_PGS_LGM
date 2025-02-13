@@ -172,6 +172,28 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
   cat("Sample size before filtering: ", nrow(data4), "\n",
       "Sample size after filtering: ", nrow(data5), "\n",
       "participants dropped: ", nrow(data4) - nrow(data5), "\n", "\n")
+  
+  
+  
+  ## removing participants with only NAs in YSR items
+  cat("Removing participants with only NAs in YSR items",
+      "\n", "\n")
+  
+  
+  data_YSR <- data5 %>%
+    dplyr::select(any_of(YSR_items_vec))
+  rows_with_allna_YSR <- apply(data_YSR,
+                               1, function(x) sum(!is.na(x)) == 0)
+  
+  data6 <- data5[!rows_with_allna_YSR, ]
+  
+  ## outputting updated sample size
+  cat("Sample size before filtering: ", nrow(data5), "\n",
+      "Sample size after filtering: ", nrow(data6), "\n",
+      "participants dropped: ", nrow(data5) - nrow(data6), "\n", "\n")
+  
+  
+  
 
   
   ## removing participants with more than 50% missings in the CBCL items
@@ -179,22 +201,23 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
       "\n", "\n")
   
   threshold <- 0.5
-  data_50_perc <- data5 %>%
+  data_50_perc <- data6 %>%
     dplyr::select(all_of(CBCL_YSR_items_vec))
   rows_with_excessive_na <- apply(data_50_perc,
                                   1, function(x) mean(is.na(x)) > threshold)
- data6 <- data5[!rows_with_excessive_na, ]
+ data7 <- data6[!rows_with_excessive_na, ]
  
  ## outputting updated sample size
- cat("Sample size before filtering: ", nrow(data5), "\n",
-     "Sample size after filtering: ", nrow(data6), "\n",
-     "participants dropped: ", nrow(data5) - nrow(data6), "\n", "\n")
+ cat("Sample size before filtering: ", nrow(data6), "\n",
+     "Sample size after filtering: ", nrow(data7), "\n",
+     "participants dropped: ", nrow(data6) - nrow(data7), "\n", "\n")
   
-  ## returning final df (which will then be given to perform KNN imputation)
- cat("Returning final data frame after filtering operations with sample size: ",
-     nrow(data6))
  
- return(data6) 
+ cat("Returning final data frame after filtering operations with sample size: ",
+     nrow(data7))
+ 
+ ## returning final df (which will then be given to perform KNN imputation)
+ return(data7) 
 }
 
 
@@ -276,25 +299,44 @@ filter_CBCL_2 <- function(df, CBCL_YSR_items_vec, data_covariates){
       "participants dropped: ", nrow(data4) - nrow(data5), "\n", "\n")
   
   
-  ## removing participants with more than 50% missings in the CBCL items
-  cat("Removing participants with more than 50% missings in CBCL items",
+  ## removing participants with only NAs in YSR items
+  cat("Removing participants with only NAs in YSR items",
       "\n", "\n")
   
-  threshold <- 0.5
-  data_50_perc <- data5 %>%
-    dplyr::select(all_of(CBCL_YSR_items_vec))
-  rows_with_excessive_na <- apply(data_50_perc,
-                                  1, function(x) mean(is.na(x)) > threshold)
-  data6 <- data5[!rows_with_excessive_na, ]
+  
+  data_YSR <- data5 %>%
+    dplyr::select(any_of(YSR_items_vec))
+  rows_with_allna_YSR <- apply(data_YSR,
+                               1, function(x) sum(!is.na(x)) == 0)
+  
+  data6 <- data5[!rows_with_allna_YSR, ]
   
   ## outputting updated sample size
   cat("Sample size before filtering: ", nrow(data5), "\n",
       "Sample size after filtering: ", nrow(data6), "\n",
       "participants dropped: ", nrow(data5) - nrow(data6), "\n", "\n")
   
-  ## returning final df (which will then be given to perform KNN imputation)
-  cat("Returning final data frame after filtering operations with sample size: ",
-      nrow(data6))
   
-  return(data6) 
+  ## removing participants with more than 50% missings in the CBCL items
+  cat("Removing participants with more than 50% missings in CBCL items",
+      "\n", "\n")
+  
+  threshold <- 0.5
+  data_50_perc <- data6 %>%
+    dplyr::select(all_of(CBCL_YSR_items_vec))
+  rows_with_excessive_na <- apply(data_50_perc,
+                                  1, function(x) mean(is.na(x)) > threshold)
+  data7 <- data6[!rows_with_excessive_na, ]
+  
+  ## outputting updated sample size
+  cat("Sample size before filtering: ", nrow(data6), "\n",
+      "Sample size after filtering: ", nrow(data7), "\n",
+      "participants dropped: ", nrow(data6) - nrow(data7), "\n", "\n")
+  
+  
+  cat("Returning final data frame after filtering operations with sample size: ",
+      nrow(data7))
+
+  ## returning final df (which will then be given to perform KNN imputation)
+  return(data7) 
 }

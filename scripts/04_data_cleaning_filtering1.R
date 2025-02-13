@@ -64,6 +64,12 @@ nrow(data)
 
 ## filtering data in one compact function, outputting dropped participants 
 ## after each filtering step
+
+## DO THIS AGAIN! CHANGE THE FILTERING FUNCTION SO THAT FIRST ALL 
+## PARTICIPANTS WHO DO NOT HAVE ANY YSR ANSWERS ARE REMOVED, THEN RUN
+## THE CALCULATION SCRIPTS AGAIN
+## CONTINUE HERE!!!
+
 data_filtered <- filter_CBCL(df = data, CBCL_YSR_items_vec = CBCL_YSR_items_vec,
                              data_covariates = data_covariates)
 

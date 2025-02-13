@@ -96,7 +96,7 @@ results_list <- lapply(1:length(CBCL_questions_list), function(i) {
   # Select the necessary columns
   #print(i)
   CBCL_question <- paste0(names(CBCL_questions_list)[[i]])
-  print(CBCL_question)
+  #print(CBCL_question)
   
    q_df <- data_full %>%
 #  q_df <- test_test %>% ## still adjust this for full data
@@ -144,7 +144,7 @@ results_list <- lapply(1:length(CBCL_questions_list), function(i) {
   ## identifying the artificial columns (all NA values)
   all_na_cols <- names(colMeans(is.na(data_wide))[colMeans(is.na(data_wide)) == 1])
   median_cols <- setdiff(colnames(data_wide), c("FISNumber", all_na_cols))
-  print(median_cols)
+  #print(median_cols)
   
   ## inserting median for all NA columns (KNN won't impute columns with only NA)
   continue = TRUE
@@ -320,7 +320,7 @@ results_list_acf <- lapply(1:length(CBCL_questions_list), function(i) {
   
   
   CBCL_question <- paste0(names(CBCL_questions_list)[[i]])
-  print(CBCL_question)
+  #print(CBCL_question)
   
   ## selecting only for a specific CBCL question the variables
   
@@ -328,19 +328,19 @@ results_list_acf <- lapply(1:length(CBCL_questions_list), function(i) {
   ## associated with the specified CBCL question are extracted (e.g. when the CBCL question
   ## is CBCL_1; do only extract CBCL_1 variables and not also CBCL_100)
   regex_CBCL <- paste0("^", CBCL_question, "(_|$)")
-  print(regex_CBCL)
+  #print(regex_CBCL)
   acf_df <- pad_autocor_imputed %>%
     select(matches(regex_CBCL))
   
   
   ## check if selection was correct
-  print(colnames(acf_df))
+  #print(colnames(acf_df))
   
   ## next: calculating autocorrelation with all possible lags! 
   
   ## initiating what the maximum lag is depending on how many columns
   length_lag <- length(colnames(acf_df)) - 1 
-  print(length_lag)
+  #print(length_lag)
   
   
   ## calculation: calculating acf values rowwise based on time series
@@ -355,7 +355,7 @@ results_list_acf <- lapply(1:length(CBCL_questions_list), function(i) {
   ## assigning the lag colnames (lag0 - lag.max)
   colnames(acf_df)[(ncol(acf_df) / 2 + 1):ncol(acf_df)] <- 
     paste0(CBCL_question, "_acf_lag_", c(0:length_lag))
-  print(colnames(acf_df))
+  #print(colnames(acf_df))
   
   ## re-binding with FISNr, selecting only acf value columns, dropping
   ## acf lag0 (always 1 by definition)
@@ -403,7 +403,7 @@ results_list_ar <- lapply(1:length(CBCL_questions_list), function(i) {
   
   
   CBCL_question <- paste0(names(CBCL_questions_list)[[i]])
-  print(CBCL_question)
+  #print(CBCL_question)
   
   ## selecting only for a specific CBCL question the variables
   
@@ -411,19 +411,19 @@ results_list_ar <- lapply(1:length(CBCL_questions_list), function(i) {
   ## associated with the specified CBCL question are extracted (e.g. when the CBCL question
   ## is CBCL_1; do only extract CBCL_1 variables and not also CBCL_100)
   regex_CBCL <- paste0("^", CBCL_question, "(_|$)")
-  print(regex_CBCL)
+  #print(regex_CBCL)
   ar_df <- pad_autocor_imputed %>%
     select(matches(regex_CBCL))
   
   
   ## check if selection was correct
-  print(colnames(ar_df))
+  #print(colnames(ar_df))
   
   ## next: calculating autocorrelation with all possible lags! 
   
   ## initiating what the maximum lag is depending on how many columns
   length_lag <- length(colnames(ar_df)) - 1 
-  print(length_lag)
+  #print(length_lag)
   
   
   ## calculation: calculating acf values rowwise based on time series
@@ -439,7 +439,7 @@ results_list_ar <- lapply(1:length(CBCL_questions_list), function(i) {
   ## assigning the lag colnames (lag0 - lag.max)
   colnames(ar_df)[(ncol(ar_df) -length_lag + 1):ncol(ar_df)] <- 
     paste0(CBCL_question, "_ar_order_coef_", c(1:length_lag))
-  print(colnames(ar_df))
+  #print(colnames(ar_df))
   
   ## re-binding with FISNr, selecting only acf value columns, dropping
   ## acf lag0 (always 1 by definition)
@@ -494,7 +494,7 @@ save(full_acf_df_test, file = here("data", "intermediate", "data_acf_imp_test.Rd
 
 
 ## 7) merge autocorrelation set back with full Non-Lgm feature data
-## (in script 05_longitudinal_features_no_LGM or later)
+## (in script 06_longitudinal_features_no_LGM or later)
 
 
 cat("Script finished running", "\n")
@@ -504,7 +504,7 @@ cat("Script finished running", "\n")
 ## splitting up into training and test data again
 
 ## for security: saving workspace
-# save.image(here("data", "intermediate", "workspace_07a_KNN_acf.Rdata"))
+# save.image(here("data", "intermediate", "workspace_06a_KNN_acf.Rdata"))
 
 ## end of script
 
