@@ -232,6 +232,8 @@ data_rater <- data_rater %>%
 
 
 ## saving rater_covariates
+save(rater_covariates, file = here("data", "intermediate",
+                                   "names_rater_covariates.Rdata"))
 save(data_rater, file = here("data", "intermediate", "df_rater_covariates.Rdata"))
 
 

@@ -40,6 +40,14 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "xgboost", "parallel", "doParallel", "fastDummies")
 
 
+## loading in data model 0 (only raw CBCL symptom scores and covariates)
+load(here::here("data", "intermediate", "data_model_0.Rdata"))
+temp <- load(here::here("data", "intermediate", "data_model_0.Rdata"))
+cat("full model 0 data loaded in; name of object: ", "'", temp, "'",
+    "\n", "\n")
+
+
+
 ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
 load(here::here("data", "intermediate", "data_model_A.Rdata"))
 temp <- load(here::here("data", "intermediate", "data_model_A.Rdata"))
@@ -70,6 +78,20 @@ temp <- load(here::here("scripts", "names_covariates.RData"))
 cat("vector with names of covariates loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
+## loading in rater covariates
+## (created in script 06_longitudinal_features_no_LGM) and merging them to 
+## covariates names
+load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
+temp <- load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
+cat("vector with names of rater covariates loaded in; name of object: ",
+    "'", temp, "'", "\n", "\n")
+
+covariates_names <- c(covariates_names, rater_covariates)
+
+
+## Printing all variables currently in the system
+cat("all objects currently in workspace:", "\n",)
+
 
 ## inspecting classes and unique values of covariates
 for(covariate in covariates_names){
@@ -79,7 +101,8 @@ for(covariate in covariates_names){
 
 ## further distinction: numeric and factor covariates
 num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
-                    grep("age_qol", covariates_names, value = TRUE))
+                    grep("age_qol", covariates_names, value = TRUE),
+                    rater_covariates)
 
 factor_covariates <- setdiff(covariates_names, num_covariates)
 
@@ -95,28 +118,78 @@ for(covariate in factor_covariates){
 
 ## worked! All are factors
 
-## Counting factor columns
-vars_mult_class <- vector()
+## first: Listing types of features in dataset
+vars_num <- vector()
+vars_char <- vector()
 vars_factor <- vector()
+vars_int <- vector()
+vars_bool <- vector()
+vars_other <- vector()
+vars_mult_class <- vector()
+length_num <- 0
+length_char <- 0
 length_factor_vars <- 0
+length_int <- 0
+length_bool <- 0
+length_other <- 0
 length_mult_class <- 0
+
 for(var in 1:ncol(data_model_A)){
   variable <- data_model_A[, var]
+  #print(colnames(data_model_A)[var])
+  #print(class(variable))
+  #print(length(class(variable)))
   if(length(class(variable)) > 1) {
     cat("multiclass variable; variable ", colnames(data_model_A[var]),
         " is class: ", class(variable), "\n", "\n")
     vars_mult_class <- c(vars_mult_class, colnames(data_model_A[var]))
     length_mult_class <- length_mult_class + 1
-  }
-  else if(class(variable) == "factor"){
+  } else if(class(variable) == "numeric"){
+    vars_num <- c(vars_num, colnames(data_model_A[var]))
+    length_num <- length_num + 1
+  } else if(class(variable) == "character"){
+    vars_char <- c(vars_char, colnames(data_model_A[var]))
+    length_char <- length_char + 1
+  } else if(class(variable) == "integer"){
+    vars_int <- c(vars_int, colnames(data_model_A[var]))
+    length_int <- length_int + 1
+  } else if(class(variable) == "logical") {
+    vars_bool <- c(vars_bool, colnames(data_model_A[var]))
+    length_bool <- length_bool + 1
+  } else if(class(variable) == "factor"){
     vars_factor <- c(vars_factor, colnames(data_model_A[var]))
     length_factor_vars <- length_factor_vars + 1
   } else {
-    next
+    cat("other variable detected; variable ", colnames(data_model_A[var]),
+        " is class: ", class(variable), "\n", "\n")
+    vars_other <- c(vars_other, colnames(data_model_A[var]))
+    length_other <- length_other + 1
   }
 }
-print(vars_factor)
-print(length_factor_vars)
+
+length_num
+length_char
+length_int
+length_bool
+length_other
+length_mult_class
+vars_mult_class
+
+## all the multilabel classes are likely numeric
+## those can be recoded 
+
+## printing unique values of multiclass variables
+for(var in vars_mult_class){
+  print(var)
+  print(unique(data_model_A[[var]]))
+}
+
+## all those variabels can be recoded to numeric variables
+data_model_A <- data_model_A %>%
+  mutate_at(vars_mult_class, as.numeric)
+
+## no more multiclass variables
+
 
 ## Dummy coding of factor variables and saving the names of the resulting 
 ## variables + the numeric covariates so they can be held out later
@@ -132,6 +205,8 @@ data_dummies <- dummy_cols(data_model_A,
 dummy_vars <- setdiff(colnames(data_dummies), colnames(data_model_A))
 
 covariates_full <- c(num_covariates, dummy_vars)
+
+print(covariates_full)
 
 one_hot <- FALSE ## change this to True when running the entire script
 ## again on cluster
@@ -325,79 +400,7 @@ data_test <- data_test %>%
 
 ## v) recoding features
 
-## first: Listing types of features in dataset
-vars_num <- vector()
-vars_char <- vector()
-vars_fact <- vector()
-vars_int <- vector()
-vars_bool <- vector()
-vars_other <- vector()
-vars_mult_class <- vector()
-length_num <- 0
-length_char <- 0
-length_fact <- 0
-length_int <- 0
-length_bool <- 0
-length_other <- 0
-length_mult_class <- 0
 
-for(var in 1:ncol(data_train)){
-  variable <- data_train[, var]
-  #print(colnames(data_train)[var])
-  #print(class(variable))
-  #print(length(class(variable)))
-  if(length(class(variable)) > 1) {
-    cat("multiclass variable; variable ", colnames(data_train[var]),
-        " is class: ", class(variable), "\n", "\n")
-    vars_mult_class <- c(vars_mult_class, colnames(data_train[var]))
-    length_mult_class <- length_mult_class + 1
-  } else if(class(variable) == "numeric"){
-    vars_num <- c(vars_num, colnames(data_train[var]))
-    length_num <- length_num + 1
-  } else if(class(variable) == "character"){
-    vars_char <- c(vars_char, colnames(data_train[var]))
-    length_char <- length_char + 1
-  } else if(class(variable) == "integer"){
-    vars_int <- c(vars_int, colnames(data_train[var]))
-    length_int <- length_int + 1
-  } else if(class(variable) == "logical") {
-    vars_bool <- c(vars_bool, colnames(data_train[var]))
-    length_bool <- length_bool + 1
-  } else {
-    cat("other variable detected; variable ", colnames(data_train[var]),
-        " is class: ", class(variable), "\n", "\n")
-    vars_other <- c(vars_other, colnames(data_train[var]))
-    length_other <- length_other + 1
-  }
-}
-
-length_num
-length_char
-length_int
-length_bool
-length_other
-length_mult_class
-vars_mult_class
-
-## all the multilabel classes are likely numeric
-## those can be recoded 
-
-## printing unique values of multiclass variables
-for(var in vars_mult_class){
-  print(var)
-  print(unique(data_train[[var]]))
-}
-
-## all those variabels can be recoded to numeric variables
-data_train <- data_train %>%
-  mutate_at(vars_mult_class, as.numeric)
-
-## no more multiclass variables
-
-## same for test data (At some point filter test set to contain only variables
-## that are also in training set and do the type conversion as well)
-data_test <- data_test %>%
-  mutate_at(vars_mult_class, as.numeric)
 
 ##----------------------------------------------------------------------------
 
@@ -640,8 +643,8 @@ bounds <- list(alpha = c(0, 1), lambda = c(0.001, 1))
 set.seed(64)
 
 ## To parallelize
-cl <- makeCluster(parallel::detectCores() - 1)
-## cl <- makeClusterr(64)
+## cl <- makeCluster(parallel::detectCores() - 1)
+cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
 clusterExport(cl,c('formula', 'folds', 'x_train_comb', 'elastic_net_bayes'),
@@ -1107,8 +1110,8 @@ bounds_rf <- list(
 set.seed(64)
 
 ## To parallelize
-cl <- makeCluster(parallel::detectCores() - 1)
-## cl <- makeClusterr(64)
+## cl <- makeCluster(parallel::detectCores() - 1)
+cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
 clusterExport(cl,c('formula', 'folds', 'x_train_ML', 'rf_bayes'),
@@ -1363,8 +1366,8 @@ set.seed(64)
 
 
 ## To parallelize
-cl <- makeCluster(parallel::detectCores() - 1)
-## cl <- makeCluster(64)
+## cl <- makeCluster(parallel::detectCores() - 1)
+cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
 clusterExport(cl,c('formula', 'folds', 'x_train_ML', 'svr_bayes',
@@ -1651,7 +1654,8 @@ bounds_xgb <- list(
 ## Still check how exactly this works
 
 
-cl <- makeCluster(parallel::detectCores() - 1)
+## cl <- makeCluster(parallel::detectCores() - 1)
+cl <- makeCluster(64)
 registerDoParallel(cl)
 clusterExport(cl, c('folds', 'x_train_ML', 'bounds_xgb', 'xgb_bayes'))
 clusterEvalQ(cl, expr = {
@@ -1776,8 +1780,12 @@ cat("duration model training (XGBoost)", "\n",
 t01 <- Sys.time()
 
 
-cat("duration entire script: ",
+cat("duration entire script (model A): ",
     difftime(t01, t00, unit = "mins"), " minutes")
+
+
+## Saving entire workspace
+save.image(file = here::here("data", "intermediate", "workspace_model_A_ntr.RData"))
 
 ##-----------------------------------------------------------------------------
 
