@@ -1,6 +1,12 @@
 ## function to automatize ML procedure with different datasets 
 ## and different models 
 
+
+## negation operator
+`%notin%` <- Negate(`%in%`)
+
+options(scipen = 999, expressions = 50000)
+
 ## converting factor covariates to factors
 f_conv <- function(df, covariates){
   data_converted <- df
@@ -172,7 +178,7 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   ## filter test data with remaining variables and append FISNumber again when 
   ## needed
   data_train <- data_train %>%
-    select(-all_of(covariates), -FISNumber, -QoL_simple)
+    select(-all_of(covariates), -FISNumber, -QoL_simple, -FamilyNumber)
   
   
   ## i) near-zero variance
@@ -295,7 +301,7 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   
   y_test <- y_test
   
-  cat("Beginning KNN imputation training data")
+  cat("Beginning KNN imputation training data", "\n")
   k_pad <- round(sqrt(ncol(x_train)))
   train_pre_obj <- preProcess(x_train,
                               method = "knnImpute",
@@ -303,24 +309,24 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   
   t2 <- Sys.time()
   
-  cat("duration KNN imputation object: ", difftime(t2, t1, unit = "mins"))
+  cat("duration KNN imputation object: ", difftime(t2, t1, unit = "mins"), "\n")
   
   x_train_imp <- predict(train_pre_obj, x_train)
   
   t3 <- Sys.time()
   
-  cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"))
+  cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"), "\n")
   
   x_test_imp <- predict(train_pre_obj, x_test)
   
   t4 <- Sys.time()
   
-  cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"))
+  cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"), "\n")
   
   sum(colMeans(is.na(x_train_imp)) != 0)
   if(sum(colMeans(is.na(x_train_imp)) != 0)){
     cat("The following columns still contain NAs: ", "\n", 
-        colnames(data_model_A)[which(colMeans(is.na(data_model_A)) != 0)])
+        colnames(x_train_imp)[which(colMeans(is.na(x_train_imp)) != 0)])
     stop("Error: Still columns with missings")
   }
   sum(colMeans(is.na(x_test_imp)) != 0)
@@ -336,7 +342,7 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   
   return(list(df_FISNr_train = df_FISNr_train,
               df_FISNr_test = df_FISNr_test,
-              x_test_comb = x_train_comb,
+              x_train_comb = x_train_comb,
               x_test_comb = x_test_comb,
               y_train = y_train,
               y_test = y_test,
@@ -344,9 +350,187 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
               data_covariates_test = data_covariates_test))
 }
 
+##-----------------------------------------------------------------------------
+
+## Bayesian Hypertuning: First function that integrates hypertuning 
+## for elastic net, then for rf, SVr and XGB
+bayes_hyper_enet <- function(df, folds, formula, bounds_enet, ncores,
+                             iters.n = 10,
+                             iters.k = 10){
+  
+  ## making sure bounds is a list containing parameters "alpha" and "lambda",
+  ## this can be used a lot more to stop functions from breaking
+  if(!is.list(bounds_enet) | 
+     length(
+       setdiff(
+         c("alpha", "lambda"), names(bounds_enet)
+         )
+       ) != 0){
+   stop("bounds_enet must be a list with elements alpha and lambda")
+  }
+  
+  ## name to export to cluster
+  df_name <- deparse(substitute(df))
+  
+  # Define the objective function
+  elastic_net_bayes <- function(alpha, lambda) {
+    
+    ## ChatGPT suggestion to track iterations with no progress
+    # Static variables to track best score and stagnant iterations
+    if (!exists("bestScore", envir = .GlobalEnv)){
+      assign("bestScore", -Inf, envir = .GlobalEnv)
+    }
+    if (!exists("noImprovementCount", envir = .GlobalEnv)){
+      assign("noImprovementCount", 0, envir = .GlobalEnv)
+    }
+    
+    
+    ## excluding variables from being predictors
+    ## creating x and y to avoid problems with formula object
+    exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+    x_train_matrix <- model.matrix(~ ., data = df)[, !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
+    y_train_vector <- df$QoL_simple
+    ## fix this with model.matrix
+    ## CONTINUE HERE!!!
+    
+    # Train the model using caret with glmnet
+    model <- train(x = x_train_matrix,  # Use filtered predictors
+                   y = y_train_vector,  # Response variable
+                   #data = df,
+                   method = "glmnet",
+                   trControl = trainControl(method = "cv",
+                                            number = 10,
+                                            index = folds,# 10-fold CV
+                                            allowParallel = FALSE),
+                   ## setting to FALSE because otherwise conflicts with later
+                   ## parallelization
+                   # preProc = c("center", "scale"),
+                   tuneGrid = data.frame(alpha = alpha, lambda = lambda))
+    
+    score <- -min(model$results$RMSE)  # Negative RMSE
+    # Function finds maxima so inverting the output!
+    
+    
+    ## checking if score actually improved significantly
+    ## this is supposed to take up functionality of the otherHalting argument
+    ## except that function does not stop immediately if there is no improvement
+    
+    minUtility <- 0.001  # Define threshold for improvement
+    if (score - get("bestScore", envir = .GlobalEnv) < minUtility) {
+      assign("noImprovementCount",
+             get("noImprovementCount",
+                 envir = .GlobalEnv) + 1, envir = .GlobalEnv)
+    } else {
+      assign("noImprovementCount", 0, envir = .GlobalEnv)  # Reset counter if improvement is significant
+      assign("bestScore", score, envir = .GlobalEnv)  # Update best score
+    }
+    
+    # Stop if no improvement for 5 consecutive iterations (Or other amount of iterations)
+    if (get("noImprovementCount", envir = .GlobalEnv) >= 5) {
+      stop("Early stopping: No improvement in 5 consecutive iterations")
+    }
+    
+    return(list(Score = score))  # Ensure proper list format
+    ## here add other components that should be included in the final summary
+    ## table provided by the bayesOpt function
+  }
+  
+  
+  ## integrating parallelization
+  cl <- makeCluster(ncores)
+  ## cluster of 64 on ntrcompute-2
+  registerDoParallel(cl)
+  clusterExport(cl, c("folds", df_name, "elastic_net_bayes", "x_train_matrix",
+                      "y_train_vector"),
+                envir = environment())
+  ## Fix: Use `environment()` to get function scope
+  ## Manually export the formula because `clusterExport` struggles with formulas
+  # clusterCall(cl, function(f) assign("formula", f, envir = .GlobalEnv), formula)
+  ## here: suppress printing content that is being exported
+  invisible(clusterEvalQ(cl,expr= {
+    library(glmnet)
+    library(caret)
+    library(dplyr)
+  }))
+  invisible(clusterEvalQ(cl, ls()))
+  
+  tWithPar <- system.time(
+    opt_results_enet <- bayesOpt(
+      FUN = elastic_net_bayes,
+      bounds = bounds_enet,
+      initPoints = 5,
+      ## initPoints must be greater than the number of FUN inputs
+      ## iters.n = (parallel::detectCores() - 1)*2,
+      iters.n = iters.n,
+      ## iters.n = 64*2,
+      ## iters.k = (parallel::detectCores() - 1)*2,
+      iters.k = iters.k,
+      ## iters.k = 64*2,
+      ## otherHalting = list(timeLimit = 30000, minUtility = NULL)
+      parallel = TRUE,
+      verbose = 1
+    )
+  )
+  
+  ## stopping cluster again
+  stopCluster(cl)
+  registerDoSEQ()
+  
+  ## print best results
+  
+  print(opt_results_enet)
+  
+  
+  best_params_enet <- getBestPars(opt_results_enet)
+  
+  model_enet <- train(x = x_train_matrix,  # Use filtered predictors
+                      y = y_train_vector,  # Response variable
+                      method = "glmnet",
+                      trControl = trainControl(method = "none"),  # No CV for the final model
+                      tuneGrid = data.frame(alpha = best_params_enet$alpha,
+                                            lambda = best_params_enet$lambda))
+  
+  ## same for bayesian optimized tuned model
+  final_model_bayes <- model_enet$finalModel
+  
+  # cv tuned lambda
+  best_lambda_bayes <- final_model_bayes$lambdaOpt
+  
+  # Extract the coefficients for tuned lambda
+  coef_matrix_bayes <- coef(final_model_bayes, s = best_lambda_bayes)
+  
+  # Convert to df
+  coef_df_bayes <- as.data.frame(as.matrix(coef_matrix_bayes))
+  coef_df_bayes$Predictor <- rownames(coef_df_bayes)
+  rownames(coef_df_bayes) <- NULL
+  
+  
+  # Filter for non-zero coefficients
+  non_zero_coef_bayes <- coef_df_bayes[coef_df_bayes[, 1] != 0, ]
+  
+  non_zero_predictors_bayes <- unique(non_zero_coef_bayes$Predictor)
+  
+  ## Removing Intercept
+  non_zero_predictors_bayes <- grep("(Intercept)",
+                                    non_zero_predictors_bayes,
+                                    value = TRUE, invert = TRUE)
+  
+  
+  return(list(best_params_enet = best_params_enet,
+              time_hypertuning = tWithPar,
+              non_zero_predictors = non_zero_predictors_bayes))
+  
+  
+}
+
 
 #hypertuning_bayes <- function(df, algorithm, tuneGrid, bounds){}
 
+
+## this function runs the entire pipeline constructed from the previous functions
+## over various datasets
+## Idea: Test this with another copy of the Model A dataset where simply
+## the IDs are permuted, or with the model_0 only raw features
 #ml_longitudinal <- function(datasets = list){}
 
 #ml_stability <- function{}

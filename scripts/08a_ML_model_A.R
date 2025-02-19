@@ -90,7 +90,7 @@ covariates_names <- c(covariates_names, rater_covariates)
 
 
 ## Printing all variables currently in the system
-cat("all objects currently in workspace:", "\n",)
+cat("all objects currently in workspace:", "\n", ls())
 
 
 ## inspecting classes and unique values of covariates
@@ -196,12 +196,14 @@ data_model_A <- data_model_A %>%
 ## when filtering and imputing
 
 data_dummies <- dummy_cols(data_model_A,
-                           select_columns = vars_factor,
+                           select_columns = factor_covariates,
                            remove_first_dummy = TRUE,
                            remove_selected_columns = TRUE,
                            ignore_na = TRUE) ## not own column, but missing
 ## information here will be imputed as well
 
+## This is not part of the preprocessing function! But should well be 
+## implemented into the loop function
 dummy_vars <- setdiff(colnames(data_dummies), colnames(data_model_A))
 
 covariates_full <- c(num_covariates, dummy_vars)
@@ -443,14 +445,14 @@ if("QoL_simple" %in% colnames(df_A_train) |
 t1 <- Sys.time()
 
 x_train <- df_A_train %>%
-  select(-FISNumber)
+  select(-FISNumber, -FamilyNumber)
 
 ## was created previously
 y_train <- y_train
 
 
 x_test <- df_A_test %>%
-  select(-FISNumber)
+  select(-FISNumber, -FamilyNumber)
 
 y_test <- y_test
 
@@ -512,7 +514,7 @@ x_test_comb <- cbind(df_FISNr_test, y_test, x_test_imp) %>%
 
 # Create custom 10-fold cross-validation keeping families together
 set.seed(7)
-folds <- groupKFold(group = x_train_comb$FamilyNumber, k = 10)
+folds <- caret::groupKFold(group = x_train_comb$FamilyNumber, k = 10)
 
 adaptControl <- trainControl(method = "adaptive_cv",
                              number = 10, repeats = 10,
@@ -534,6 +536,7 @@ predictor_vars <- setdiff(names(x_train_comb), c("FISNumber", "FamilyNumber",
 ## preprocessing!
 
 formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " + ")))
+# formula <- reformulate(predictor_vars, response = "QoL_simple")
 ## Note that this changes later since it will be re-assigned
 
 # Train an elastic net regression model
@@ -649,6 +652,7 @@ cl <- makeCluster(64)
 registerDoParallel(cl)
 clusterExport(cl,c('formula', 'folds', 'x_train_comb', 'elastic_net_bayes'),
               envir = globalenv())
+## here: suppress printing content that is being exported
 clusterEvalQ(cl,expr= {
   library(glmnet)
   library(caret)
@@ -935,7 +939,9 @@ for(var in vars_mult_class){
   print(unique(x_train_ML[[var]]))
 }
 
+## double check: In case there are still multiclass variables,
 ## all those variabels can be recoded to numeric variables
+if(length_mult_class != 0){
 x_train_ML <- x_train_ML %>%
   mutate_at(vars_mult_class, as.numeric)
 
@@ -945,7 +951,7 @@ x_train_ML <- x_train_ML %>%
 ## that are also in training set and do the type conversion as well)
 x_test_ML <- x_test_ML %>%
   mutate_at(vars_mult_class, as.numeric)
-
+}
 
 
 # Define predictors by excluding ID and FamilyNumber and outcome
@@ -1366,19 +1372,19 @@ set.seed(64)
 
 
 ## To parallelize
-## cl <- makeCluster(parallel::detectCores() - 1)
-cl <- makeCluster(64)
+cl <- makeCluster(parallel::detectCores() - 1)
+## cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
 clusterExport(cl,c('formula', 'folds', 'x_train_ML', 'svr_bayes',
                    #'train_control_svr', 
                    'bounds_svr'),
               envir = globalenv())
-clusterEvalQ(cl,expr= {
+invisible(clusterEvalQ(cl,expr= {
   library(caret)
   library(dplyr)
-})
-clusterEvalQ(cl, ls())
+}))
+invisible(clusterEvalQ(cl, ls()))
 
 tWithPar_svr <- system.time(
   opt_results_svr <- bayesOpt(
