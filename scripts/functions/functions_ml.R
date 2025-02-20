@@ -372,6 +372,12 @@ bayes_hyper_enet <- function(df, folds, formula, bounds_enet, ncores,
   ## name to export to cluster
   df_name <- deparse(substitute(df))
   
+  ## excluding variables from being predictors
+  ## creating x and y to avoid problems with formula object
+  exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+  x_train_matrix <- model.matrix(~ ., data = df)[, !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
+  y_train_vector <- df$QoL_simple
+  
   # Define the objective function
   elastic_net_bayes <- function(alpha, lambda) {
     
@@ -384,14 +390,6 @@ bayes_hyper_enet <- function(df, folds, formula, bounds_enet, ncores,
       assign("noImprovementCount", 0, envir = .GlobalEnv)
     }
     
-    
-    ## excluding variables from being predictors
-    ## creating x and y to avoid problems with formula object
-    exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-    x_train_matrix <- model.matrix(~ ., data = df)[, !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
-    y_train_vector <- df$QoL_simple
-    ## fix this with model.matrix
-    ## CONTINUE HERE!!!
     
     # Train the model using caret with glmnet
     model <- train(x = x_train_matrix,  # Use filtered predictors
@@ -523,7 +521,158 @@ bayes_hyper_enet <- function(df, folds, formula, bounds_enet, ncores,
   
 }
 
+bayes_hyper_rf <- function(df, folds, bounds_rf, ncores,
+                             iters.n = 10,
+                             iters.k = 10){
 
+  ## making sure bounds is a list containing parameters "alpha" and "lambda",
+  ## this can be used a lot more to stop functions from breaking
+  if(!is.list(bounds_rf) | 
+     length(
+       setdiff(
+         c("mtry", "max.depth", "min.node.size", "num.trees"),
+         names(bounds_rf)
+       )
+     ) != 0){
+    stop("bounds_rf must be a list with elements mtry, max.depth,
+         min.node.size and num.trees")
+  }
+  
+  ## name to export to cluster
+  df_name <- deparse(substitute(df))
+  
+  ## excluding variables from being predictors
+  ## creating x and y to avoid problems with formula object
+  exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+  x_train_matrix <- model.matrix(~ ., data = df)[, !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
+  y_train_vector <- df$QoL_simple
+  
+  # Define the objective function
+
+  rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
+    ## Still adapt the parameters, CONTNINUE HERE!!!
+    
+    # Convert parameters to integers
+    mtry <- as.integer(mtry)
+    max.depth <- as.integer(max.depth)
+    min.node.size <- as.integer(min.node.size)
+    num.trees <- as.integer(num.trees)
+    
+    ## track iterations and progress
+    if (!exists("bestScore", envir = .GlobalEnv)){
+      assign("bestScore", -Inf, envir = .GlobalEnv)
+    }
+    if (!exists("noImprovementCount", envir = .GlobalEnv)){
+      assign("noImprovementCount", 0, envir = .GlobalEnv)
+    }
+    
+    ## initiating cross-validation by hand
+    # Initialize an empty vector to store RMSE for each fold
+    
+    cv_rmse_rf <- numeric(length(folds))
+    
+    # Loop over each fold
+    for (i in seq_along(folds)) {
+      # Get the training and validation indices
+      indices_x_train_ML <- unlist(folds[-i]) # All except the current fold
+      indices_val <- folds[[i]]          # Current fold for validation
+      
+      # Split the data into training and validation sets
+      x_train <- x_train_matrix_ML[indices_x_train_ML, ]
+      y_train <- y_train_vector_ML[indices_x_train_ML]
+      x_val <- x_train_matrix_ML[indices_val, ]
+      y_val <- y_train_vector_ML[indices_val]
+      
+      # Train the ranger model
+      model <- ranger(
+        #formula = formula,
+        #data = train_data,
+        dependent.variable.name = "y",  # Target variable name in data frame
+        data = data.frame(y = y_train, x_train),  # Combine y and x into a data frame
+        mtry = mtry,
+        max.depth = max.depth,
+        min.node.size = min.node.size,
+        num.trees = num.trees
+      )
+      
+      # Make predictions on the validation set
+      predictions <- predict(model, data = data.frame(x_val))$predictions
+      
+      # Calculate RMSE for the current fold
+      # true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
+      fold_rmse <- sqrt(mean((predictions - y_val)^2))
+      
+      # Store the RMSE
+      cv_rmse_rf[i] <- fold_rmse
+    }
+    
+    # Calculate overall cross-validated RMSE
+    mean_cv_rmse <- mean(cv_rmse_rf)
+    
+    
+    ## check if this works
+    
+    ## ADJUST!!! ## Try running again after SVR finished
+    #model <- train(
+    #  formula = formula,
+    #  data = x_train_ML,
+    #  method = "ranger",
+    #  trControl = trainControl(
+    #    method = "cv",
+    #    number = 10,
+    #    index = folds # Ensure families stay together
+    #  ),
+    #  tuneGrid = expand.grid(
+    #    mtry = mtry,
+    #    splitrule = "variance", # no variation of splitrule
+    #num.trees = num.trees,
+    #max.depth = max.depth,
+    #    min.node.size = min.node.size 
+    #  ),
+    #  num.trees = num.trees,
+    #  max.depth = max.depth
+    #)
+    
+    score <- -min(mean_cv_rmse)
+    
+    
+    ## Cross-validation was built in by hand
+    
+    # Calculate predictions and RMSE
+    #predictions <- model$predictions
+    #actuals <- x_train_ML$QoL_simple  # Extract target variable
+    #rmse <- sqrt(mean((actuals - predictions)^2))
+    
+    ## Early stopping if after 5 iterations no progress
+    minUtility <- 0.001  # Define threshold for improvement
+    if (score - get("bestScore", envir = .GlobalEnv) < minUtility) {
+      assign("noImprovementCount",
+             get("noImprovementCount",
+                 envir = .GlobalEnv) + 1, envir = .GlobalEnv)
+    } else {
+      assign("noImprovementCount", 0, envir = .GlobalEnv)  # Reset counter if improvement is significant
+      assign("bestScore", score, envir = .GlobalEnv)  # Update best score
+    }
+    
+    # Stop if no improvement for 5 consecutive iterations (Or other amount of iterations)
+    if (get("noImprovementCount", envir = .GlobalEnv) >= 5) {
+      stop("Early stopping: No improvement in 5 consecutive iterations")
+    }
+    
+    
+    # score <- -min(model$results$RMSE)  # Negative RMSE
+    # Function finds maxima so inverting the output!
+    
+    # Return negative RMSE (Bayesian optimization minimizes the score)
+    # return(list(Score = -rmse))
+    return(list(Score = score))
+  }
+  
+  
+}
+  
+  
+  
 #hypertuning_bayes <- function(df, algorithm, tuneGrid, bounds){}
 
 

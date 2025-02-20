@@ -22,6 +22,9 @@
 #
 #
 
+## Important: This script needs to be run from this directory: p01_CBCL_PGS_LGM
+
+
 ## getting complete duration
 t00 <- Sys.time()
 
@@ -34,11 +37,27 @@ options(scipen = 999, expressions = 50000)
 
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
+# install.packages("RcppEigen")
+
+## manually installing packages on the server that have issues when being installed the standard way
+install_manually <- FALSE
+if(install_manually){
+  pacman::p_load("pak", "devtools")
+  pak::pak("tidyverse/readxl")
+  pak::pak('topepo/caret/pkg/caret')
+  devtools::install_github("cran/car")
+}
+
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
-               "xgboost", "parallel", "doParallel", "fastDummies")
+               "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
+               "kernlab", "devtools", "pak")
 
+cat("\n", "\n", "All packages installed and loaded successfully", "\n", "\n")
+
+## quitting to secure installation procedure
+# quit(save = "no")
 
 ## loading in data model 0 (only raw CBCL symptom scores and covariates)
 load(here::here("data", "intermediate", "data_model_0.Rdata"))
@@ -89,14 +108,10 @@ cat("vector with names of rater covariates loaded in; name of object: ",
 covariates_names <- c(covariates_names, rater_covariates)
 
 
-## Printing all variables currently in the system
-cat("all objects currently in workspace:", "\n", ls())
-
-
 ## inspecting classes and unique values of covariates
 for(covariate in covariates_names){
   print(covariate); print(class(data_model_A[, covariate]))
-  print(unique(data_model_A[, covariate]))
+  #print(unique(data_model_A[, covariate]))
   }
 
 ## further distinction: numeric and factor covariates
@@ -179,10 +194,10 @@ vars_mult_class
 ## those can be recoded 
 
 ## printing unique values of multiclass variables
-for(var in vars_mult_class){
-  print(var)
-  print(unique(data_model_A[[var]]))
-}
+#for(var in vars_mult_class){
+  #print(var)
+  #print(unique(data_model_A[[var]]))
+#}
 
 ## all those variabels can be recoded to numeric variables
 data_model_A <- data_model_A %>%
@@ -202,8 +217,6 @@ data_dummies <- dummy_cols(data_model_A,
                            ignore_na = TRUE) ## not own column, but missing
 ## information here will be imputed as well
 
-## This is not part of the preprocessing function! But should well be 
-## implemented into the loop function
 dummy_vars <- setdiff(colnames(data_dummies), colnames(data_model_A))
 
 covariates_full <- c(num_covariates, dummy_vars)
@@ -456,7 +469,7 @@ x_test <- df_A_test %>%
 
 y_test <- y_test
 
-cat("Beginning KNN imputation training data")
+cat("Beginning KNN imputation training data", "\n")
 k_pad <- round(sqrt(ncol(x_train)))
 train_pre_obj <- preProcess(x_train,
                             method = "knnImpute",
@@ -464,19 +477,19 @@ train_pre_obj <- preProcess(x_train,
 
 t2 <- Sys.time()
 
-cat("duration KNN imputation object: ", difftime(t2, t1, unit = "mins"))
+cat("duration KNN imputation object: ", difftime(t2, t1, unit = "mins"), "\n")
 
 x_train_imp <- predict(train_pre_obj, x_train)
 
 t3 <- Sys.time()
 
-cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"))
+cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"), "\n")
 
 x_test_imp <- predict(train_pre_obj, x_test)
 
 t4 <- Sys.time()
 
-cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"))
+cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"), "\n")
 
 sum(colMeans(is.na(x_train_imp)) != 0)
 sum(colMeans(is.na(x_test_imp)) != 0)
@@ -514,7 +527,7 @@ x_test_comb <- cbind(df_FISNr_test, y_test, x_test_imp) %>%
 
 # Create custom 10-fold cross-validation keeping families together
 set.seed(7)
-folds <- caret::groupKFold(group = x_train_comb$FamilyNumber, k = 10)
+folds <- groupKFold(group = x_train_comb$FamilyNumber, k = 10)
 
 adaptControl <- trainControl(method = "adaptive_cv",
                              number = 10, repeats = 10,
@@ -535,8 +548,15 @@ predictor_vars <- setdiff(names(x_train_comb), c("FISNumber", "FamilyNumber",
 ## Note: Seems like a lot of raw answers seem to get eliminated during the 
 ## preprocessing!
 
-formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " + ")))
-# formula <- reformulate(predictor_vars, response = "QoL_simple")
+## excluding variables from being predictors
+## creating x and y to avoid problems with formula object
+exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+x_train_matrix <- model.matrix(~ ., data = x_train_comb)[
+  , !(colnames(model.matrix(~ ., data = x_train_comb)) %in% exclude_vars)]
+y_train_vector <- x_train_comb$QoL_simple
+
+
+# formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " + ")))
 ## Note that this changes later since it will be re-assigned
 
 # Train an elastic net regression model
@@ -546,8 +566,10 @@ formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " +
 ## here: still adjust names and later also work in the random seeds at a 
 ## tune length of e.g. 1000 (see Habets et al.)
 t0_el <- Sys.time()
-glm_adapt <- train(formula, ## use of formula here as FISNr and Family number needed to be excluded!
-                   data = x_train_comb,
+glm_adapt <- train(# formula, ## use of formula here as FISNr and Family number needed to be excluded!
+                   x = x_train_matrix,
+                   y = y_train_vector,
+                   # data = x_train_comb,
                    method = "glmnet",  # Elastic net regression model
                    trControl = adaptControl, 
                    metric = "RMSE", # Metric for regression
@@ -589,8 +611,10 @@ elastic_net_bayes <- function(alpha, lambda) {
   }
   
   # Train the model using caret with glmnet
-  model <- train(formula, 
-                 data = x_train_comb,
+  model <- train(#formula,
+                 x = x_train_matrix,
+                 y = y_train_vector,
+                 #data = x_train_comb,
                  method = "glmnet",
                  trControl = trainControl(method = "cv",
                                           number = 10,
@@ -646,19 +670,19 @@ bounds <- list(alpha = c(0, 1), lambda = c(0.001, 1))
 set.seed(64)
 
 ## To parallelize
-## cl <- makeCluster(parallel::detectCores() - 1)
-cl <- makeCluster(64)
+cl <- makeCluster(parallel::detectCores() - 1)
+#cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
-clusterExport(cl,c('formula', 'folds', 'x_train_comb', 'elastic_net_bayes'),
+clusterExport(cl,c('formula', 'folds', 'x_train_comb', 'elastic_net_bayes', 
+                   'x_train_matrix', 'y_train_vector'),
               envir = globalenv())
-## here: suppress printing content that is being exported
-clusterEvalQ(cl,expr= {
+invisible(clusterEvalQ(cl,expr= {
   library(glmnet)
   library(caret)
   library(dplyr)
-})
-clusterEvalQ(cl, ls())
+}))
+invisible(clusterEvalQ(cl, ls()))
 
 tWithPar <- system.time(
   opt_results <- bayesOpt(
@@ -666,10 +690,12 @@ tWithPar <- system.time(
     bounds = bounds,
     initPoints = 5,
     ## initPoints must be greater than the number of FUN inputs
-    iters.n = (parallel::detectCores() - 1)*2,
-    ## iters.n = 64*2,
-    iters.k = (parallel::detectCores() - 1)*2,
-    ## iters.k = 64*2,
+    iters.n = 3,
+    ## iters.n = (parallel::detectCores() - 1)*2,
+    #iters.n = 64*2,
+    iters.k = 3,
+    ## iters.k = (parallel::detectCores() - 1)*2,
+    #iters.k = 64*2,
     ## otherHalting = list(timeLimit = 30000, minUtility = NULL)
     parallel = TRUE,
     verbose = 1
@@ -702,8 +728,10 @@ cat("duration bayesian hypertuning: ",
 
 
 # Train the final model using the optimal parameters
-model_bayes <- train(formula, 
-                     data = x_train_comb,
+model_bayes <- train(#formula,
+                     x = x_train_matrix,
+                     y = y_train_vector,
+                     #data = x_train_comb,
                      method = "glmnet",
                      trControl = trainControl(method = "none"),  # No CV for the final model
                      # preProc = c("center", "scale"),
@@ -958,7 +986,17 @@ x_test_ML <- x_test_ML %>%
 predictor_vars <- setdiff(names(x_train_ML), c("FISNumber", "FamilyNumber",
                                                "QoL_simple"))
 # Create a formula dynamically
-formula <- as.formula(paste("QoL_simple ~", paste(predictor_vars, collapse = " + ")))
+#formula <- as.formula(paste("QoL_simple ~",
+#                            paste(predictor_vars, collapse = " + ")))
+
+
+## excluding variables from being predictors
+## creating x and y to avoid problems with formula object
+exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+x_train_matrix_ML <- model.matrix(~ ., data = x_train_ML)[
+  , !(colnames(model.matrix(~ ., data = x_train_ML)) %in% exclude_vars)]
+y_train_vector_ML <- x_train_ML$QoL_simple
+
 
 # Create custom 10-fold cross-validation keeping families together
 set.seed(7)
@@ -1012,13 +1050,17 @@ rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
     indices_val <- folds[[i]]          # Current fold for validation
     
     # Split the data into training and validation sets
-    train_data <- x_train_ML[indices_x_train_ML, ]
-    val_data <- x_train_ML[indices_val, ]
+    x_train <- x_train_matrix_ML[indices_x_train_ML, ]
+    y_train <- y_train_vector_ML[indices_x_train_ML]
+    x_val <- x_train_matrix_ML[indices_val, ]
+    y_val <- y_train_vector_ML[indices_val]
     
     # Train the ranger model
     model <- ranger(
-      formula = formula,
-      data = train_data,
+      #formula = formula,
+      #data = train_data,
+      dependent.variable.name = "y",  # Target variable name in data frame
+      data = data.frame(y = y_train, x_train),  # Combine y and x into a data frame
       mtry = mtry,
       max.depth = max.depth,
       min.node.size = min.node.size,
@@ -1026,11 +1068,11 @@ rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
     )
     
     # Make predictions on the validation set
-    predictions <- predict(model, data = val_data)$predictions
+    predictions <- predict(model, data = data.frame(x_val))$predictions
     
     # Calculate RMSE for the current fold
-    true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
-    fold_rmse <- sqrt(mean((predictions - true_values)^2))
+    # true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
+    fold_rmse <- sqrt(mean((predictions - y_val)^2))
     
     # Store the RMSE
     cv_rmse_rf[i] <- fold_rmse
@@ -1116,18 +1158,19 @@ bounds_rf <- list(
 set.seed(64)
 
 ## To parallelize
-## cl <- makeCluster(parallel::detectCores() - 1)
-cl <- makeCluster(64)
+cl <- makeCluster(parallel::detectCores() - 1)
+## cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
-clusterExport(cl,c('formula', 'folds', 'x_train_ML', 'rf_bayes'),
+clusterExport(cl,c('formula', 'folds', 'x_train_ML', 'rf_bayes',
+                   'x_train_matrix_ML', 'y_train_vector_ML'),
               envir = globalenv())
-clusterEvalQ(cl,expr= {
+invisible(clusterEvalQ(cl,expr= {
   library(ranger)
   library(caret)
   library(dplyr)
-})
-clusterEvalQ(cl, ls())
+}))
+invisible(clusterEvalQ(cl, ls()))
 
 tWithPar_rf <- system.time(
   opt_results_rf <- bayesOpt(
@@ -1135,11 +1178,15 @@ tWithPar_rf <- system.time(
     bounds = bounds_rf,
     initPoints = 5,
     ## initPoints must be greater than the number of FUN inputs
-    iters.n = (parallel::detectCores() - 1)*2,
+    iters.n = 3,
+    ## iters.n = (parallel::detectCores() - 1)*2,
     ## iters.n = 64*2,
-    iters.k = (parallel::detectCores() - 1)*2,
+    iters.k = 3,
+    ## iters.k = (parallel::detectCores() - 1)*2,
     ## iters.k = 64*2,
-    otherHalting = list(timeLimit = 6000),
+    # otherHalting = list(timeLimit = 6000),
+    otherHalting = list(timeLimit = 600),
+    ## very low but this is only for testing
     parallel = TRUE,
     verbose = 1,
     acq = "ei"
@@ -1229,8 +1276,10 @@ model_adapt_rf$bestTune
 
 # Train the final model using the optimal parameters
 ## I can still train the final model with caret! 
-model_bayes_rf <- train(formula, 
-                        data = x_train_ML,
+model_bayes_rf <- train(#formula,
+                        x = x_train_matrix_ML,
+                        y = y_train_vector_ML,
+                        #data = x_train_ML,
                         method = "ranger",
                         trControl = trainControl(method = "none"),
                         # No CV for the final model
@@ -1320,12 +1369,14 @@ svr_bayes <- function(C, sigma, degree, scale, method) {
   # Train the model
   # set.seed(7)
   model <- train(
-    formula,
-    data = x_train_ML,
+    #formula,
+    #data = x_train_ML,
+    x = x_train_matrix_ML,
+    y = y_train_vector_ML,
     method = model_method,
     trControl = trainControl(
       method = "cv",
-      number = 10,
+      number = 5,
       verboseIter = TRUE,
       allowParallel = FALSE,
       index = folds ## making sure the family split is still applied 
@@ -1372,17 +1423,20 @@ set.seed(64)
 
 
 ## To parallelize
-cl <- makeCluster(parallel::detectCores() - 1)
+cl <- makeCluster(parallel::detectCores() - 3)
 ## cl <- makeCluster(64)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
-clusterExport(cl,c('formula', 'folds', 'x_train_ML', 'svr_bayes',
-                   #'train_control_svr', 
-                   'bounds_svr'),
+clusterExport(cl,c('formula', 'folds', 'x_train_ML',
+                   'x_train_matrix_ML', 'y_train_vector_ML',
+                   'svr_bayes', 'bounds_svr'
+                   #,'train_control_svr', 
+                   ),
               envir = globalenv())
 invisible(clusterEvalQ(cl,expr= {
   library(caret)
   library(dplyr)
+  library(kernlab)
 }))
 invisible(clusterEvalQ(cl, ls()))
 
@@ -1392,10 +1446,12 @@ tWithPar_svr <- system.time(
     bounds = bounds_svr,
     initPoints = 10,
     ## initPoints must be greater than the number of FUN inputs
-    iters.n = (parallel::detectCores() - 1)*2,
+    iters.n = 3,
+    ## iters.n = (parallel::detectCores() - 1)*2,
     ## iters.n = 64*2,
     # iters.n = 5,
-    iters.k = (parallel::detectCores() - 1)*2,
+    iters.k = 3,
+    ## iters.k = (parallel::detectCores() - 1)*2,
     ## iters.k = 64*2,
     #otherHalting = list(timeLimit = 12000),
     parallel = TRUE,
@@ -1453,8 +1509,10 @@ if(best_params_svr$method < 0.5) {
 }
 
 
-model_bayes_svr <- train(formula, 
-                        data = x_train_ML,
+model_bayes_svr <- train(#formula, 
+                        #data = x_train_ML,
+                        x = x_train_matrix_ML,
+                        y = y_train_vector_ML,
                         method = method_svr,
                         trControl = trainControl(method = "none"),
                         # No CV for the final model
@@ -1569,9 +1627,6 @@ xgb_bayes <- function(num_parallel_tree,
   max_depth <- round(max_depth)
   min_child_weight <- round(min_child_weight)
   
-  
-  ## NOW IT IS CORRECT!! CONTINUE HERE!!!
-  
   columns_exclude <- c("FamilyNumber", "FISNumber", "QoL_simple")
   
   ## making sure that only predictor columns are contained in training set!
@@ -1664,12 +1719,12 @@ bounds_xgb <- list(
 cl <- makeCluster(64)
 registerDoParallel(cl)
 clusterExport(cl, c('folds', 'x_train_ML', 'bounds_xgb', 'xgb_bayes'))
-clusterEvalQ(cl, expr = {
+invisible(clusterEvalQ(cl, expr = {
   library(xgboost)
   library(caret)
   library(dplyr)
-})
-clusterEvalQ(cl, ls())
+}))
+invisible(clusterEvalQ(cl, ls()))
 
 tWithPar <- system.time(
   opt_results_xgb <- bayesOpt(
@@ -1677,8 +1732,10 @@ tWithPar <- system.time(
     bounds = bounds_xgb,
     initPoints = 10,
     ## initPoints must be greater than the number of FUN inputs
-    iters.n = (parallel::detectCores() - 1) * 2,
-    iters.k = (parallel::detectCores() - 1) * 2,
+    ## iters.n = (parallel::detectCores() - 1) * 2,
+    ## iters.k = (parallel::detectCores() - 1) * 2,
+    iters.n = 64 *2,
+    iters.k = 64 *2,
     parallel = TRUE,
     verbose = 1
   )
@@ -1792,6 +1849,8 @@ cat("duration entire script (model A): ",
 
 ## Saving entire workspace
 save.image(file = here::here("data", "intermediate", "workspace_model_A_ntr.RData"))
+
+## on the server, script took about 18 hours to run, now finished, ran all the way
 
 ##-----------------------------------------------------------------------------
 
