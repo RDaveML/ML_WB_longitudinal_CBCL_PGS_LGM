@@ -52,7 +52,7 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
                "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
-               "kernlab", "devtools", "pak")
+               "kernlab", "devtools", "pak", "filelock")
 
 cat("\n", "\n", "All packages installed and loaded successfully", "\n", "\n")
 
