@@ -1796,8 +1796,11 @@ dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(x_test_ML %>%
                                                select(-all_of(columns_exclude))),
                                    label = as.matrix(x_test_ML$QoL_simple))
 
+
 par_xgb <- list(
   booster = "gbtree",
+  objective = "reg:squarederror", 
+  eval_metric = "rmse",
   num_parallel_tree = best_params_xgb$num_parallel_tree,
   max_depth = best_params_xgb$max_depth,
   min_child_weight = best_params_xgb$min_child_weight,
@@ -1809,18 +1812,33 @@ par_xgb <- list(
   alpha = best_params_xgb$alpha
 )
 
+#par_xgb <- list(
+#  booster = "gbtree",
+#  objective = "reg:squarederror", 
+#  eval_metric = "rmse",
+#  nthread = 1
+#)
+
 watchlist <- list(train = dtrain_xgb, eval = dtest_xgb)
+#watchlist <- list(train = dtrain_xgb_test, eval = dtest_xgb_test)
 
 ## caret does not allow for the hyperparameter tuning as wished,
 ## final model trained with xgb
-model_bayes_xgb <- xgboost(
+model_bayes_xgb <- xgb.train(
   data = dtrain_xgb,
-  nrounds = 100,
-  verbose = 2
+  params = par_xgb,
+  #objective = "reg:squarederror", 
+  #eval_metric = "rmse",
+  nrounds = 1000,
+  watchlist = watchlist, 
+  early_stopping_rounds = 50,
+  verbose = 1
 )
 
-## How is it here with the nrounds? When setting to 500, the train-rmse 
-## keeps diminishing, but isn't that simply overfitting?
+best_iteration <- model_bayes_xgb$best_iteration  # Get the best iteration number
+preds_xgb <- predict(model_bayes_xgb, dtrain_xgb, iteration_range = best_iteration)  # Predict using the best iteration
+
+
 
 
 t2_bayes_xgb <- Sys.time()

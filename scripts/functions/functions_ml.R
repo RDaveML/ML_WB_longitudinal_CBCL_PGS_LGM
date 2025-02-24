@@ -579,7 +579,7 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
   
   # Initialize shared variable for best result
   ## these are set globally! So that they are available to the 
-  ## elastic_net_bayes function
+  ## rf_bayes function
   best_result_so_far <- NULL
   early_stopping_triggered <- FALSE
   
@@ -692,7 +692,8 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
   clusterExport(cl,c(df_name, 'folds', 'rf_bayes',
                      'x_train_matrix', 'y_train_vector',
                      'best_result_so_far',
-                     'early_stopping_triggered'),
+                     'early_stopping_triggered',
+                     'bounds_rf'),
                 envir = environment())
   invisible(clusterEvalQ(cl,expr= {
     library(ranger)
@@ -814,6 +815,462 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
 }
   
 ## Note: What all these functions do not yet do is evaluation on the test set!  
+
+bayes_hyper_svr <- function(df, folds, bounds_svr,
+                           ncores = parallel::detectCores() - 2,
+                           iters.n = 10,
+                           iters.k = 10){
+  
+  ## making sure bounds is a list containing parameters 
+  ## C, sigma, degree, scale and method
+  if(!is.list(bounds_svr) | 
+     length(
+       setdiff(
+         c("C", "sigma", "degree", "scale", "method"),
+         names(bounds_svr)
+       )
+     ) != 0){
+    stop("bounds_svr must be a list with elements C, sigma, degree, scale,
+         method")
+  }
+  
+  ## name to export to cluster
+  df_name <- deparse(substitute(df))
+  
+  ## excluding variables from being predictors
+  ## creating x and y to avoid problems with formula object
+  exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+  x_train_matrix <- model.matrix(~ ., data = df)[
+    , !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
+  y_train_vector <- df$QoL_simple
+  
+  # Initialize shared variable for best result
+  ## these are set globally! So that they are available to the 
+  ## svr_bayes function
+  best_result_so_far <- NULL
+  early_stopping_triggered <- FALSE
+  
+  # Define the objective function
+  
+  svr_bayes <- function(C, sigma, degree, scale, method) {
+    
+    # Prevent further iterations if early stopping was triggered (stored globally)
+    if (early_stopping_triggered) {
+      return(list(Score = best_result_so_far$Score))  # Return best result found so far
+    }
+    
+    ## Rounding degree to integer
+    degree <- as.integer(ifelse(degree < 2.5, 2, 3))
+    
+    # Dynamically select parameters based on the method
+    method <- ifelse(method < 0.5, "svmRadial", "svmPoly")
+    ## also use this later to select the method
+    
+    if(method == "svmRadial") {
+      tune_grid <- expand.grid(
+        C = C,
+        sigma = sigma
+      )
+      model_method <- "svmRadial"
+    } else if (method == "svmPoly") {
+      tune_grid <- expand.grid(
+        C = C,
+        degree = degree,
+        scale = scale
+      )
+      model_method <- "svmPoly"
+    }
+    
+    
+    # Train the model
+    model <- train(
+      x = x_train_matrix,
+      y = y_train_vector,
+      method = model_method,
+      trControl = trainControl(
+        method = "cv",
+        number = 10,
+        verboseIter = TRUE,
+        allowParallel = FALSE,
+        index = folds), ## making sure the family split is still applied 
+      tuneGrid = tune_grid
+    )
+    
+    score <- -min(model$results$RMSE)
+    
+    # Check for early stopping
+    minUtility <- 0.001
+    if (!is.null(best_result_so_far) && (score - best_result_so_far$Score < minUtility)) {
+      best_result_so_far$noImprovementCount <<- best_result_so_far$noImprovementCount + 1
+      ## global assignment, i.e. assinging this variable to be accessible outside
+      ## the rf_bayes function (but not the outer function)
+    } else {
+      best_result_so_far <<- list(Score = score, noImprovementCount = 0)
+    }
+    
+    # Trigger early stopping if no improvement for 5 iterations
+    if (best_result_so_far$noImprovementCount >= 5) {
+      early_stopping_triggered <<- TRUE  # Set flag to prevent further evaluations
+    } ## to global environment
+    
+    ## Note: This ensures that upon running again, no further model will 
+    ## be trained if there was no improvement previously
+    ## bayesOpt will still run all iterations, but it will only always return 
+    ## the earlier score, saving a lot of time
+    
+    return(list(Score = best_result_so_far$Score))  # Always return the best score found
+  }
+  
+  ## Optimizing the hypertuning of support vector regression parameters
+  
+  ## To parallelize
+  cl <- makeCluster(ncores)
+  ## cl <- makeCluster(64)
+  ## cluster of 64 on ntrcompute-2
+  registerDoParallel(cl)
+  clusterExport(cl,c(df_name, 'folds', 'svr_bayes',
+                     'x_train_matrix', 'y_train_vector',
+                     'best_result_so_far',
+                     'early_stopping_triggered', 'bounds_svr'),
+                envir = environment())
+  invisible(clusterEvalQ(cl,expr= {
+    library(caret)
+    library(dplyr)
+    library(kernlab)
+  }))
+  invisible(clusterEvalQ(cl, ls()))
+  
+  tWithPar_svr <- system.time(
+    opt_results_svr <- bayesOpt(
+      FUN = svr_bayes,
+      bounds = bounds_svr,
+      initPoints = 10,
+      ## initPoints must be greater than the number of FUN inputs
+      ## iters.n = 3,
+      # iters.n = (parallel::detectCores() - 1)*2,
+      iters.n = iters.n,
+      ## iters.n = 64*2,
+      ## iters.k = 3,
+      # iters.k = (parallel::detectCores() - 1)*2,
+      iters.k = iters.k,
+      ## iters.k = 64*2,
+      # otherHalting = list(timeLimit = 6000),
+      otherHalting = list(timeLimit = 60),
+      ## very low but this is only for testing
+      parallel = TRUE,
+      verbose = 1,
+      acq = "ei"
+    )
+  )
+  
+  
+  stopCluster(cl)
+  registerDoSEQ()
+  
+  # View the best parameters
+  print(opt_results_svr)
+  
+  print(tWithPar_svr)
+  
+  
+  # Extract the best parameters
+  best_params_svr <- getBestPars(opt_results_svr)
+  
+  niters <- opt_results_svr$iters
+  
+  stopStatus <- opt_results_svr$stopStatus
+  
+  totalTime <- opt_results_svr$elapsedTime
+  
+  print(best_params_svr)
+  
+  ## train final model
+  
+  if(best_params_svr$method < 0.5) {
+    method_svr <- "svmRadial"
+    tune_grid_svr <- data.frame(
+      C = best_params_svr$C, ## optimal C
+      sigma = best_params_svr$sigma ## optimal sigma
+    )
+    ## here also add other parameters (or not)
+  } else {
+    method_svr <- "svmPoly"
+    tune_grid_svr <- data.frame(
+      C = best_params_svr$C, ## optimal C
+      degree = round(best_params_svr$degree), ## optimal degree, round to integer
+      scale = best_params_svr$scale # ## optimal scale,
+    )
+    ## here also add other parameters
+  }
+  
+  
+  model_bayes_svr <- train(#formula, 
+    #data = x_train_ML,
+    x = x_train_matrix,
+    y = y_train_vector,
+    method = method_svr,
+    trControl = trainControl(method = "none"),
+    # No CV for the final model
+    tuneGrid = tune_grid_svr #,
+    ## ...
+  )
+  
+  
+  return(list(best_params_svr = best_params_svr,
+              time_hypertuning = tWithPar_svr,
+              early_stopping_triggered  = early_stopping_triggered,
+              niters = niters, 
+              stopStatus = stopStatus,
+              totalTime = totalTime,
+              model_bayes_svr = model_bayes_svr)) ## model object to also make predictions
+  
+}
+
+## Note: What all these functions do not yet do is evaluation on the test set!  
+
+bayes_hyper_xgb <- function(df, folds, bounds_xgb,
+                            ncores = parallel::detectCores() - 2,
+                            iters.n = 10,
+                            iters.k = 10){
+  
+  ## making sure bounds is a list containing parameters 
+  ## mtry, max.depth, min,node.size and num.trees
+  if(!is.list(bounds_xgb) | 
+     length(
+       setdiff(
+         c("num_parallel_tree",
+           "max_depth",
+           "min_child_weight",
+           "subsample",
+           "colsample_bytree",
+           "eta",
+           "gamma",
+           "lambda",
+           "alpha"),
+         names(bounds_xgb)
+       )
+     ) != 0){
+    stop("bounds_xgb must be a list with elements num_parallel_tree,
+                      max_depth,
+                      min_child_weight,
+                      subsample,
+                      colsample_bytree,
+                      eta,
+                      gamma,
+                      lambda,
+                      alpha")
+  }
+  
+  ## name to export to cluster
+  df_name <- deparse(substitute(df))
+  
+  ## excluding variables from being predictors
+  ## creating x and y to avoid problems with formula object
+  exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
+  dtrain <- xgboost::xgb.DMatrix(as.matrix(df %>%
+                                             select(-all_of(exclude_vars))),
+                                 label = as.matrix(df$QoL_simple))
+  
+  # Initialize shared variable for best result
+  ## these are set globally! So that they are available to the 
+  ## xgb_bayes function
+  best_result_so_far <- NULL
+  early_stopping_triggered <- FALSE
+  
+  xgb_bayes <- function(num_parallel_tree,
+                        max_depth,
+                        min_child_weight,
+                        subsample,
+                        colsample_bytree,
+                        eta,
+                        gamma,
+                        lambda,
+                        alpha) {
+    
+    ## converting all integer inputs to integers.
+    num_parallel_tree <- round(num_parallel_tree)
+    max_depth <- round(max_depth)
+    min_child_weight <- round(min_child_weight)
+    
+    Pars <- list(
+      booster = "gbtree",
+      ## using default option, no variation of this parameter
+      num_parallel_tree = num_parallel_tree,
+      max_depth = max_depth,
+      min_child_weight = min_child_weight,
+      subsample = subsample,
+      colsample_bytree = colsample_bytree,
+      eta = eta,
+      gamma = gamma,
+      lambda = lambda,
+      alpha = alpha,
+      objective = 'reg:squarederror',
+      ## default option, sensible?
+      eval_metric = "rmse"
+    )
+    
+    xgbcv <- xgb.cv(
+      params = Pars,
+      data = dtrain,
+      nround = 100,
+      folds = folds,
+      early_stopping_rounds = 100,
+      maximize = TRUE,
+      verbose = 1
+    )
+    
+    score = -min(xgbcv$evaluation_log$test_rmse_mean)
+    
+    # Check for early stopping
+    minUtility <- 0.001
+    if (!is.null(best_result_so_far) && (score - best_result_so_far$Score < minUtility)) {
+      best_result_so_far$noImprovementCount <<- best_result_so_far$noImprovementCount + 1
+      ## global assignment, i.e. assinging this variable to be accessible outside
+      ## the rf_bayes function (but not the outer function)
+    } else {
+      best_result_so_far <<- list(Score = score, noImprovementCount = 0)
+    }
+    
+    # Trigger early stopping if no improvement for 5 iterations
+    if (best_result_so_far$noImprovementCount >= 5) {
+      early_stopping_triggered <<- TRUE  # Set flag to prevent further evaluations
+    } ## to global environment
+    
+    ## Note: This ensures that upon running again, no further model will 
+    ## be trained if there was no improvement previously
+    ## bayesOpt will still run all iterations, but it will only always return 
+    ## the earlier score, saving a lot of time
+    
+    return(list(Score = best_result_so_far$Score))  # Always return the best score found
+  }
+  
+  ## To parallelize
+  cl <- makeCluster(ncores)
+  ## cl <- makeCluster(64)
+  ## cluster of 64 on ntrcompute-2
+  registerDoParallel(cl)
+  clusterExport(cl,c(df_name, 'folds', 'xgb_bayes',
+                     'dtrain',
+                     'best_result_so_far',
+                     'early_stopping_triggered', 'bounds_xgb'),
+                envir = environment())
+  invisible(clusterEvalQ(cl,expr= {
+    library(caret)
+    library(dplyr)
+    library(xgboost)
+  }))
+  invisible(clusterEvalQ(cl, ls()))
+  
+  tWithPar_xgb <- system.time(
+    opt_results_xgb <- bayesOpt(
+      FUN = xgb_bayes,
+      bounds = bounds_xgb,
+      initPoints = 10,
+      ## initPoints must be greater than the number of FUN inputs
+      ## iters.n = 3,
+      # iters.n = (parallel::detectCores() - 1)*2,
+      iters.n = iters.n,
+      ## iters.n = 64*2,
+      ## iters.k = 3,
+      # iters.k = (parallel::detectCores() - 1)*2,
+      iters.k = iters.k,
+      ## iters.k = 64*2,
+      # otherHalting = list(timeLimit = 6000),
+      otherHalting = list(timeLimit = 60),
+      ## very low but this is only for testing
+      parallel = TRUE,
+      verbose = 1,
+      acq = "ei"
+    )
+  )
+  
+  
+  stopCluster(cl)
+  registerDoSEQ()
+  
+  # View the best parameters
+  print(opt_results_xgb)
+  
+  print(tWithPar_xgb)
+  
+  
+  # Extract the best parameters
+  best_params_xgb <- getBestPars(opt_results_xgb)
+  
+  niters <- opt_results_xgb$iters
+  
+  stopStatus <- opt_results_xgb$stopStatus
+  
+  totalTime <- opt_results_xgb$elapsedTime
+  
+  print(best_params_xgb)
+  
+  ## train final model
+  ## Converting training data to xgb Matrix
+  ## making sure that only predictor columns are contained in training set!
+  dtrain_xgb <- xgboost::xgb.DMatrix(as.matrix(df %>%
+                                                 select(-all_of(exclude_vars))),
+                                     label = as.matrix(df$QoL_simple))
+  
+  dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(df %>%
+                                                select(-all_of(exclude_vars))),
+                                    label = as.matrix(df$QoL_simple))
+  
+  par_xgb <- list(
+    booster = "gbtree",
+    objective = "reg:squarederror", 
+    eval_metric = "rmse",
+    num_parallel_tree = best_params_xgb$num_parallel_tree,
+    max_depth = best_params_xgb$max_depth,
+    min_child_weight = best_params_xgb$min_child_weight,
+    subsample = best_params_xgb$subsample,
+    colsample_bytree = best_params_xgb$colsample_bytree,
+    eta = best_params_xgb$eta,
+    gamma = best_params_xgb$gamma,
+    lambda = best_params_xgb$lambda,
+    alpha = best_params_xgb$alpha
+  )
+  
+  watchlist <- list(train = dtrain_xgb, eval = dtest_xgb)
+  
+  ## Final model training 
+  
+  ## final model trained with xgb
+  model_bayes_xgb <- xgb.train(
+    data = dtrain_xgb,
+    params = par_xgb,
+    #objective = "reg:squarederror", 
+    #eval_metric = "rmse",
+    nrounds = 1000,
+    watchlist = watchlist, 
+    early_stopping_rounds = 50,
+    verbose = 1
+  )
+  
+  
+  ## getting predictions (On test set)
+  best_iteration <- model_bayes_xgb$best_iteration
+  # Get the best iteration number
+  preds_xgb <- predict(model_bayes_xgb, dtrain_xgb,
+                       iteration_range = best_iteration)
+  # Predict using the best iteration (best iteration in test set!)
+  
+  
+  return(list(best_params_xgb = best_params_xgb,
+              time_hypertuning = tWithPar_xgb,
+              early_stopping_triggered  = early_stopping_triggered,
+              niters = niters, 
+              stopStatus = stopStatus,
+              totalTime = totalTime,
+              model_bayes_xgb = model_bayes_xgb,
+              preds_xgb = preds_xgb)) ## model object to also make predictions
+  
+  
+  
+}
+
+
+
   
 #hypertuning_bayes <- function(df, algorithm, tuneGrid, bounds){}
 
