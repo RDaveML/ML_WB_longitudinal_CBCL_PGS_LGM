@@ -1715,8 +1715,8 @@ bounds_xgb <- list(
 ## Still check how exactly this works
 
 
-## cl <- makeCluster(parallel::detectCores() - 1)
-cl <- makeCluster(64)
+cl <- makeCluster(parallel::detectCores() - 2)
+##cl <- makeCluster(64)
 registerDoParallel(cl)
 clusterExport(cl, c('folds', 'x_train_ML', 'bounds_xgb', 'xgb_bayes'))
 invisible(clusterEvalQ(cl, expr = {
@@ -1734,8 +1734,10 @@ tWithPar <- system.time(
     ## initPoints must be greater than the number of FUN inputs
     ## iters.n = (parallel::detectCores() - 1) * 2,
     ## iters.k = (parallel::detectCores() - 1) * 2,
-    iters.n = 64 *2,
-    iters.k = 64 *2,
+    ## iters.n = 64 *2,
+    ## iters.k = 64 *2,
+    iters.n = 10,
+    iters.k = 10,
     parallel = TRUE,
     verbose = 1
   )

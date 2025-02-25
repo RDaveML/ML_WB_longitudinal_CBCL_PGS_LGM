@@ -549,7 +549,7 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   
 }
 
-bayes_hyper_rf <- function(df, folds, bounds_rf,
+bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
                            ncores = parallel::detectCores() - 2,
                            iters.n = 10,
                            iters.k = 10){
@@ -568,14 +568,14 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
   }
   
   ## name to export to cluster
-  df_name <- deparse(substitute(df))
+  df_train_name <- deparse(substitute(df_train))
   
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
   exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-  x_train_matrix <- model.matrix(~ ., data = df)[
-    , !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
-  y_train_vector <- df$QoL_simple
+  x_train_matrix <- model.matrix(~ ., data = df_train)[
+    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+  y_train_vector <- df_train$QoL_simple
   
   # Initialize shared variable for best result
   ## these are set globally! So that they are available to the 
@@ -640,7 +640,7 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
       )
       
       # Make predictions on the validation set
-      predictions <- predict(model, data = data.frame(x_val_rf))$predictions
+      predictions <- predict(model, data = data.frame(x_val_rf))
       
       # Calculate RMSE for the current fold
       # true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
@@ -689,7 +689,7 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
   ## cl <- makeCluster(64)
   ## cluster of 64 on ntrcompute-2
   registerDoParallel(cl)
-  clusterExport(cl,c(df_name, 'folds', 'rf_bayes',
+  clusterExport(cl,c(df_train_name, 'folds', 'rf_bayes',
                      'x_train_matrix', 'y_train_vector',
                      'best_result_so_far',
                      'early_stopping_triggered',
@@ -756,31 +756,6 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
   )
   
   
-  adapt <- FALSE
-  if(adapt){
-    t1_adapt_rf <- Sys.time()
-    
-    adaptControl_rf <- trainControl(method = "adaptive_cv",
-                                    number = 10, repeats = 10, ## 10-fold CV
-                                    adaptive = list(min = 5, alpha = 0.05, 
-                                                    method = "gls",
-                                                    complete = FALSE),
-                                    search = "random",
-                                    index = folds)
-    
-    model_adapt_rf <- train(formula, 
-                            data = x_train_ML,
-                            method = "ranger",
-                            trControl = adaptControl_rf, 
-                            metric = "RMSE", # Metric for regression
-                            tuneLength = 15, # Number of random hyperparameter settings
-                            verbose = TRUE)
-    
-    
-    model_adapt_rf$bestTune
-    
-  }
-  
   
   # Train the final model using the optimal parameters
   ## I can still train the final model with caret! 
@@ -803,6 +778,12 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
   ## same for bayesian optimized tuned model
   final_model_bayes <- model_bayes_rf$finalModel
   
+  preds_rf_train <- predict(model_bayes_rf,
+                            data = df_train)
+  
+  preds_rf_test <- predict(model_bayes_rf,
+                           data = df_test)
+  
   
   return(list(best_params_rf = best_params_rf,
               time_hypertuning = tWithPar_rf,
@@ -810,13 +791,15 @@ bayes_hyper_rf <- function(df, folds, bounds_rf,
               niters = niters, 
               stopStatus = stopStatus,
               totalTime = totalTime,
-              model_bayes_rf = model_bayes_rf)) ## model object to also make predictions
+              model_bayes_rf = model_bayes_rf,
+              preds_rf_train = preds_rf_train,
+              preds_rf_test = preds_rf_test)) ## model object to also make predictions
   
 }
   
 ## Note: What all these functions do not yet do is evaluation on the test set!  
 
-bayes_hyper_svr <- function(df, folds, bounds_svr,
+bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
                            ncores = parallel::detectCores() - 2,
                            iters.n = 10,
                            iters.k = 10){
@@ -835,14 +818,14 @@ bayes_hyper_svr <- function(df, folds, bounds_svr,
   }
   
   ## name to export to cluster
-  df_name <- deparse(substitute(df))
+  df_train_name <- deparse(substitute(df_train))
   
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
   exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-  x_train_matrix <- model.matrix(~ ., data = df)[
-    , !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
-  y_train_vector <- df$QoL_simple
+  x_train_matrix <- model.matrix(~ ., data = df_train)[
+    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+  y_train_vector <- df_train$QoL_simple
   
   # Initialize shared variable for best result
   ## these are set globally! So that they are available to the 
@@ -928,7 +911,7 @@ bayes_hyper_svr <- function(df, folds, bounds_svr,
   ## cl <- makeCluster(64)
   ## cluster of 64 on ntrcompute-2
   registerDoParallel(cl)
-  clusterExport(cl,c(df_name, 'folds', 'svr_bayes',
+  clusterExport(cl,c(df_train_name, 'folds', 'svr_bayes',
                      'x_train_matrix', 'y_train_vector',
                      'best_result_so_far',
                      'early_stopping_triggered', 'bounds_svr'),
@@ -1015,6 +998,12 @@ bayes_hyper_svr <- function(df, folds, bounds_svr,
     ## ...
   )
   
+  preds_svr_train <- predict(model_bayes_svr,
+                             data = df_train)
+  
+  preds_svr_test <- predict(model_bayes_svr,
+                            data = df_test)
+  
   
   return(list(best_params_svr = best_params_svr,
               time_hypertuning = tWithPar_svr,
@@ -1022,13 +1011,15 @@ bayes_hyper_svr <- function(df, folds, bounds_svr,
               niters = niters, 
               stopStatus = stopStatus,
               totalTime = totalTime,
-              model_bayes_svr = model_bayes_svr)) ## model object to also make predictions
+              model_bayes_svr = model_bayes_svr, ## model object to also make predictions
+              preds_svr_train = preds_svr_train,
+              preds_svr_test = preds_svr_test))
   
 }
 
 ## Note: What all these functions do not yet do is evaluation on the test set!  
 
-bayes_hyper_xgb <- function(df, folds, bounds_xgb,
+bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                             ncores = parallel::detectCores() - 2,
                             iters.n = 10,
                             iters.k = 10){
@@ -1062,20 +1053,26 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
   }
   
   ## name to export to cluster
-  df_name <- deparse(substitute(df))
+  df_train_name <- deparse(substitute(df_train))
   
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
-  exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-  dtrain <- xgboost::xgb.DMatrix(as.matrix(df %>%
-                                             select(-all_of(exclude_vars))),
-                                 label = as.matrix(df$QoL_simple))
+  exclude_vars <- c("FISNumber", "FamilyNumber", "QoL_simple")
+  #dtrain <- xgboost::xgb.DMatrix(as.matrix(df_train %>%
+  #                                            select(-all_of(exclude_vars))),
+  #                                label = as.matrix(df_train$QoL_simple))
+  
+  train_matrix <- as.matrix(df_train %>% select(-all_of(exclude_vars)))  # Predictor matrix
+  train_labels <- as.matrix(df_train$QoL_simple)  # Labels
+  
+  
   
   # Initialize shared variable for best result
   ## these are set globally! So that they are available to the 
   ## xgb_bayes function
   best_result_so_far <- NULL
   early_stopping_triggered <- FALSE
+  
   
   xgb_bayes <- function(num_parallel_tree,
                         max_depth,
@@ -1086,6 +1083,9 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
                         gamma,
                         lambda,
                         alpha) {
+    
+    # Re-create dtrain inside the function
+    dtrain <- xgboost::xgb.DMatrix(train_matrix, label = train_labels)
     
     ## converting all integer inputs to integers.
     num_parallel_tree <- round(num_parallel_tree)
@@ -1149,11 +1149,13 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
   ## cl <- makeCluster(64)
   ## cluster of 64 on ntrcompute-2
   registerDoParallel(cl)
-  clusterExport(cl,c(df_name, 'folds', 'xgb_bayes',
-                     'dtrain',
+  clusterExport(cl,c(df_train_name, 'folds', 'xgb_bayes',
+                     'train_matrix', 'train_labels',
                      'best_result_so_far',
                      'early_stopping_triggered', 'bounds_xgb'),
                 envir = environment())
+  #clusterExport(cl, c('dtrain'),
+  #              envir = globalenv())
   invisible(clusterEvalQ(cl,expr= {
     library(caret)
     library(dplyr)
@@ -1176,7 +1178,7 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
       iters.k = iters.k,
       ## iters.k = 64*2,
       # otherHalting = list(timeLimit = 6000),
-      otherHalting = list(timeLimit = 60),
+      otherHalting = list(timeLimit = 600),
       ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
@@ -1208,13 +1210,13 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
   ## train final model
   ## Converting training data to xgb Matrix
   ## making sure that only predictor columns are contained in training set!
-  dtrain_xgb <- xgboost::xgb.DMatrix(as.matrix(df %>%
+  dtrain_xgb <- xgboost::xgb.DMatrix(as.matrix(df_train %>%
                                                  select(-all_of(exclude_vars))),
-                                     label = as.matrix(df$QoL_simple))
+                                     label = as.matrix(df_train$QoL_simple))
   
-  dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(df %>%
+  dtest_xgb <- xgboost::xgb.DMatrix(as.matrix(df_test %>%
                                                 select(-all_of(exclude_vars))),
-                                    label = as.matrix(df$QoL_simple))
+                                    label = as.matrix(df_test$QoL_simple))
   
   par_xgb <- list(
     booster = "gbtree",
@@ -1251,8 +1253,12 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
   ## getting predictions (On test set)
   best_iteration <- model_bayes_xgb$best_iteration
   # Get the best iteration number
-  preds_xgb <- predict(model_bayes_xgb, dtrain_xgb,
-                       iteration_range = best_iteration)
+  preds_xgb_train <- predict(model_bayes_xgb, dtrain_xgb,
+                             iteration_range = best_iteration)
+  # Predict using the best iteration (best iteration in test set!)
+  
+  preds_xgb_test <- predict(model_bayes_xgb, dtest_xgb,
+                            iteration_range = best_iteration)
   # Predict using the best iteration (best iteration in test set!)
   
   
@@ -1262,10 +1268,9 @@ bayes_hyper_xgb <- function(df, folds, bounds_xgb,
               niters = niters, 
               stopStatus = stopStatus,
               totalTime = totalTime,
-              model_bayes_xgb = model_bayes_xgb,
-              preds_xgb = preds_xgb)) ## model object to also make predictions
-  
-  
+              model_bayes_xgb = model_bayes_xgb, ## model object to also make predictions
+              preds_xgb_train = preds_xgb_train,
+              preds_xgb_test = preds_xgb_test))
   
 }
 
