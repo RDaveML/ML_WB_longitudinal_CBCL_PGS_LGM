@@ -640,7 +640,7 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
       )
       
       # Make predictions on the validation set
-      predictions <- predict(model, data = data.frame(x_val_rf))
+      predictions <- predict(model, data = data.frame(x_val_rf))$predictions
       
       # Calculate RMSE for the current fold
       # true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
