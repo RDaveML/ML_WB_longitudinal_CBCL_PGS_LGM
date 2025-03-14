@@ -6,7 +6,7 @@
 #   
 # Date: 2025-03-06
 #
-# Script Name: 09_bootstrap_stability.R
+# Script Name: 10_bootstrap_stability.R
 #
 # Script Description: 
 # This script does the bootstraping stability check of ML predictions (Riley et.
@@ -101,10 +101,6 @@ pred_df <- pred_df %>%
 ## with help of the Riley paper and if necessary CGPT
 
 ## CONTINUE HERE!!
-
-
-
-
 
 
 

@@ -1872,6 +1872,22 @@ save.image(file = here::here("data", "intermediate", "workspace_model_A_ntr.RDat
 
 ## on the server, script took about 18 hours to run, now finished, ran all the way
 
+dtrain_xgb_1i <- xgboost::xgb.DMatrix(as.matrix(x_train_ML[1:100,] %>%
+                                               select(-all_of(columns_exclude))),
+                                   label = as.matrix(x_train_ML[1:100,]$QoL_simple))
+
+
+model_bayes_xgb_1i <- xgb.train(
+  data = dtrain_xgb_1i,
+  #data = dtrain_xgb,
+  params = par_xgb,
+  #objective = "reg:squarederror", 
+  #eval_metric = "rmse",
+  nrounds = 1,
+  #watchlist = watchlist,
+  verbose = 1
+)
+
 ##-----------------------------------------------------------------------------
 
 ## Bootstrapping assessment of model stability
