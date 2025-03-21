@@ -103,15 +103,16 @@ test_ids <- test_data %>%
 
 
 ## saving training and test data
-save(train_data, file = here::here("data", "intermediate", "train_data.RData"))
+#save(train_data, file = here::here("data", "intermediate", "train_data.RData"))
 
-save(test_data, file = here::here("data", "intermediate", "test_data.RData"))
+#save(test_data, file = here::here("data", "intermediate", "test_data.RData"))
 
 ## saving training and test ids 
-save(train_ids, file = here::here("data", "intermediate", "indices_train.RData"))
+#save(train_ids, file = here::here("data", "intermediate", "indices_train.RData"))
+saveRDS(train_ids, file = here::here("data", "intermediate", "indices_train.rds"))
 
-save(test_ids, file = here::here("data", "intermediate", "indices_test.RData"))
-
+#save(test_ids, file = here::here("data", "intermediate", "indices_test.RData"))
+saveRDS(test_ids, file = here::here("data", "intermediate", "indices_test.rds"))
 
 
 
@@ -172,10 +173,10 @@ for(b in 1:length(boot_inds)){
 }
 
 ## saving training and test ids for all B bootstrapped samples
-save(boot_inds, file = here::here("data", "intermediate", "indices_bootstrap.RData"))
+#save(boot_inds, file = here::here("data", "intermediate", "indices_bootstrap.RData"))
+saveRDS(boot_inds, file = here::here("data", "intermediate", "indices_bootstrap.rds"))
 
-## note: Do entire split again after outlier removal, throw out 
-## bootstrapping part here, only do it in later script
+## note: Do entire split again after outlier removal
 
 ## CONTINUE HERE!
 

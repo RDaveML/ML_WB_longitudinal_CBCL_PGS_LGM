@@ -5,7 +5,7 @@
 ## negation operator
 `%notin%` <- Negate(`%in%`)
 
-options(scipen = 999, expressions = 50000)
+# options(scipen = 999, expressions = 50000)
 
 ## converting factor covariates to factors
 f_conv <- function(df, covariates){
@@ -61,8 +61,8 @@ class_info <- function(df){
       vars_factor <- c(vars_factor, colnames(df[var]))
       length_factor_vars <- length_factor_vars + 1
     } else {
-      cat("other variable detected; variable ", colnames(df[var]),
-          " is class: ", class(variable), "\n", "\n")
+      #cat("other variable detected; variable ", colnames(df[var]),
+      #    " is class: ", class(variable), "\n", "\n")
       vars_other <- c(vars_other, colnames(df[var]))
       length_other <- length_other + 1
     }
@@ -98,8 +98,8 @@ mult_to_numeric <- function(df){
   for(var in 1:ncol(df)){
     variable <- df[, var]
     if(length(class(variable)) > 1) {
-      cat("multiclass variable; variable ", colnames(df[var]),
-          " is class: ", class(variable), "\n", "\n")
+      #cat("multiclass variable; variable ", colnames(df[var]),
+      #    " is class: ", class(variable), "\n", "\n")
       vars_mult_class <- c(vars_mult_class, colnames(df[var]))
       length_mult_class <- length_mult_class + 1
     } else {
@@ -108,7 +108,7 @@ mult_to_numeric <- function(df){
   }
   
   if(length_mult_class > 0){
-    cat("variables ", vars_mult_class, " will be converted to numeric")
+    #cat("variables ", vars_mult_class, " will be converted to numeric")
     df_converted <- df %>%
       mutate_at(vars_mult_class, as.numeric)
   }
@@ -494,6 +494,8 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   ## print best results
   
   print(opt_results_enet)
+
+  print(tWithPar)
   
   
   best_params_enet <- getBestPars(opt_results_enet)
@@ -717,7 +719,7 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
       iters.k = iters.k,
       ## iters.k = 64*2,
       # otherHalting = list(timeLimit = 6000),
-      otherHalting = list(timeLimit = 60),
+      otherHalting = list(timeLimit = 6000),
       ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
@@ -938,7 +940,7 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
       iters.k = iters.k,
       ## iters.k = 64*2,
       # otherHalting = list(timeLimit = 6000),
-      otherHalting = list(timeLimit = 60),
+      otherHalting = list(timeLimit = 6000),
       ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
@@ -1037,7 +1039,8 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
            "eta",
            "gamma",
            "lambda",
-           "alpha"),
+           "alpha", 
+           "nrounds"),
          names(bounds_xgb)
        )
      ) != 0){
@@ -1049,7 +1052,8 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                       eta,
                       gamma,
                       lambda,
-                      alpha")
+                      alpha,
+                      nrounds")
   }
   
   ## name to export to cluster
@@ -1082,7 +1086,8 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                         eta,
                         gamma,
                         lambda,
-                        alpha) {
+                        alpha,
+                        nrounds) {
     
     # Re-create dtrain inside the function
     dtrain <- xgboost::xgb.DMatrix(train_matrix, label = train_labels)
@@ -1112,9 +1117,9 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
     xgbcv <- xgb.cv(
       params = Pars,
       data = dtrain,
-      nround = 100,
+      nrounds = nrounds,
       folds = folds,
-      early_stopping_rounds = 100,
+      early_stopping_rounds = 10,
       maximize = TRUE,
       verbose = 1
     )
@@ -1167,7 +1172,7 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
     opt_results_xgb <- bayesOpt(
       FUN = xgb_bayes,
       bounds = bounds_xgb,
-      initPoints = 10,
+      initPoints = 11,
       ## initPoints must be greater than the number of FUN inputs
       ## iters.n = 3,
       # iters.n = (parallel::detectCores() - 1)*2,
@@ -1178,7 +1183,7 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
       iters.k = iters.k,
       ## iters.k = 64*2,
       # otherHalting = list(timeLimit = 6000),
-      otherHalting = list(timeLimit = 600),
+      otherHalting = list(timeLimit = 6000),
       ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
@@ -1230,10 +1235,22 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
     eta = best_params_xgb$eta,
     gamma = best_params_xgb$gamma,
     lambda = best_params_xgb$lambda,
-    alpha = best_params_xgb$alpha
+    alpha = best_params_xgb$alpha,
+    nthread = 1
   )
   
-  watchlist <- list(train = dtrain_xgb, eval = dtest_xgb)
+  nrounds_opt = best_params_xgb$nrounds
+
+  # watchlist <- list(train = dtrain_xgb, eval = dtest_xgb)
+
+  ## Debugging before model training:
+  cat("Missings in train matrix: ", sum(is.na(dtrain_xgb)), "\n", "\n")
+
+  ## ensuring model object is class xgb.DMatrix
+  cat("Class dtrain: ", class(dtrain_xgb), "\n", "\n")
+
+  ## checking system memory usage before 
+  gc()  # Run garbage collection
   
   ## Final model training 
   
@@ -1243,22 +1260,22 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
     params = par_xgb,
     #objective = "reg:squarederror", 
     #eval_metric = "rmse",
-    nrounds = 1000,
-    watchlist = watchlist, 
-    early_stopping_rounds = 50,
+    #nrounds = 1000,
+    ## Test: Does this work with nrounds = 1
+    nrounds = nrounds_opt,
+  # watchlist = watchlist, ## not needed anymore
+  # early_stopping_rounds = 10, ## not needed anymore
     verbose = 1
   )
   
   
   ## getting predictions (On test set)
-  best_iteration <- model_bayes_xgb$best_iteration
+  # best_iteration <- model_bayes_xgb$best_iteration
   # Get the best iteration number
-  preds_xgb_train <- predict(model_bayes_xgb, dtrain_xgb,
-                             iteration_range = best_iteration)
+  preds_xgb_train <- predict(model_bayes_xgb, dtrain_xgb)
   # Predict using the best iteration (best iteration in test set!)
   
-  preds_xgb_test <- predict(model_bayes_xgb, dtest_xgb,
-                            iteration_range = best_iteration)
+  preds_xgb_test <- predict(model_bayes_xgb, dtest_xgb)
   # Predict using the best iteration (best iteration in test set!)
   
   

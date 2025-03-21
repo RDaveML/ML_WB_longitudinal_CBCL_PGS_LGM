@@ -81,7 +81,7 @@ B <- length(names_boot)
 ## x-axis: estimated outcome of original and bootstrapped models
 ## y-axis: Observed outcome in original dataset
 ## Load in actual outcome
-load(here::here("data", "intermediate", "data_model_A.Rdata"))
+load(here::here("data", "intermediate", "workspace_sandbox_custom_functions.Rdata"))
 outcome_df <- data_model_A %>%
   select(FISNumber, QoL_simple)
 rm(data_model_A)

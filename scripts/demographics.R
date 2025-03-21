@@ -68,6 +68,7 @@ ggplot(demograph_df, aes(x = sex)) +
 
 
 ## educational attainment mother
+color_scale <- scales::seq_gradient_pal("black", "blue", "Lab")(seq(0,1,length.out=5))
 ggplot(demograph_df, aes(x = factor(ea4mo_agg, 
                                     c("lager onderwijs", 
                                       "lbo / lavo / mavo",
@@ -82,7 +83,9 @@ ggplot(demograph_df, aes(x = factor(ea4mo_agg,
                                                    "lbo / lavo / mavo",
                                                    "mbo / havo / vwo",
                                                    "hbo / wo"),
-                    values = c("orange", "blue", "grey", "red")) +
+                    #values = c("orange", "blue", "grey", "red"))
+                    #low = "black", high = "blue")
+                    values = color_scale) +
   labs(title = "Educational attainment (mother) in sample", x = "EA (mother)")
 
 ## educational attainment father
@@ -100,7 +103,8 @@ ggplot(demograph_df, aes(x = factor(ea4fa_agg,
                                                    "lbo / lavo / mavo",
                                                    "mbo / havo / vwo",
                                                    "hbo / wo"),
-                    values = c("orange", "blue", "grey", "red")) +
+                    # values = c("orange", "blue", "grey", "red")) +
+                    values = color_scale) +
   labs(title = "Educational attainment (father) in sample", x = "EA (father)")
 
 

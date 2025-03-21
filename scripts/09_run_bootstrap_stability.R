@@ -26,10 +26,16 @@
 
 # !/usr/bin/env Rscript
 iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
-print(iter)
-iter <- as.numeric(iter)
-print(iter)
-cat("Iteration / Index for Bootstrapped dataset: ", iter)
+iter <- 1
+if(iter > 1){
+  b_iter <- iter - 1
+} else {
+  b_iter <- iter
+}
+print(b_iter)
+b_iter <- as.numeric(b_iter)
+print(b_iter)
+cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
 
 test <- TRUE
 if(test){
@@ -73,50 +79,33 @@ pacman::p_load(packages_used)
 ## entire list and slice the object here in R
 
 ## readRDS solves the problem!
-train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))[[iter]]
+if(b_iter == 1){
+  train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
+} else {
+  train_ids <- readRDS(
+    here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[1]]
+}
 
-test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))[[iter]]
 
-
+if(b_iter == 1){
+  test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))
+} else {
+  test_ids <- readRDS(
+    here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[2]]
+}
 
 ## Iterating (looping over conditions)
 ## number of cores that can be requested per node 
-## on genoa needs to be divisible by 16, rendering 7 cores idle
-## (57 design configurations in total)
+## on genoa needs to be divisible by 16
 
-cluster <- 64
-cl <- makeCluster(cluster, outfile="")
-registerDoParallel(cl)
+## here: insert code loading in, type conversion, KNN, enet, rf, svr, xgb
+## always with predictions
+
+#cluster <- 64
+#cl <- makeCluster(cluster, outfile="")
+#registerDoParallel(cl)
 
 timer_total <- proc.time()[3]
-
-set.seed(iter)
-
-output_test_iter <- foreach(conf = 1:nrow(configs_1234),
-                            .export = c("configs_1234", "list_dkl_configs"),
-                            .packages = packages_used,
-                            .verbose = FALSE,
-                            ## It occurred during testruns that mHMM function
-                            ## failed due to 
-                            ## system being singular or negative probability,
-                            ## errorhandling = pass lets parallel loop continue
-                            ## to run
-                            ## in some instances, there will be no result then
-                            ## still needs to be addressed in analysis 
-                            ## scripts
-                            .errorhandling = "pass") %dopar% {
-                              
-                              sim_recover_mHMM(n_obs = configs_1234[conf, "N"], t = 200,
-                                               Dkl = configs_1234[conf, "Dkl"],
-                                               emiss_distr_config = list_dkl_configs[[conf]],
-                                               p = configs_1234[conf, "p"],
-                                               S = configs_1234[conf, "C"],
-                                               gamma_self = configs_1234[conf, "gamma_self"],
-                                               var_gamma = configs_1234[conf, "opt_var_gamma"],
-                                               J = 2000, ## fewer number of iterations
-                                               burn_in = 1000)
-                              
-                            }
 
 
 # print total time of nodes
@@ -129,7 +118,14 @@ stopCluster(cl)
 # ----- Export ---------------------------------------------------------
 # ----------------------------------------------------------------------
 
-# Save
+## gathering all objects into list
+workspace_objects <- mget(ls())
+
+# Save the list to an RDS file
+filename <- paste0("workspace_model_A_iteration_", b_iter, ".rds")
+saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate", filename)))
+
+# Save (with saveRDS)
 saveRDS(output_test_iter, file = here::here(paste0("mHMM_TestSim_Iter", iter,
                                                    ".RDS")))
 

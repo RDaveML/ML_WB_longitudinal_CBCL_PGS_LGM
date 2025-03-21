@@ -400,3 +400,69 @@ OUT.cal %>% ggplot(aes(x = value, y = y, group = prediction, color = prediction)
   theme_bw() +
   theme(axis.text = element_text(size = 6))
 
+
+
+##-----------------------------------------------------------------------------
+
+## Working with first test run of models (Model A): 
+load(here::here("data", "intermediate", "workspace_sandbox_custom_functions.Rdata"))
+
+predictions_basic_train <- list(test_bayes_rf$preds_rf_train, test_svr$preds_svr_train,
+                                test_xgb$preds_xgb_train)
+
+
+predictions_basic_test <- list(test_bayes_rf$preds_rf_test, test_svr$preds_svr_test,
+                                test_xgb$preds_xgb_test)
+
+## double mistake here! at test_svr and test_rf, the predictions were made on the 
+## training set twice instead of the test set, correct this in the function script
+## and run the script again, it only takes 72 min! 
+
+## Still to be added: The IDs!
+
+
+predictions_full <- vector("list", length(predictions_basic_train))
+for(set in 1:length(predictions_basic_train)){
+  predictions_full[[set]] <- c(predictions_basic_train[[set]],
+                               predictions_basic_test[[set]])
+}
+
+## next step: add noise 
+predictions_noise <- lapply(predictions_full, function(x){
+  dataset <- data.frame(original_prediction = x)
+  ## adding noise parameters
+  noise_params <- list(
+    c(0, 1),
+    c(0.1, 1),
+    c(-0.3, 1),
+    c(0.3, 0.7)
+  )
+  dataset <- dataset %>%
+    bind_cols(
+      map_dfc(seq_along(noise_params),
+              ~ tibble(!!paste0("b", .x) := dataset$original_prediction +
+                         rnorm(nrow(dataset), mean = noise_params[[.x]][1],
+                               sd = noise_params[[.x]][2])
+                       )
+              )
+      )
+    # mutate(b1 = original_prediction + rnorm(1, mean = 0, sd = 1),
+    #       b2 = original_prediction + rnorm(1, mean = 0.1, sd = 1),
+    #       b3 = original_prediction + rnorm(1, mean = -0.3, sd = 1),
+    #       b4 = original_prediction + rnorm(1, mean = 0.3, sd = 0.7))
+  return(dataset)
+})
+
+
+## make the effort for the "simulated XGB dataset
+xgb_sim <- predictions_noise[[3]]
+head(xgb_sim)
+
+## adding true outcome
+xgb_sim$true_y <- c(x_train_ML$QoL_simple, x_test_ML$QoL_simple)
+
+## Now, all the plots can be plotted, note that you also need to figure out 
+## how to make the correct joins by virtue of the FISNumber link
+
+
+
