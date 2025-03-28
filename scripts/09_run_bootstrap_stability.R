@@ -27,6 +27,8 @@
 # !/usr/bin/env Rscript
 iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
 iter <- 1
+## this can be tested and returned on ntr1 server run exiting the script 
+
 if(iter > 1){
   b_iter <- iter - 1
 } else {
@@ -122,7 +124,7 @@ stopCluster(cl)
 workspace_objects <- mget(ls())
 
 # Save the list to an RDS file
-filename <- paste0("workspace_model_A_iteration_", b_iter, ".rds")
+filename <- paste0("workspace_model_A_iteration_", iter, ".rds")
 saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate", filename)))
 
 # Save (with saveRDS)

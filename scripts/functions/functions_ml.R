@@ -202,12 +202,17 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
                                   use = "pairwise.complete.obs"),
                               cutoff = .95)
   
+  if(length(high_cor) != 0){
   num_data <- num_data[-high_cor]
   
   cat(length(high_cor), " columns removed (high correlation; .95)", "\n")
   
   ## re-appending non-numeric columns (here: none)
   data_train <- cbind(data_train[, !sapply(data_train, is.numeric)], num_data)
+  } else {
+    cat(length(high_cor), " columns removed (high correlation; .95)", "\n")
+    data_train <- data_train
+  }
   
   ## iii) linear dependence
   
@@ -228,7 +233,7 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   
   combos <- findLinearCombos(as.matrix(num_data_imputed))$remove
   
-  
+  if(!is.null(combos)){
   ## conditional in case there were any non-numeric columns
   if(ncol(num_data_imputed) == ncol(data_train)){
     
@@ -244,7 +249,15 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   cat(length(combos), " columns removed (linear combinations)", "\n")
   
   cat(ncol(data_train), " remaining columns in training set", "\n")
-  
+  } else {
+    
+    data_train <- data_train
+    
+    cat(length(combos), " columns removed (linear combinations)", "\n")
+    
+    cat(ncol(data_train), " remaining columns in training set", "\n")
+    
+  }
   
   ## (iv) multicollinearity)
   
@@ -578,7 +591,21 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   x_train_matrix <- model.matrix(~ ., data = df_train)[
     , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
   y_train_vector <- df_train$QoL_simple
-  
+
+  cat("column names df_train without exclude vars: ",
+  print(colnames(df_train %>% select(-all_of(exclude_vars)))), "\n")
+
+  cat("column names x_train_matrix",
+  print(colnames(x_train_matrix)), "\n")
+
+  cat("difference colnames between both datasets: ",
+  setdiff(colnames(df_train %>% select(-all_of(exclude_vars))),
+          colnames(x_train_matrix)), "\n")
+
+  cat("difference colnames between both datasets: ",
+  setdiff(colnames((x_train_matrix),
+          colnames(df_train %>% select(-all_of(exclude_vars)))), "\n"))
+
   # Initialize shared variable for best result
   ## these are set globally! So that they are available to the 
   ## rf_bayes function
@@ -643,6 +670,8 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
       
       # Make predictions on the validation set
       predictions <- predict(model, data = data.frame(x_val_rf))$predictions
+      ## why does it need to be data here instead of newdata?
+      ## ranger::predict only works with data = 
       
       # Calculate RMSE for the current fold
       # true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
@@ -778,14 +807,27 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   )
   
   ## same for bayesian optimized tuned model
-  final_model_bayes <- model_bayes_rf$finalModel
+  #final_model_bayes <- model_bayes_rf$finalModel
   
+  ## ensuring dataframes are exactly the same
+  x_train_matrix_rf <- model.matrix(~ ., data = df_train)[
+    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+
   preds_rf_train <- predict(model_bayes_rf,
-                            data = df_train)
-  
+                            newdata = x_train_matrix_rf)
+                              
+  cat("predictions rf training set successful", "\n")
+
+  x_test_matrix_rf <- model.matrix(~ ., data = df_test)[
+    , !(colnames(model.matrix(~ ., data = df_test)) %in% exclude_vars)]
+
   preds_rf_test <- predict(model_bayes_rf,
-                           data = df_test)
+                           newdata = x_test_matrix_rf)
+                            
+  cat("predictions rf test set successful", "\n")
   
+  cat("predictions training and test set have different length: ",
+   length(preds_rf_train) == length(preds_rf_train), "\n", "\n")
   
   return(list(best_params_rf = best_params_rf,
               time_hypertuning = tWithPar_rf,
@@ -999,12 +1041,16 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
     tuneGrid = tune_grid_svr #,
     ## ...
   )
+
+  cat("testing predictions svr", "\n", "\n")
   
   preds_svr_train <- predict(model_bayes_svr,
-                             data = df_train)
+                             newdata = df_train %>%
+                              select(-all_of(exclude_vars)))
   
   preds_svr_test <- predict(model_bayes_svr,
-                            data = df_test)
+                            newdata = df_test %>%
+                             select(-all_of(exclude_vars)))
   
   
   return(list(best_params_svr = best_params_svr,
@@ -1018,8 +1064,6 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
               preds_svr_test = preds_svr_test))
   
 }
-
-## Note: What all these functions do not yet do is evaluation on the test set!  
 
 bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                             ncores = parallel::detectCores() - 2,

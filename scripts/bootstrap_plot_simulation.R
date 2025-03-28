@@ -405,21 +405,31 @@ OUT.cal %>% ggplot(aes(x = value, y = y, group = prediction, color = prediction)
 ##-----------------------------------------------------------------------------
 
 ## Working with first test run of models (Model A): 
-load(here::here("data", "intermediate", "workspace_sandbox_custom_functions.Rdata"))
+# load(here::here("data", "intermediate", "workspace_sandbox_custom_functions.Rdata"))
+workspace_model_A <- readRDS(file = here::here(
+  "data" , "intermediate", "workspace_sandbox_custom_functions.rds"
+))
 
-predictions_basic_train <- list(test_bayes_rf$preds_rf_train, test_svr$preds_svr_train,
-                                test_xgb$preds_xgb_train)
+
+predictions_basic_train <- list(workspace_model_A$test_rf$preds_rf_train,
+                                workspace_model_A$test_svr$preds_svr_train,
+                                workspace_model_A$test_xgb$preds_xgb_train)
 
 
-predictions_basic_test <- list(test_bayes_rf$preds_rf_test, test_svr$preds_svr_test,
-                                test_xgb$preds_xgb_test)
+predictions_basic_test <- list(workspace_model_A$test_rf$preds_rf_test,
+                                workspace_model_A$test_svr$preds_svr_test,
+                                workspace_model_A$test_xgb$preds_xgb_test)
 
-## double mistake here! at test_svr and test_rf, the predictions were made on the 
-## training set twice instead of the test set, correct this in the function script
-## and run the script again, it only takes 72 min! 
+true_y_basic <- workspace_model_A$data_model_A$QoL_simple
+
+## now, length of predictions align, but in SVR predictions, only NAs!
 
 ## Still to be added: The IDs!
 
+
+## THIS CAN GO LATER, THEN, ITs ONLY ABOUT THE IDs and the 
+## multiple prediction objects that will be loaded in with 
+## some lapply function (list.files, etc.)
 
 predictions_full <- vector("list", length(predictions_basic_train))
 for(set in 1:length(predictions_basic_train)){
@@ -454,15 +464,111 @@ predictions_noise <- lapply(predictions_full, function(x){
 })
 
 
-## make the effort for the "simulated XGB dataset
-xgb_sim <- predictions_noise[[3]]
-head(xgb_sim)
+## CONTINUE HERE!!!
+## CUSTOM FUNCTION FOR PLOTTING?
 
 ## adding true outcome
-xgb_sim$true_y <- c(x_train_ML$QoL_simple, x_test_ML$QoL_simple)
+# xgb_sim$true_y <- c(x_train_ML$QoL_simple, x_test_ML$QoL_simple)
+
+## This actually needs to be coded correctly with a join because it depends on
+## the split which values are in training or test set!
 
 ## Now, all the plots can be plotted, note that you also need to figure out 
 ## how to make the correct joins by virtue of the FISNumber link
 
+## make the effort for the "simulated" datasets
+
+## ----------------------------------------------------------------------------
+## random forest model
+rf1_sim <- predictions_noise[[1]]
+rf1_sim$true_y <- true_y_basic
+head(rf1_sim)
+
+
+## Note: Optionally plotting adjusted predictions (with additionally shrunken
+## down predictor space) next to the first level predictions
+## Then, add second condition again as shown above (cond2)
+
+## plotting
+
+## 1) prediction instability
+
+## for each individual's original predicted probability, computing 
+## 2.5 and 97.5% quantiles from the bootstrapped predictions, giving confidence
+## band which can also nicely be plotted in the instability plot
+## create df without ID and without original
+rf1_boot <- rf1_sim %>% 
+  select(-any_of(c("original_prediction", "FISNumber")))
+x_rf1 <- rf1_sim$original_prediction[order(rf1_sim$original_prediction)]
+y1_rf1 <- apply(rf1_boot, 1, function(x) quantile(x, probs = 0.025, na.rm = T))[order(rf1_sim$original_prediction)]
+y2_rf1 <- apply(rf1_boot, 1, function(x) quantile(x, probs = 0.975, na.rm = T))[order(rf1_sim$original_prediction)]
+
+
+xx1_rf1 <- lowess(y1_rf1~x_rf1, delta = 0.3)
+xx2_rf1 <- lowess(y2_rf1~x_rf1, delta = 0.3)
+
+
+
+OUT3_rf1 <- data.frame(x = c(xx1_rf1$x,
+                             xx2_rf1$x), 
+                       y = c(xx1_rf1$y,
+                             xx2_rf1$y))
+
+# OUT3$Condition <- c(rep("Condition 1",   length(xx1_rf1$x)), 
+#                    rep("Condition 2", length(xx1_cond2$x)),
+#                    rep("Condition 1",   length(xx2_rf1$x)),
+#                    rep("Condition 2", length(xx2_cond2$x))) 
+
+# OUT3$Condition <- factor(OUT3$Condition, levels = c("Condition 1", "Condition 2"))
+
+OUT3_rf1$limit <- c(rep("lower", length(xx1_rf1$x)), 
+                    rep("upper", length(xx2_rf1$x)))
+OUT3_rf1$limit <- factor(OUT3_rf1$limit, levels = c("lower", "upper"))
+
+
+# Pivot data to long format
+rf1_long <- rf1_sim %>%
+  pivot_longer(cols = starts_with("b"), names_to = "bootstrap", values_to = "Scatter")# %>%
+  #mutate(Condition = "Condition 1")
+
+## Optional: Readding if multiple conditions
+# rf2_long <- rf2_df %>%
+#  pivot_longer(cols = starts_with("b"), names_to = "bootstrap", values_to = "Scatter") %>%
+#  mutate(Condition = "Condition 2")
+
+## long_data <- bind_rows(rf1_long, cond2_long)
+long_data <- rf1_long
+
+ggplot(long_data, aes(x = original_prediction, y = Scatter)) +
+  geom_point(size = 0.1, alpha = 0.5, color = "grey") +
+  geom_line(data = OUT3_rf1, aes(x=x, y=y, group = limit), colour='black', linetype=2) + ## upper and lower limit
+  geom_abline(intercept = 0, slope = 1) + ## unity line
+  xlim(0, 12) +
+  ylim(0, 12) +
+  xlab('Estimated score from the developed model') +
+  ylab('Estimated score in the (simulated) bootstrap samples') +
+  theme_bw()# +
+  #facet_wrap(~ Condition)  # Creates separate plots for Condition 1 and Condition 2
+
+
+## Make this into a function before continuing! 
+
+
+## ----------------------------------------------------------------------------
+
+
+## Calibration instability (needs true y values)
+
+
+
+
+## ----------------------------------------------------------------------------
+
+
+
+## MAPE instability
+
+
+## ----------------------------------------------------------------------------
 
 

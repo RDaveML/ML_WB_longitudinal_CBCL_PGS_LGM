@@ -143,7 +143,8 @@ data_covariates <- data_covariates %>%
 ## use this for model A as well
 data_full_raw <- data_full %>%
   select(FISNumber, FamilyNumber, all_of(CBCL_items_keep), QoL_simple) %>%
-  left_join(data_covariates) ## covariates
+  left_join(data_covariates) %>% ## covariates
+  left_join(data_rater, by = "FISNumber")
 
 ## saving dataframe with only raw CBCL scores and covariates
 filename <- "data_model_0.Rdata"
