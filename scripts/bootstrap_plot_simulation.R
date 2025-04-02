@@ -6,6 +6,8 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
                "kernlab", "devtools", "pak", "filelock")
 
+source(here::here("scripts", "functions", "functions_plotting_ML.R"))
+
 
 simulation <- TRUE
 ## simulating real data and predicted data
@@ -410,6 +412,11 @@ workspace_model_A <- readRDS(file = here::here(
   "data" , "intermediate", "workspace_sandbox_custom_functions.rds"
 ))
 
+workspace_model_0 <- readRDS(file = here::here(
+  "data" , "intermediate", "workspace_sandbox_model_0.rds"
+))
+
+
 
 predictions_basic_train <- list(workspace_model_A$test_rf$preds_rf_train,
                                 workspace_model_A$test_svr$preds_svr_train,
@@ -419,6 +426,15 @@ predictions_basic_train <- list(workspace_model_A$test_rf$preds_rf_train,
 predictions_basic_test <- list(workspace_model_A$test_rf$preds_rf_test,
                                 workspace_model_A$test_svr$preds_svr_test,
                                 workspace_model_A$test_xgb$preds_xgb_test)
+
+predictions_basic_train_0 <- list(workspace_model_0$test_rf$preds_rf_train,
+                                workspace_model_0$test_svr$preds_svr_train,
+                                workspace_model_0$test_xgb$preds_xgb_train)
+
+
+predictions_basic_test_0 <- list(workspace_model_0$test_rf$preds_rf_test,
+                               workspace_model_0$test_svr$preds_svr_test,
+                               workspace_model_0$test_xgb$preds_xgb_test)
 
 true_y_basic <- workspace_model_A$data_model_A$QoL_simple
 
@@ -464,6 +480,37 @@ predictions_noise <- lapply(predictions_full, function(x){
 })
 
 
+predictions_full_0 <- vector("list", length(predictions_basic_train_0))
+for(set in 1:length(predictions_basic_train_0)){
+  predictions_full_0[[set]] <- c(predictions_basic_train_0[[set]],
+                               predictions_basic_test_0[[set]])
+}
+## next step: add noise 
+predictions_noise_0 <- lapply(predictions_full_0, function(x){
+  dataset <- data.frame(original_prediction = x)
+  ## adding noise parameters
+  noise_params <- list(
+    c(0, 1),
+    c(0.1, 1),
+    c(-0.3, 1),
+    c(0.3, 0.7)
+  )
+  dataset <- dataset %>%
+    bind_cols(
+      map_dfc(seq_along(noise_params),
+              ~ tibble(!!paste0("b", .x) := dataset$original_prediction +
+                         rnorm(nrow(dataset), mean = noise_params[[.x]][1],
+                               sd = noise_params[[.x]][2])
+              )
+      )
+    )
+  # mutate(b1 = original_prediction + rnorm(1, mean = 0, sd = 1),
+  #       b2 = original_prediction + rnorm(1, mean = 0.1, sd = 1),
+  #       b3 = original_prediction + rnorm(1, mean = -0.3, sd = 1),
+  #       b4 = original_prediction + rnorm(1, mean = 0.3, sd = 0.7))
+  return(dataset)
+})
+
 ## CONTINUE HERE!!!
 ## CUSTOM FUNCTION FOR PLOTTING?
 
@@ -484,6 +531,10 @@ rf1_sim <- predictions_noise[[1]]
 rf1_sim$true_y <- true_y_basic
 head(rf1_sim)
 
+rf1_sim_0 <- predictions_noise_0[[1]]
+rf1_sim_0$true_y <- true_y_basic
+head(rf1_sim_0)
+
 
 ## Note: Optionally plotting adjusted predictions (with additionally shrunken
 ## down predictor space) next to the first level predictions
@@ -492,11 +543,8 @@ head(rf1_sim)
 ## plotting
 
 ## 1) prediction instability
-
-## for each individual's original predicted probability, computing 
-## 2.5 and 97.5% quantiles from the bootstrapped predictions, giving confidence
-## band which can also nicely be plotted in the instability plot
-## create df without ID and without original
+example <- FALSE
+if(example){
 rf1_boot <- rf1_sim %>% 
   select(-any_of(c("original_prediction", "FISNumber")))
 x_rf1 <- rf1_sim$original_prediction[order(rf1_sim$original_prediction)]
@@ -549,24 +597,41 @@ ggplot(long_data, aes(x = original_prediction, y = Scatter)) +
   ylab('Estimated score in the (simulated) bootstrap samples') +
   theme_bw()# +
   #facet_wrap(~ Condition)  # Creates separate plots for Condition 1 and Condition 2
+}
 
+## Make this into a function before continuing!
 
-## Make this into a function before continuing! 
+## testing the function
+plot_pred_inst(df_pred = rf1_sim)
+## works
 
+## model 0
+plot_pred_inst(df_pred = rf1_sim_0)
 
 ## ----------------------------------------------------------------------------
 
 
 ## Calibration instability (needs true y values)
 
+## testing the function
+plot_cal_inst(df_pred = rf1_sim)
+## works as well
 
-
+## model 0
+plot_cal_inst(df_pred = rf1_sim_0)
 
 ## ----------------------------------------------------------------------------
 
 
 
 ## MAPE instability
+
+## testing the function
+plot_mape_inst(df_pred = rf1_sim)
+
+## model 0
+plot_mape_inst(df_pred = rf1_sim_0)
+
 
 
 ## ----------------------------------------------------------------------------

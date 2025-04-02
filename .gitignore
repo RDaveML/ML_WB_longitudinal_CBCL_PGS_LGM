@@ -19,3 +19,5 @@ scripts/output.*
 scripts/bootstrap_variability*
 /bash
 scripts/bootstrap_plot_simulation.R
+scripts/script_final_run_1_cluster.R
+scripts/.vscode/

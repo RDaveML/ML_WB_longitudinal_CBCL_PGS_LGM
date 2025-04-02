@@ -28,6 +28,11 @@ plot_pred_inst <- function(df_pred, smooth_function = NULL){
   ## CONTINUE HERE WITH THIS ON SOME OTHER DAY
   
   
+  ## for each individual's original predicted probability, computing 
+  ## 2.5 and 97.5% quantiles from the bootstrapped predictions, giving confidence
+  ## band which can also nicely be plotted in the instability plot
+  ## create df without ID and without original
+  
   df_boot <- df_pred %>% 
     select(-any_of(c("original_prediction", "FISNumber", "true_y")))
   x_1 <- df_pred$original_prediction[order(df_pred$original_prediction)]
@@ -179,8 +184,11 @@ plot_mape_inst <- function(df_pred, smooth_function = NULL){
   # Plot with fixed axis limits
   
   ## linter this properly, for heaven's sake! 
-  ## CONTINUE HERE!! 
-  plot_mape <- 
+  
+  
+  # Open a new plot device
+  dev.new() # Ensures the plot is rendered on a new device
+  
   plot(df_pred$original_prediction, 
        apply(abs(df_pred %>% select(-any_of(c("original_prediction", "FISNumber"))) - 
                    df_pred$original_prediction),
@@ -192,9 +200,12 @@ plot_mape_inst <- function(df_pred, smooth_function = NULL){
   #     apply(abs(cond2_df %>% select(-Original, -ID) - cond2_df$Original), 1, median, na.rm = TRUE), 
   #     pch = 20, xlim = x_lim, ylim = y_lim, main = "Condition 2")
   
-  return(plot_inst_mape = plot_mape)
-  ## yet how to find out: How to make returnable object from the base R plot 
+  # Capture the plot as an object
+  plot_obj <- recordPlot()
+  
+  # Return the recorded plot object
+  return(plot_obj)
+  
   
 }
 
-plot_mape_test <- plot_mape_inst(df_pred = rf1_sim)
