@@ -6,7 +6,7 @@
 #   
 # Date: 2025-03-12
 #
-# Script Name: 09_0_run_bootstrap_stability
+# Script Name: 09_0_run_bootstrap_stability.R
 #
 # Script Description: This script is supposed to run the original and the B = 100
 # bootstrapped versions of the ML script to inspect model stability
@@ -16,7 +16,7 @@
 # the stability check takes place
 #
 #
-# Notes: 09_0_run_bootstrap_stability runs model 0 (only raw CBCL scores + covariates)
+# Notes: 09_0_run_bootstrap_stability.R runs model 0 (only raw CBCL scores + covariates)
 #
 #
 
@@ -30,6 +30,7 @@
 iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
 # iter <- 1
 ## this can be tested and returned on ntr1 server run exiting the script 
+iter <- as.numeric(iter)
 
 if(iter > 1){
   b_iter <- iter - 1
@@ -41,7 +42,7 @@ b_iter <- as.numeric(b_iter)
 print(b_iter)
 cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
 
-test <- TRUE
+test <- FALSE
 if(test){
   filename <- paste0("workspace_model_0_iteration_", iter, ".rds")
   saveRDS(iter, file = paste0(here::here("data", "intermediate", "bootstrap", filename)))
@@ -72,14 +73,12 @@ if(install_manually == TRUE){
   devtools::install_github("cran/car")
 }
 
-pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
+pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
                "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
-               "kernlab")
+               "kernlab", "ggplot2", "purrr", "tidyr", "rvest")
 
-library(tidyverse)
-library(haven)
 
 
 ## Sourcing custom functions
@@ -107,7 +106,7 @@ if(b_iter == 0){
 }
 
 ## specifying number of cores to be used for parallelization
-ncore_cl <- 64
+ncore_cl <- 96
 
 
 ## loading in the data
@@ -119,8 +118,8 @@ cat("full model_0 data loaded in; name of object: ", "'", temp, "'",
 
 
 ## loading in covariate names
-load(here::here("scripts", "names_covariates.RData"))
-temp <- load(here::here("scripts", "names_covariates.RData"))
+load(here::here("data", "intermediate", "names_covariates.RData"))
+temp <- load(here::here("data", "intermediate", "names_covariates.RData"))
 cat("vector with names of covariates loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
