@@ -78,32 +78,31 @@ The project contains the following areas of coding and analysis:
 
 (The following section is constantly being updated!)
 Scripts contain the following operations (in the following order):
-01 - 01_participantIDs.R
-02 - 02_data_exploration.R
-03 - 03_covariates.R
-04 - 04_data_cleaning_filtering1.R
-05 - 05_initial_split_training_test_data.R
-06 - 06_longitudinal_features_no_LGM.R
-06a - 06_a_autocorrelation.R
-06b - 06_b_merge_nonLGM.R
-07 - 07_LGM.R
-08 - *old: 08a_ML_model_A.R (not needed anymore)* will be changed to **08_PCA_PRS_NTR.R**
-09 - 09_0_run_bootstrap_stability.R
-(09a - Revision run bootstrap with further feature space shrinkage!)
-**Also add this at all other bootstrapping model steps**
-10 - 10_inspection_bootstrap_stability_model_0.R
-11 - *no filename yet* (run bootstrap stability model A)
-12 - *no filename yet* (inspection bootstrap stability model A)
-13 - *no filename yet, tentative depending on discussion if new training test split* (new training-test split, also bootstrap for PGS data, includes removing the genetic outliers!)
-14 - *no filename yet* (run bootstrap stability model B: CBS only)
-15 - *no filename yet* (inspect bootstrap stability model B)
-16 - *no filename yet* (run bootstrap stability mode C: CBCL features + non-LGM CBCL features + PGS)
-***16 - no filename yet* (this is still somewhat tricky, run bootstrap with LGM features, but when calculating these, only do it once with initial test set? Still to be discussed once Mplus code is completely ready, add to documentation!)***
-17 - *no filename yet* (run bootstrap stability model D: raw CBCL scores + non-LGM features + LGM features, use same split as in 05_initial_split_training_test_data.R)
-18 - *no filename yet* (inspect bootstrap stability model D)
-19 - *no filename yet* (run bootstrap stability model E: all features)
-20 - *no filename yet* (inspect bootstrap stability model E)
-21 onwards: ML analyses, feature importances; alternative, after all stability checks are done!
+- 01 - 01_participantIDs.R
+- 02 - 02_data_exploration.R
+- 03 - 03_covariates.R
+- 04 - 04_data_cleaning_filtering1.R
+- 05 - 05_initial_split_training_test_data.R
+- 06 - 06_longitudinal_features_no_LGM.R
+- 06a - 06_a_autocorrelation.R
+- 06b - 06_b_merge_nonLGM.R
+- 07 - 07_LGM.R
+- 08 - *old: 08a_ML_model_A.R (not needed anymore)* will be changed to **08_PCA_PRS_NTR.R**
+- 09 - 09_0_run_bootstrap_stability.R
+- (09a - Revision run bootstrap with further feature space shrinkage!) **Also add this at all other bootstrapping model steps**
+- 10 - 10_inspection_bootstrap_stability_model_0.R
+- 11 - *no filename yet* (run bootstrap stability model A)
+- 12 - *no filename yet* (inspection bootstrap stability model A)
+- 13 - *no filename yet, tentative depending on discussion if new training test split* (new training-test split, also bootstrap for PGS data, includes removing the genetic outliers!)
+- 14 - *no filename yet* (run bootstrap stability model B: CBS only)
+- 15 - *no filename yet* (inspect bootstrap stability model B)
+- 16 - *no filename yet* (run bootstrap stability mode C: CBCL features + non-LGM CBCL features + PGS)
+- ***16 - no filename yet* (this is still somewhat tricky, run bootstrap with LGM features, but when calculating these, only do it once with initial test set? Still to be discussed once Mplus code is completely ready, add to documentation!)***
+- 17 - *no filename yet* (run bootstrap stability model D: raw CBCL scores + non-LGM features + LGM features, use same split as in 05_initial_split_training_test_data.R)
+- 18 - *no filename yet* (inspect bootstrap stability model D)
+- 19 - *no filename yet* (run bootstrap stability model E: all features)
+- 20 - *no filename yet* (inspect bootstrap stability model E)
+- 21 onwards: ML analyses, feature importances; alternative, after all stability checks are done!
 
 
 #### Data availability
