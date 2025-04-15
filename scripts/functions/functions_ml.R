@@ -775,7 +775,7 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   
   totalTime <- opt_results_rf$elapsedTime
   
-  print(best_params_rf)
+  #print(best_params_rf)
   
   tune_grid_rf <- data.frame(
     ## note: tuneGrid only accepts mtry, min.node.size and splitrule for rf
@@ -815,6 +815,10 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
 
   preds_rf_train <- predict(model_bayes_rf,
                             newdata = x_train_matrix_rf)
+
+  preds_df_train <- data.frame(predictions_rf = preds_rf_train,
+                               FISNumber = df_train$FISNumber,
+                               train = 1)                          
                               
   cat("predictions rf training set successful", "\n")
 
@@ -823,12 +827,23 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
 
   preds_rf_test <- predict(model_bayes_rf,
                            newdata = x_test_matrix_rf)
+
+  preds_df_test <- data.frame(predictions_rf = preds_rf_test,
+                              FISNumber = df_test$FISNumber,
+                              train = 0)
                             
   cat("predictions rf test set successful", "\n")
   
   cat("predictions training and test set have different length: ",
    length(preds_rf_train) == length(preds_rf_train), "\n", "\n")
   
+  ## binding together obtaining full prediction df with
+  ## FISNumber and train/test info column
+  preds_df_rf <- rbind(preds_df_train, preds_df_test)
+
+  cat("predictions dataframe created", "\n")
+
+
   return(list(best_params_rf = best_params_rf,
               time_hypertuning = tWithPar_rf,
               early_stopping_triggered  = early_stopping_triggered,
@@ -837,7 +852,8 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
               totalTime = totalTime,
               model_bayes_rf = model_bayes_rf,
               preds_rf_train = preds_rf_train,
-              preds_rf_test = preds_rf_test)) ## model object to also make predictions
+              preds_rf_test = preds_rf_test,
+              preds_df_rf = preds_df_rf))
   
 }
   
@@ -1009,7 +1025,7 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
   
   totalTime <- opt_results_svr$elapsedTime
   
-  print(best_params_svr)
+  # print(best_params_svr)
   
   ## train final model
   
@@ -1042,15 +1058,39 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
     ## ...
   )
 
-  cat("testing predictions svr", "\n", "\n")
-  
+  ## ensuring dataframes are exactly the same
+  x_train_matrix_svr <- model.matrix(~ ., data = df_train)[
+    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+
   preds_svr_train <- predict(model_bayes_svr,
-                             newdata = df_train %>%
-                              select(-all_of(exclude_vars)))
-  
+                            newdata = x_train_matrix_svr)
+
+  preds_df_train <- data.frame(predictions_svr = preds_svr_train,
+                             FISNumber = df_train$FISNumber,
+                             train = 1)   
+                              
+  cat("predictions svr training set successful", "\n")
+
+  x_test_matrix_svr <- model.matrix(~ ., data = df_test)[
+    , !(colnames(model.matrix(~ ., data = df_test)) %in% exclude_vars)]
+
   preds_svr_test <- predict(model_bayes_svr,
-                            newdata = df_test %>%
-                             select(-all_of(exclude_vars)))
+                           newdata = x_test_matrix_svr)
+  
+  preds_df_test <- data.frame(predictions_svr = preds_svr_test,
+                            FISNumber = df_test$FISNumber,
+                            train = 0)
+                            
+  cat("predictions svr test set successful", "\n")
+  
+  cat("predictions training and test set have different length: ",
+   length(preds_svr_train) == length(preds_svr_train), "\n", "\n")
+
+   ## binding together obtaining full prediction df with
+   ## FISNumber and train/test info column
+  preds_df_svr <- rbind(preds_df_train, preds_df_test)
+
+cat("predictions dataframe created", "\n")
   
   
   return(list(best_params_svr = best_params_svr,
@@ -1061,7 +1101,8 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
               totalTime = totalTime,
               model_bayes_svr = model_bayes_svr, ## model object to also make predictions
               preds_svr_train = preds_svr_train,
-              preds_svr_test = preds_svr_test))
+              preds_svr_test = preds_svr_test,
+              preds_df_svr = preds_df_svr))
   
 }
 
@@ -1254,7 +1295,7 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   
   totalTime <- opt_results_xgb$elapsedTime
   
-  print(best_params_xgb)
+  # print(best_params_xgb)
   
   ## train final model
   ## Converting training data to xgb Matrix
@@ -1317,11 +1358,24 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   # best_iteration <- model_bayes_xgb$best_iteration
   # Get the best iteration number
   preds_xgb_train <- predict(model_bayes_xgb, dtrain_xgb)
-  # Predict using the best iteration (best iteration in test set!)
+
+  preds_df_train <- data.frame(predictions_xgb = preds_xgb_train,
+                             FISNumber = df_train$FISNumber,
+                             train = 1)  
   
   preds_xgb_test <- predict(model_bayes_xgb, dtest_xgb)
-  # Predict using the best iteration (best iteration in test set!)
+
+  preds_df_test <- data.frame(predictions_xgb = preds_xgb_test,
+                            FISNumber = df_test$FISNumber,
+                            train = 0)
   
+  ## binding together obtaining full prediction df with
+  ## FISNumber and train/test info column
+  preds_df_xgb <- rbind(preds_df_train, preds_df_test)
+
+  
+
+  cat("predictions dataframe created", "\n")
   
   return(list(best_params_xgb = best_params_xgb,
               time_hypertuning = tWithPar_xgb,
@@ -1331,7 +1385,8 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
               totalTime = totalTime,
               model_bayes_xgb = model_bayes_xgb, ## model object to also make predictions
               preds_xgb_train = preds_xgb_train,
-              preds_xgb_test = preds_xgb_test))
+              preds_xgb_test = preds_xgb_test,
+              preds_df_xgb = preds_df_xgb))
   
 }
 

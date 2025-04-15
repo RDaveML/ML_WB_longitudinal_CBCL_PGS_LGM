@@ -1,13 +1,45 @@
-## This script is supposed to execute the following steps (in the following order):
-## Unzip .zip file in the directory /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
+# HEADER --------------------------------------------
+#
+# Author: Dave Leitritz (RDaveML)
+# Year, 2025
+# Email:  d.m.leitritz@vu.nl
+#   
+# Date: 2025-04-15
+#
+# Script Name: 08_PCA_PRS_NTR.R
+#
+# Script Description:
+## This script is supposed to execute the following steps
+## (in the following order):
+## Unzip .zip file in the directory 
+## /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
 ## for every .sav file in the unzipped directory:
-## 1. Read in the .sav file
-## 2. Perform specific calculations: Calculate a principle component analysis (PCA) on all columns that contain "PGS" in their name
-## 3. Save the values of the 1st Principle component together with the ID and all specified covariates,
-## the column name of the first principal_component should consist out of the 
-## character string "PC1_" and the phenotype which is contained in the filename of the .sav file
-## after all calculations are done, merge all dataframes on the ID columns, named "FISNumber"
-## finally, save the dataset as a .csv file in the directory /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
+##  1. Read in the .sav file
+##  2. Perform specific calculations:
+##  Calculate a principle component analysis (PCA) on all columns that contain
+##  "PGS" in their name
+##  3. Save the values of the 1st Principle component together with the ID and
+##  all specified covariates, the column name of the first principal_component
+##  should consist out of the character string "PC1_" and the phenotype which
+##  is contained in the filename of the .sav file
+## 
+## after all calculations are done, merge all dataframes on the ID columns,
+## named "FISNumber" finally, save the dataset as a .csv file in the directory 
+## /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
+#
+#
+# Notes:
+# this script was run on the compute server ntrcompute2 where the source file 
+# was located. For data access, contact ntr data access comittee
+# Script assumes that .zip file is located in file path
+#
+#
+
+# Set options
+cat("SETTING OPTIONS... \n\n", sep = "")
+options(scipen = 999)
+
+
 
 # Load necessary libraries
 pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
@@ -17,9 +49,11 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "psych")
 
 # Unzip the .zip file in the current directory
-## The zip files are in the directory /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
+## The zip files are in the directory 
+## /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
 unzip_dir <- "data/intermediate/PGS/unzipped_files"
-zip_dir <- "/data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS"  # Directory containing zip files
+# Directory containing zip files
+zip_dir <- "/data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS"
 zip_file <- list.files(path = zip_dir, pattern = "\\.zip$", full.names = TRUE)
 if (length(zip_file) == 1) {
     unzip(zip_file, exdir = unzip_dir)
@@ -30,51 +64,71 @@ if (length(zip_file) == 1) {
 # List all .sav files in the unzipped directory
 sav_files <- list.files(unzip_dir, pattern = "\\.sav$", full.names = TRUE)
 
+## run once with TRUE to save name vectors of genetic covariates and outlier
+## columns
+testing_PCA <- FALSE
+
+if(testing_PCA){
 ## sandboxing here with only the first element from sav_files
-test_file <- sav_files[1]
+  test_file <- sav_files[1]
 ## loading in data
-data <- read.spss(test_file, to.data.frame = TRUE, use.value.labels = FALSE)
-print(colnames(data))
-str(data)
+  data <- read.spss(test_file, to.data.frame = TRUE, use.value.labels = FALSE)
+  print(colnames(data))
+  str(data)
 
 ## check genetic outliers (variable: EUR_1KG)
-table(data$EUR_1KG_Outlier)
+  table(data$EUR_1KG_Outlier)
 ## make table of proportions of genetic outliers
-table(data$EUR_1KG_Outlier) / nrow(data)
+  table(data$EUR_1KG_Outlier) / nrow(data)
 
 ## check for missing values
-sum(colMeans(is.na(data)))
+  sum(colMeans(is.na(data)))
 ## only column SEX_add1 has missings (all na!)
 
 ## saving genetic covariate names in vector
-gen_covariates <- c("PLD_AXIOM", "PLD_GSA", 
-                    grep("PC",
-                         grep("1KG", colnames(data), value = TRUE),
-                         value = TRUE))
+  gen_covariates <- c("PLD_AXIOM", "PLD_GSA", 
+                      grep("PC",
+                           grep("1KG", colnames(data), value = TRUE),
+                           value = TRUE))
 
 ## saving names of outlier columns in vector
-outlier_cols <- c("EUR_1KG_Outlier", "NL_Strict_Outlier")
+  outlier_cols <- c("EUR_1KG_Outlier", "NL_Strict_Outlier")
+
+## saving names of genetic covariates and outlier columns 
+## invectors for later 
+  saveRDS(gen_covariates,
+          file = here::here("data", "intermediate",
+                          "names_genetic_covariates.rds"))
+
+  saveRDS(outlier_cols,
+          file = here::here("data", "intermediate",
+                          "names_outlier_columns_PGS.rds"))
 
 ## Check: Are genetic covariates equal across files?
-data1 <- read.spss(sav_files[2], to.data.frame = TRUE, use.value.labels = FALSE)
+  data1 <- read.spss(sav_files[2], to.data.frame = TRUE,
+                     use.value.labels = FALSE)
 
 ## checking if column PC1_1KG has exactly the same values in both datasets
-all(data$PC1_1KG == data1$PC1_1KG)
+  all(data$PC1_1KG == data1$PC1_1KG)
 ## checking if column FISNumber has exactly the same values in both datasets
-all(data$FISNumber == data1$FISNumber)
+  all(data$FISNumber == data1$FISNumber)
 
 
 ## Selecting the score columns for PCA
-score_cols <- grep("SCORE", colnames(data), value = TRUE)
+  score_cols <- grep("SCORE", colnames(data), value = TRUE)
 
 ## carry out PCA (pca function from psych package)
-pca_PGS <- pca(data[, score_cols])
-pca_PGS <- pca_PGS$scores[, 1]
+  pca_PGS <- pca(data[, score_cols])
+  pca_PGS <- pca_PGS$scores[, 1]
 
-data.frame(scores = pca_PGS) %>%
-    ggplot(aes(x = scores)) + 
-    geom_histogram()
+  data.frame(scores = pca_PGS) %>%
+      ggplot(aes(x = scores)) + 
+      geom_histogram()
 
+## garbage collection
+  gc()
+
+}
 
 # Function to perform specific calculations on a .sav file
 process_sav_pca <- function(file_path) {
@@ -175,3 +229,5 @@ merged_data <- Reduce(function(x, y) merge(x, y, by = "FISNumber", all = TRUE),
 ## saving data
 saveRDS(merged_data,
         file = here::here("data", "intermediate", "PGS", "data_PCA_PGS.rds"))
+
+# eoS

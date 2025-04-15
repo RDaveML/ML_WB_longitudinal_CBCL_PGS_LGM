@@ -4,19 +4,21 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-03-12
+# Date: 2025-04-14
 #
-# Script Name: 09_0_run_bootstrap_stability.R
+# Script Name: 12_model_B_run_bootstrap_stability.R
 #
 # Script Description: This script is supposed to run the original and the B = 100
 # bootstrapped versions of the ML script to inspect model stability
-# It will be given to the SNELLIUS cluster, parallelizing over 101 SNELLIUS nodes
+# It will be given to the SNELLIUS cluster, parallelizing a job array for
+# running the script 101 times simultaneously
 # Goal is to save each output of model predictions and performance 
 # in separate file in subdirectory and then to combine them in the script where
 # the stability check takes place
 #
 #
-# Notes: 09_0_run_bootstrap_stability.R runs model 0 (only raw CBCL scores + covariates)
+# Notes: 12_model_B_run_bootstrap_stability.R runs model B
+# (PGS + covariates)
 #
 #
 
@@ -44,7 +46,7 @@ cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
 
 test <- FALSE
 if(test){
-  filename <- paste0("workspace_model_0_iteration_", iter, ".rds")
+  filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
   saveRDS(iter, file = paste0(here::here("data", "intermediate", "bootstrap", filename)))
   stop("Iteration print works / does not work, testrun with only iteration saved successfully!")
 }
@@ -89,6 +91,12 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 ## Find out if you can also load in only a slice of a list, otherwise load in
 ## entire list and slice the object here in R
 
+## adjust this! the filenames need to be different since we have different 
+## train test split and much smaller sample
+
+## the new train and test split was created in script 11
+## CONTINUE HERE
+
 ## readRDS solves the problem!
 if(b_iter == 0){
   train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
@@ -110,10 +118,13 @@ ncore_cl <- 96
 
 
 ## loading in the data
-## loading in full model_0 data (merged together in script 06_b_merge_nonLGM.R)
-load(here::here("data", "intermediate", "data_model_0.Rdata"))
-temp <- load(here::here("data", "intermediate", "data_model_0.Rdata"))
-cat("full model_0 data loaded in; name of object: ", "'", temp, "'",
+## loading in full model_B data (created in script 08)
+## CONTINUE HERE
+
+## Load this in with readRDS
+load(here::here("data", "intermediate", "data_model_B.Rdata"))
+temp <- load(here::here("data", "intermediate", "data_model_B.Rdata"))
+cat("full model_A data loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
 
@@ -123,13 +134,13 @@ temp <- load(here::here("data", "intermediate", "names_covariates.RData"))
 cat("vector with names of covariates loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
-## loading in rater covariates
-## (created in script 06_longitudinal_features_no_LGM) and merging them to 
-## covariates names
-load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
-temp <- load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
-cat("vector with names of rater covariates loaded in; name of object: ",
-    "'", temp, "'", "\n", "\n")
+covariates_names
+
+## loading in vector with names genetic covariates
+gen_covariates <- readRDS(here::here("data", "intermediate",
+                                     "names_genetic_covariates.rds"))
+
+## (rater covariates not necessary here)
 
 ## loading in df with Family Numbers
 load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
@@ -138,40 +149,45 @@ cat("saved df with FISNr and FamilyNumber loaded in; name of object: ", "'", tem
     "\n", "\n")
 
 ## one vector with all covariates names
-covariates_names <- c(covariates_names, rater_covariates)
+covariates_names <- c(covariates_names, gen_covariates)
 
 
 ## further distinction: numeric and factor covariates
 num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
-                    grep("age_qol", covariates_names, value = TRUE),
-                    rater_covariates)
+                    grep("age_qol", covariates_names, value = TRUE))
 
 factor_covariates <- setdiff(covariates_names, num_covariates)
 
 
 ## converting covariates to factors
 ## (this is done in the function f_conv)
-data_full_raw <- f_conv(df = data_full_raw, covariates = factor_covariates)
+
+## check here if function also works with data model B! 
+## sandbox with functions and model B data!
+## CONTINUE HERE
+data_model_B <- f_conv(df = data_model_B, covariates = factor_covariates)
 
 
 ## converting columns with multiple
 ## class types to numeric
-data_full_raw <- mult_to_numeric(df = data_full_raw)
+data_model_B <- mult_to_numeric(df = data_model_B)
 
 ## dummy coding categorical covariates
-data_dummies_0 <- dummy_cols(data_full_raw,
+data_dummies_0 <- dummy_cols(data_model_B,
                              select_columns = factor_covariates,
                              remove_first_dummy = TRUE,
                              remove_selected_columns = TRUE,
                              ignore_na = TRUE) ## not own column, but missing
 ## information here will be imputed as well
 
-dummy_vars <- setdiff(colnames(data_dummies_0), colnames(data_full_raw))
+dummy_vars <- setdiff(colnames(data_dummies_0), colnames(data_model_B))
 
+## check if the covariates are still correct
+## CONTINUE HERE
 covariates_full <- c(num_covariates, dummy_vars)
 
 
-## preprocessing for machine leaarning
+## preprocessing for machine learning
 ## (this is done in the function f_preprocess)
 ## nzv removal, high cor removal, linear combination removal, imputation
 preprocessed_0 <- ml_preprocess(df = data_dummies_0,
@@ -394,13 +410,13 @@ cat("hypertuning XGBoost successful!", "\n")
 
 ## adding flag if prediction is original or bootstrapped
 if(iter == 1){
-run_rf$preds_df_rf$original_prediction <- 1
-run_svr$preds_df_svr$original_prediction <- 1
-run_xgb$preds_df_xgb$original_prediction <- 1
+  run_rf$preds_df_rf$original_prediction <- 1
+  run_svr$preds_df_svr$original_prediction <- 1
+  run_xgb$preds_df_xgb$original_prediction <- 1
 } else {
-run_rf$preds_df_rf$original_prediction <- 0
-run_svr$preds_df_svr$original_prediction <- 0
-run_xgb$preds_df_xgb$original_prediction <- 0  
+  run_rf$preds_df_rf$original_prediction <- 0
+  run_svr$preds_df_svr$original_prediction <- 0
+  run_xgb$preds_df_xgb$original_prediction <- 0  
 } 
 
 # ----------------------------------------------------------------------
@@ -416,8 +432,9 @@ workspace_objects <- mget(c("covariates_full", "iter", "ncore_cl",
 
 
 # Save the list to an RDS file
-filename <- paste0("workspace_model_0_iteration_", iter, ".rds")
-saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate", "bootstrap", filename)))
+filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
+saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate",
+                                                    "bootstrap", filename)))
 
 
 
@@ -425,7 +442,7 @@ saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate", "boo
 ## time tracking
 t01 <- Sys.time()
 
-cat("duration entire script (model 0, custom functions, no bootstrapping): ",
+cat("duration entire script (model B, custom functions, no bootstrapping): ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
 
