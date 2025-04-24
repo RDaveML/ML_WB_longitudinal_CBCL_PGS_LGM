@@ -23,3 +23,7 @@ scripts/script_final_run_1_cluster.R
 scripts/.vscode/
 scripts/script_overlap_sample_CBCL_PGS.R
 scripts/10_inspection_bootstrap_stability.R
+scripts/additional_analyses_bootstrapping_hypertuning.R
+scripts/extracting_bootstrap_infor_model_A.r
+scripts/09_1_A_run_bootstrap_stability.R
+scripts/09_2_A_run_bootstrap_stability.R

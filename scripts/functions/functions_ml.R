@@ -588,23 +588,23 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
   exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-  x_train_matrix <- model.matrix(~ ., data = df_train)[
-    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+  x_train_matrix <- model.matrix(~ . - 1, data = df_train)[
+    , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
   y_train_vector <- df_train$QoL_simple
 
-  cat("column names df_train without exclude vars: ",
-  print(colnames(df_train %>% select(-all_of(exclude_vars)))), "\n")
+  cat("column names df_train without exclude vars: ", "\n")
+  print(colnames(df_train %>% select(-all_of(exclude_vars))))
 
-  cat("column names x_train_matrix",
-  print(colnames(x_train_matrix)), "\n")
+  cat("column names x_train_matrix", "\n")
+  print(colnames(x_train_matrix))
 
-  cat("difference colnames between both datasets: ",
+  cat("difference colnames between both datasets: ", "\n")
   setdiff(colnames(df_train %>% select(-all_of(exclude_vars))),
-          colnames(x_train_matrix)), "\n")
+          colnames(x_train_matrix))
 
-  cat("difference colnames between both datasets: ",
-  setdiff(colnames((x_train_matrix),
-          colnames(df_train %>% select(-all_of(exclude_vars)))), "\n"))
+  cat("difference colnames between both datasets: ", "\n")
+  setdiff(colnames(x_train_matrix),
+          colnames(df_train %>% select(-all_of(exclude_vars))))
 
   # Initialize shared variable for best result
   ## these are set globally! So that they are available to the 
@@ -810,8 +810,8 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   #final_model_bayes <- model_bayes_rf$finalModel
   
   ## ensuring dataframes are exactly the same
-  x_train_matrix_rf <- model.matrix(~ ., data = df_train)[
-    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+  x_train_matrix_rf <- model.matrix(~ . - 1, data = df_train)[
+    , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
 
   preds_rf_train <- predict(model_bayes_rf,
                             newdata = x_train_matrix_rf)
@@ -822,8 +822,8 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
                               
   cat("predictions rf training set successful", "\n")
 
-  x_test_matrix_rf <- model.matrix(~ ., data = df_test)[
-    , !(colnames(model.matrix(~ ., data = df_test)) %in% exclude_vars)]
+  x_test_matrix_rf <- model.matrix(~ . - 1, data = df_test)[
+    , !(colnames(model.matrix(~ . - 1, data = df_test)) %in% exclude_vars)]
 
   preds_rf_test <- predict(model_bayes_rf,
                            newdata = x_test_matrix_rf)
@@ -883,8 +883,8 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
   exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-  x_train_matrix <- model.matrix(~ ., data = df_train)[
-    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+  x_train_matrix <- model.matrix(~ . - 1, data = df_train)[
+    , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
   y_train_vector <- df_train$QoL_simple
   
   # Initialize shared variable for best result
@@ -1059,8 +1059,8 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
   )
 
   ## ensuring dataframes are exactly the same
-  x_train_matrix_svr <- model.matrix(~ ., data = df_train)[
-    , !(colnames(model.matrix(~ ., data = df_train)) %in% exclude_vars)]
+  x_train_matrix_svr <- model.matrix(~ . - 1, data = df_train)[
+    , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
 
   preds_svr_train <- predict(model_bayes_svr,
                             newdata = x_train_matrix_svr)
@@ -1071,8 +1071,8 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
                               
   cat("predictions svr training set successful", "\n")
 
-  x_test_matrix_svr <- model.matrix(~ ., data = df_test)[
-    , !(colnames(model.matrix(~ ., data = df_test)) %in% exclude_vars)]
+  x_test_matrix_svr <- model.matrix(~ . - 1, data = df_test)[
+    , !(colnames(model.matrix(~ . - 1, data = df_test)) %in% exclude_vars)]
 
   preds_svr_test <- predict(model_bayes_svr,
                            newdata = x_test_matrix_svr)

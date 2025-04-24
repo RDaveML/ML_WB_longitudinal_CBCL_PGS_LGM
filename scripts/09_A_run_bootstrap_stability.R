@@ -41,7 +41,7 @@ if(iter > 1){
 print(b_iter)
 b_iter <- as.numeric(b_iter)
 print(b_iter)
-cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
+cat("Iteration / Index for Bootstrapped dataset: ", b_iter, "\n")
 
 test <- FALSE
 if(test){
@@ -111,10 +111,11 @@ ncore_cl <- 96
 
 
 ## loading in the data
-## loading in full model_0 data (merged together in script 06_b_merge_nonLGM.R)
+## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
+## Still to be renamed to model A
 load(here::here("data", "intermediate", "data_model_0.Rdata"))
 temp <- load(here::here("data", "intermediate", "data_model_0.Rdata"))
-cat("full model_0 data loaded in; name of object: ", "'", temp, "'",
+cat("full model_A data loaded in; name of object: ", "'", temp, "'",
     "\n", "\n")
 
 
@@ -160,14 +161,14 @@ data_full_raw <- f_conv(df = data_full_raw, covariates = factor_covariates)
 data_full_raw <- mult_to_numeric(df = data_full_raw)
 
 ## dummy coding categorical covariates
-data_dummies_0 <- dummy_cols(data_full_raw,
+data_dummies_A <- dummy_cols(data_full_raw,
                              select_columns = factor_covariates,
                              remove_first_dummy = TRUE,
                              remove_selected_columns = TRUE,
                              ignore_na = TRUE) ## not own column, but missing
 ## information here will be imputed as well
 
-dummy_vars <- setdiff(colnames(data_dummies_0), colnames(data_full_raw))
+dummy_vars <- setdiff(colnames(data_dummies_A), colnames(data_full_raw))
 
 covariates_full <- c(num_covariates, dummy_vars)
 
@@ -175,17 +176,18 @@ covariates_full <- c(num_covariates, dummy_vars)
 ## preprocessing for machine learning
 ## (this is done in the function f_preprocess)
 ## nzv removal, high cor removal, linear combination removal, imputation
-preprocessed_0 <- ml_preprocess(df = data_dummies_0,
+preprocessed_A <- ml_preprocess(df = data_dummies_A,
                                 train_ids = train_ids,
                                 test_ids = test_ids,
                                 covariates = covariates_full)
 
-## checking if family is still included in traning variables
-"FamilyNumber" %in% colnames(preprocessed_0$x_train_comb)
+## checking if family is still included in training variables
+cat("FamilyNumber still in training set: ",
+    "FamilyNumber" %in% colnames(preprocessed_A$x_train_comb), "\n")
 
-x_train <- preprocessed_0$x_train_comb
+x_train <- preprocessed_A$x_train_comb
 
-x_test <- preprocessed_0$x_test_comb
+x_test <- preprocessed_A$x_test_comb
 
 set.seed(7)
 
@@ -234,7 +236,9 @@ predictors_level_1 <- c(setdiff(covariates_full, test_enet$non_zero_predictors),
 predictors_level_1 <- setdiff(predictors_level_1, "(Intercept)")                        
 
 ## are all covariates in predictors_level_1?
-sum(covariates_full %in% predictors_level_1) - length(covariates_full) == 0
+cat("All covariates in predictor set?",
+    sum(covariates_full %in% predictors_level_1) - length(covariates_full) == 0,
+    "\n")
 
 ## Check if intercept is still in predictor space
 cat("Intercept still in predictor space: ", "(Intercept)" %in% predictors_level_1, "\n")
@@ -245,14 +249,14 @@ vars_ML_1 <- c("FISNumber", "FamilyNumber", "QoL_simple", predictors_level_1)
 
 ## creating definitive training set for the level 1 models
 x_train_ML <- x_train %>%
-  select(all_of(vars_ML_1))
+  select(all_of(vars_ML_1), -contains("Intercept"))
 
 ## check if intercept is still in predictor space
 cat("Intercept still in training predictor space: ", "(Intercept)" %in% colnames(x_train_ML), "\n")
 
 ## creating definitive test set for the level 1 models
 x_test_ML <- x_test %>%
-  select(all_of(vars_ML_1))
+  select(all_of(vars_ML_1), -contains("Intercept"))
 
 ## check if intercept is still in predictor space
 cat("Intercept still in testing predictor space: ", "(Intercept)" %in% colnames(x_test_ML), "\n")

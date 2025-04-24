@@ -105,6 +105,7 @@ plot_pred_inst <- function(df_pred, smooth_function = NULL){
 plot_cal_inst <- function(df_pred, smooth_function = NULL){
   
   
+  ## CONTINUE HERE!!!
   df_pred <- rf1_sim
   ## x axis: predictions for original and bootstrapped models
   df_melt_xx <- reshape2::melt(df_pred %>% select(-true_y))
