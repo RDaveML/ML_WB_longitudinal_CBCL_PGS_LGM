@@ -17,10 +17,15 @@
 
 
 plot_pred_inst <- function(df_pred, smooth_function = NULL){
-  ## Here, insert stopping if df does not have the correct column names 
-  ## CONTNINUE HERE!!! 
   
-  
+  if(!is.data.frame(df_pred) | 
+     "FISNumber" %notin% colnames(df_pred) | 
+     "true_y" %notin% colnames(df_pred) | 
+     "original_prediction" %notin% colnames(df_pred) | 
+     length(grep("bootstrap", colnames(df_pred))) == 0)
+     {
+    stop("bounds_enet must be a list with elements alpha and lambda")
+  }
   
   ## About the smoothing function, spend separate effort to look it up
   ## if necessary, let it explain by CGPT, adapt function and delta to it
@@ -78,6 +83,9 @@ plot_pred_inst <- function(df_pred, smooth_function = NULL){
   ## long_data <- bind_rows(1_long, cond2_long)
   long_data <- df_long
   
+  
+  ## CONTINUE HERE! FEED MODEL NAME INTO TITLE, NEEDS TO BE FUNCTION ARGUMENT
+  
   plot_instability <- 
   ggplot(long_data, aes(x = original_prediction, y = Scatter)) +
     geom_point(size = 0.1, alpha = 0.5, color = "grey") +
@@ -106,7 +114,7 @@ plot_cal_inst <- function(df_pred, smooth_function = NULL){
   
   
   ## CONTINUE HERE!!!
-  df_pred <- rf1_sim
+  ## df_pred <- rf1_sim
   ## x axis: predictions for original and bootstrapped models
   df_melt_xx <- reshape2::melt(df_pred %>% select(-true_y))
   
