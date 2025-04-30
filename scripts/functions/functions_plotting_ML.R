@@ -18,14 +18,14 @@
 
 plot_pred_inst <- function(df_pred, smooth_function = NULL){
   
-  if(!is.data.frame(df_pred) | 
-     "FISNumber" %notin% colnames(df_pred) | 
-     "true_y" %notin% colnames(df_pred) | 
-     "original_prediction" %notin% colnames(df_pred) | 
-     length(grep("bootstrap", colnames(df_pred))) == 0)
-     {
-    stop("bounds_enet must be a list with elements alpha and lambda")
-  }
+#  if(!is.data.frame(df_pred) | 
+#     "FISNumber" %notin% colnames(df_pred) | 
+#     "true_y" %notin% colnames(df_pred) | 
+#     "original_prediction" %notin% colnames(df_pred) | 
+#     length(grep("bootstrap", colnames(df_pred))) == 0)
+#     {
+#    stop("bounds_enet must be a list with elements alpha and lambda")
+#  }
   
   ## About the smoothing function, spend separate effort to look it up
   ## if necessary, let it explain by CGPT, adapt function and delta to it
@@ -212,6 +212,7 @@ plot_mape_inst <- function(df_pred, smooth_function = NULL){
   # Capture the plot as an object
   plot_obj <- recordPlot()
   
+  dev.off()
   # Return the recorded plot object
   return(plot_obj)
   

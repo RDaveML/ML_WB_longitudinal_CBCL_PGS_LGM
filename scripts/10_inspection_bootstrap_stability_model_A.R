@@ -27,7 +27,8 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
                "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
-               "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "tidyverse")
+               "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "tidyverse",
+               "rlang")
 
 ## Sourcing custom plot functions
 source(here::here("scripts", "functions", "functions_plotting_ML.R"))
@@ -157,7 +158,80 @@ data_bootstrap_rf <- data_bootstrap_rf %>%
 plot_pred_inst_rf <- plot_pred_inst(data_bootstrap_rf)
 
 plot_pred_inst_rf
-## CONTINUE HERE!!!
+
+## svr
+list_bootstrap_svr <- lapply(1:length(workspaces_bootstrap), function(i){
+  ## first element in list is svr dataframe
+  pred_df <- workspaces_bootstrap[[i]][[2]] %>%
+    ## renaming the indicator column because plotting function
+    ## takes the column name original_prediction for the predicted values
+    rename(orig_indicator = original_prediction) %>%
+    ## prediction indicator not needed here
+    select(FISNumber, predictions_svr)
+  
+  if(i == 1){
+    pred_df <- pred_df %>%
+      rename(original_prediction = predictions_svr)
+  } else {
+    colname_boot <- paste0("bootstrapped_prediction_", i-1)
+    pred_df <- pred_df %>%
+      rename(!!colname_boot := predictions_svr)
+  }
+  return(pred_df)
+})
+
+## joining all dataframes in the list by FISNumber
+
+data_bootstrap_svr <- Reduce(function(x, y) merge(x, y, by = "FISNumber"),
+                            list_bootstrap_svr)
+
+## joining with true_y data
+data_bootstrap_svr <- data_bootstrap_svr %>%
+  full_join(data_true_y, by = "FISNumber")
+
+
+## plotting prediction instability plot for svr model
+plot_pred_inst_svr <- plot_pred_inst(data_bootstrap_svr)
+
+plot_pred_inst_svr
+
+
+## xbg
+## xgb
+list_bootstrap_xgb <- lapply(1:length(workspaces_bootstrap), function(i){
+  ## first element in list is xgb dataframe
+  pred_df <- workspaces_bootstrap[[i]][[3]] %>%
+    ## renaming the indicator column because plotting function
+    ## takes the column name original_prediction for the predicted values
+    rename(orig_indicator = original_prediction) %>%
+    ## prediction indicator not needed here
+    select(FISNumber, predictions_xgb)
+  
+  if(i == 1){
+    pred_df <- pred_df %>%
+      rename(original_prediction = predictions_xgb)
+  } else {
+    colname_boot <- paste0("bootstrapped_prediction_", i-1)
+    pred_df <- pred_df %>%
+      rename(!!colname_boot := predictions_xgb)
+  }
+  return(pred_df)
+})
+
+## joining all dataframes in the list by FISNumber
+
+data_bootstrap_xgb <- Reduce(function(x, y) merge(x, y, by = "FISNumber"),
+                             list_bootstrap_xgb)
+
+## joining with true_y data
+data_bootstrap_xgb <- data_bootstrap_xgb %>%
+  full_join(data_true_y, by = "FISNumber")
+
+
+## plotting prediction instability plot for xgb model
+plot_pred_inst_xgb <- plot_pred_inst(data_bootstrap_xgb)
+
+plot_pred_inst_xgb
 
 ##-----------------------------------------------------------------------------
 
@@ -181,7 +255,6 @@ all_plots_models <- vector("list", length = 3)
 all_plots_models <- lapply(c(1:length(all_plots_models)), function(x){
   ## continue here, something is still off, all the same is printed, so only 
   ## for one model, see why assigning x does not work
-  x <<- x
   ## adjusting column names according to model
   model_name <- case_when(
     x == 1 ~ "rf",
@@ -189,7 +262,7 @@ all_plots_models <- lapply(c(1:length(all_plots_models)), function(x){
     x == 3 ~ "xgb"
   )
   col_model_name <- paste0("predictions_", model_name)
-  list_bootstrap_df <- lapply(1:length(workspaces_bootstrap), function(i){
+  list_bootstrap_df <- lapply(seq_along(workspaces_bootstrap), function(i){
     ## first element in list is rf dataframe
     
     ## CONTINUE HERE!! SOMETHING IS OFF, the data are always the same!
@@ -238,6 +311,126 @@ all_plots_models <- lapply(c(1:length(all_plots_models)), function(x){
 })
 
 names(all_plots_models) <- c("rf", "svr", "xgb")
+
+
+# Model metadata
+model_info <- list(
+  rf = list(index = 1, pred_col = "predictions_rf"),
+  svr = list(index = 2, pred_col = "predictions_svr"),
+  xgb = list(index = 3, pred_col = "predictions_xgb")
+)
+
+# Container to store outputs
+all_plots_models <- list()
+
+# Loop over each model
+for (model_name in names(model_info)) {
+  
+  model_index <- model_info[[model_name]]$index
+  prediction_column <- model_info[[model_name]]$pred_col
+  
+  list_bootstrap_df <- lapply(seq_along(workspaces_bootstrap), function(i) {
+    
+    pred_df <- workspaces_bootstrap[[i]][[model_index]] %>%
+      rename(orig_indicator = original_prediction) %>%
+      select(FISNumber, !!sym(prediction_column))
+    
+    if (i == 1) {
+      # Name like: original_prediction_rf
+      new_name <- paste0("original_prediction")
+      pred_df <- pred_df %>%
+        rename(!!new_name := !!sym(prediction_column))
+    } else {
+      # Name like: bootstrapped_prediction_1_rf
+      colname_boot <- paste0("bootstrapped_prediction_", i - 1, "_")
+      pred_df <- pred_df %>%
+        rename(!!colname_boot := !!sym(prediction_column))
+    }
+    
+    return(pred_df)
+  })
+  
+  # Merge all bootstrap replicates for this model
+  data_bootstrap <- Reduce(function(x, y) merge(x, y, by = "FISNumber"), list_bootstrap_df)
+  
+  # Join with the true values
+  data_bootstrap <- data_bootstrap %>%
+    full_join(data_true_y, by = "FISNumber")
+  
+  # Generate model-specific plots
+  plot_pred_inst_model <- plot_pred_inst(data_bootstrap)
+  plot_cal_inst_model <- plot_cal_inst(data_bootstrap)
+  plot_mape_inst_model <- plot_mape_inst(data_bootstrap)
+  
+  # Store result
+  all_plots_models[[model_name]] <- list(
+    model_name = model_name,
+    data_bootstrap = data_bootstrap,
+    plot_pred_inst_model = plot_pred_inst_model,
+    plot_cal_inst_model = plot_cal_inst_model,
+    plot_mape_inst_model = plot_mape_inst_model
+  )
+}
+
+## saving plots
+
+## prediction instability
+ggsave(filename = "A_pred_inst_rf.png",
+       plot = all_plots_models$rf$plot_pred_inst_model,
+       device = "png",
+       path = here::here("data", "intermediate", "bootstrap", "plots"),
+       create.dir = TRUE)
+
+ggsave(filename = "A_pred_inst_svr.png",
+       plot = all_plots_models$svr$plot_pred_inst_model,
+       device = "png",
+       path = here::here("data", "intermediate", "bootstrap", "plots"),
+       create.dir = TRUE)
+
+ggsave(filename = "A_pred_inst_xgb.png",
+       plot = all_plots_models$xgb$plot_pred_inst_model,
+       device = "png",
+       path = here::here("data", "intermediate", "bootstrap", "plots"),
+       create.dir = TRUE)
+
+## calibration instability
+ggsave(filename = "A_cal_inst_rf.png",
+       plot = all_plots_models$rf$plot_cal_inst_model,
+       device = "png",
+       path = here::here("data", "intermediate", "bootstrap", "plots"),
+       create.dir = TRUE)
+
+ggsave(filename = "A_cal_inst_svr.png",
+       plot = all_plots_models$svr$plot_cal_inst_model,
+       device = "png",
+       path = here::here("data", "intermediate", "bootstrap", "plots"),
+       create.dir = TRUE)
+
+ggsave(filename = "A_cal_inst_xgb.png",
+       plot = all_plots_models$xgb$plot_cal_inst_model,
+       device = "png",
+       path = here::here("data", "intermediate", "bootstrap", "plots"),
+       create.dir = TRUE)
+
+## MAPE instability
+# Define the path and filename
+plot_path <- here::here("data", "intermediate", "bootstrap", "plots")
+
+# Save the plot
+png(filename = file.path(plot_path, "A_mape_inst_rf.png"), width = 800, height = 600)
+replayPlot(all_plots_models$rf$plot_mape_inst_model)
+dev.off()
+
+png(filename = file.path(plot_path, "A_mape_inst_svr.png"), width = 800, height = 600)
+replayPlot(all_plots_models$svr$plot_mape_inst_model)
+dev.off()
+
+png(filename = file.path(plot_path, "A_mape_inst_xgb.png"), width = 800, height = 600)
+replayPlot(all_plots_models$xgb$plot_mape_inst_model)
+dev.off()
+
+
+## eoS
 
 
 
