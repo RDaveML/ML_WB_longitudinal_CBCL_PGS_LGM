@@ -239,79 +239,12 @@ plot_pred_inst_xgb
 ## x-axis: estimated outcome of original and bootstrapped models
 ## y-axis: Observed outcome in original dataset
 
-
-
 ## Step 3 stability check: MAPE instability plot
 ## x-axis: estimated outcome from original prediction model
 ## y-axis: scatter of MAPE value for each individual
 
 
-
-
 ## getting all plots for all three models in one function
-
-## CONTINUE HERE!! ADD MODEL NAME INTO PLOT FUNCTION
-all_plots_models <- vector("list", length = 3)
-all_plots_models <- lapply(c(1:length(all_plots_models)), function(x){
-  ## continue here, something is still off, all the same is printed, so only 
-  ## for one model, see why assigning x does not work
-  ## adjusting column names according to model
-  model_name <- case_when(
-    x == 1 ~ "rf",
-    x == 2 ~ "svr",
-    x == 3 ~ "xgb"
-  )
-  col_model_name <- paste0("predictions_", model_name)
-  list_bootstrap_df <- lapply(seq_along(workspaces_bootstrap), function(i){
-    ## first element in list is rf dataframe
-    
-    ## CONTINUE HERE!! SOMETHING IS OFF, the data are always the same!
-    pred_df <- workspaces_bootstrap[[i]][[x]] %>%
-      ## renaming the indicator column because plotting function
-      ## takes the column name original_prediction for the predicted values
-      rename(orig_indicator = original_prediction) %>%
-      ## prediction indicator not needed here
-      select(-orig_indicator)
-
-    
-    if(i == 1){
-      pred_df <- pred_df %>%
-        rename(original_prediction = !!col_model_name)
-    } else {
-      colname_boot <- paste0("bootstrapped_prediction_", i-1)
-      pred_df <- pred_df %>%
-        rename(!!colname_boot := !!col_model_name)
-    }
-    return(pred_df)
-  })
-  
-  ## joining all dataframes in the list by FISNumber
-  
-  data_bootstrap <- Reduce(function(x, y) merge(x, y, by = "FISNumber"),
-                              list_bootstrap_rf)
-  
-  ## joining with true_y data
-  data_bootstrap <- data_bootstrap %>%
-    full_join(data_true_y, by = "FISNumber")
-  
-  
-  ## plotting prediction instability plot for rf model
-  plot_pred_inst_model <- plot_pred_inst(data_bootstrap)
-  
-  plot_cal_inst_model <- plot_cal_inst(data_bootstrap)
-  
-  plot_mape_inst_model <- plot_mape_inst(data_bootstrap)
-  
-  return(list(model_name = model_name,
-              data_bootstrap = data_bootstrap,
-              plot_pred_inst_model = plot_pred_inst_model,
-              plot_cal_inst_model = plot_cal_inst_model,
-              plot_mape_inst_model = plot_mape_inst_model))
-  
-})
-
-names(all_plots_models) <- c("rf", "svr", "xgb")
-
 
 # Model metadata
 model_info <- list(
@@ -359,7 +292,9 @@ for (model_name in names(model_info)) {
   
   # Generate model-specific plots
   plot_pred_inst_model <- plot_pred_inst(data_bootstrap)
-  plot_cal_inst_model <- plot_cal_inst(data_bootstrap)
+  plot_cal_inst_model <- plot_cal_inst(data_bootstrap,
+                                       round = FALSE #TRUE
+                                       )
   plot_mape_inst_model <- plot_mape_inst(data_bootstrap)
   
   # Store result
@@ -394,19 +329,19 @@ ggsave(filename = "A_pred_inst_xgb.png",
        create.dir = TRUE)
 
 ## calibration instability
-ggsave(filename = "A_cal_inst_rf.png",
+ggsave(filename = "A_cal_inst_smooth_rf.png",
        plot = all_plots_models$rf$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "A_cal_inst_svr.png",
+ggsave(filename = "A_cal_inst_smooth_svr.png",
        plot = all_plots_models$svr$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "A_cal_inst_xgb.png",
+ggsave(filename = "A_cal_inst_smooth_xgb.png",
        plot = all_plots_models$xgb$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),

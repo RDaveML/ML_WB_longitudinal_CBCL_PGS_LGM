@@ -18,15 +18,6 @@
 
 plot_pred_inst <- function(df_pred, smooth_function = NULL){
   
-#  if(!is.data.frame(df_pred) | 
-#     "FISNumber" %notin% colnames(df_pred) | 
-#     "true_y" %notin% colnames(df_pred) | 
-#     "original_prediction" %notin% colnames(df_pred) | 
-#     length(grep("bootstrap", colnames(df_pred))) == 0)
-#     {
-#    stop("bounds_enet must be a list with elements alpha and lambda")
-#  }
-  
   ## About the smoothing function, spend separate effort to look it up
   ## if necessary, let it explain by CGPT, adapt function and delta to it
   
@@ -110,11 +101,18 @@ plot_pred_inst <- function(df_pred, smooth_function = NULL){
 
   ## calibration instability plotting function
 
-plot_cal_inst <- function(df_pred, smooth_function = NULL){
+plot_cal_inst_old <- function(df_pred, smooth_function = NULL, round = FALSE){
   
+
+  ## for plotting: rounding introducing
+  if(round){
+    ## rounding all the columns that contain the string "prediction"
+    ## in column name to whole integers
+    df_pred <- df_pred %>%
+      mutate(across(.cols = contains("prediction"),
+                    .fns = ~ round(.)))
+  }
   
-  ## CONTINUE HERE!!!
-  ## df_pred <- rf1_sim
   ## x axis: predictions for original and bootstrapped models
   df_melt_xx <- reshape2::melt(df_pred %>% select(-true_y))
   
@@ -150,18 +148,45 @@ plot_cal_inst <- function(df_pred, smooth_function = NULL){
                                "Original",
                                "Bootstrapped"))
   
-  ## Plotting
-  plot_instability_cal <- 
-  OUT %>% ggplot(aes(x = value, y = y, group = prediction, color = prediction)) +
+  # Apply lowess smoothing manually if requested
+  
+  
+if (!is.null(smooth_function) && smooth_function == "lowess") {
+  
+  smoothed_lines <- OUT %>%
+    split(.$prediction) %>%
+    lapply(function(df) {
+      # Sort by x before lowess
+      df_sorted <- df[order(df$value), ]
+      sm <- lowess(df_sorted$value, df_sorted$y, f = 2/3, delta = 0.3)
+      
+      data.frame(value = sm$x,
+                 y = sm$y,
+                 prediction = unique(df$prediction))
+    }) %>%
+    bind_rows()
+  
+  plot_instability_cal <- ggplot(smoothed_lines, aes(x = value, y = y, color = prediction, group = prediction)) +
+    geom_line(alpha = 0.5) +
+    geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+    scale_x_continuous(name = "predicted", limits = c(0, 10), breaks = seq(0, 10, 1)) +
+    scale_y_continuous(name = "observed", limits = c(0, 10), breaks = seq(0, 10, 1)) +
+    scale_color_manual(values = c("Original" = "blue", "Bootstrapped" = "orange")) +
+    theme_bw() +
+    theme(axis.text = element_text(size = 6))
+  
+
+} else {
+  # Default: plot unsmoothed lines
+  plot_instability_cal <- OUT %>% 
+    ggplot(aes(x = value, y = y, group = prediction, color = prediction)) +
     geom_line(alpha = 0.5) + 
-    #facet_grid(~Condition) + 
-    xlim(0, 10) + 
-    ylim(0, 10) +
-    xlab('predicted') +
-    ylab('observed') +
+    scale_x_continuous(name = "predicted", limits = c(0, 10), breaks = seq(0, 10, 1)) +
+    scale_y_continuous(name = "observed", limits = c(0, 10), breaks = seq(0, 10, 1)) +
     geom_abline(slope = 1, intercept = 0) +
     theme_bw() +
     theme(axis.text = element_text(size = 6))
+}
   
   ## render plot
   plot_instability_cal
@@ -170,8 +195,56 @@ plot_cal_inst <- function(df_pred, smooth_function = NULL){
   
 }
 
-## function also seems to work, still checking the alignment of y values
-## at line 126
+
+plot_cal_inst <- function(df_pred, round = FALSE){
+  
+  ## for plotting: rounding introducing
+  if(round){
+    ## rounding all the columns that contain the string "prediction"
+    ## in column name to whole integers
+    df_pred <- df_pred %>%
+      mutate(across(.cols = contains("prediction"),
+                    .fns = ~ round(.)))
+  }
+  
+  ## Remove true_y column for melting
+  pred_only <- df_pred %>% select(-true_y)
+  
+  ## Create an identifier for each prediction column
+  pred_long <- reshape2::melt(pred_only, variable.name = "model_id", value.name = "value")
+  
+  ## Repeat true_y for each prediction column
+  pred_long$y <- rep(df_pred$true_y, times = ncol(pred_only))
+  
+  ## Identify original vs bootstrapped
+  pred_long$prediction <- ifelse(pred_long$model_id == "original_prediction", "Original", "Bootstrapped")
+  
+  ## Apply lowess smoothing to each column individually
+  smoothed_list <- pred_long %>%
+    group_by(model_id, prediction) %>%
+    group_map(~{
+      df_sorted <- .x[order(.x$value), ]
+      sm <- lowess(df_sorted$value, df_sorted$y, f = 2/3)
+      tibble(value = sm$x, y = sm$y, model_id = .y$model_id, prediction = .y$prediction)
+    }) %>% 
+    bind_rows()
+  
+  ## Plot
+  plot_instability_cal <- ggplot(smoothed_list,
+                                 aes(x = value, y = y, group = model_id,
+                                     color = prediction)) +
+    geom_line(aes(linetype = prediction, size = prediction, alpha = prediction)) +
+    scale_size_manual(values = c("Bootstrapped" = 0.5, "Original" = 1.5)) +
+    scale_alpha_manual(values = c("Bootstrapped" = 0.5, "Original" = 2)) +
+    scale_color_manual(values = c("Bootstrapped" = "grey70", "Original" = "red")) + 
+    scale_x_continuous(name = "predicted", limits = c(0, 10), breaks = seq(0, 10, 1)) +
+    scale_y_continuous(name = "observed", limits = c(0, 10), breaks = seq(0, 10, 1)) +
+    geom_abline(slope = 1, intercept = 0) +
+    theme_bw() +
+    theme(axis.text = element_text(size = 6))
+  
+  return(plot_instability_cal)
+}
 
 
 
