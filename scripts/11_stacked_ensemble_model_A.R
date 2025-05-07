@@ -38,6 +38,11 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 
 ## Steps: 
 
+##-----------------------------------------------------------------------------
+
+## A) Inspect performances of original models (later: bootstrapped CIs
+## for performance measures)
+
 ## 1) Loading in original train test split
 train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
 
@@ -112,8 +117,6 @@ folds <- groupKFold(group = data_train$FamilyNumber, k = 10)
 ## variable "FISNumber" should not be part of the features
 ## the tuning parameter "Intercept" should be contained in the model
 
-## Bootstrap this model! 
-## CONTINUE HERE!!
 model_lm_stack <- train(QoL_simple ~ . - FISNumber - FamilyNumber, 
                         data = data_train, 
                         method = "lm",
@@ -238,20 +241,14 @@ if(stacked_run) {
 }
 
 
-
-
-pred_xgb_stack <- run_xgb_stack$pred_xgb_stack %>%
-  filter(FISNumber %in% test_ids) %>%
-  select(predictions_xgb) %>%
-  pull()
+pred_xgb_stack <- run_xgb_stack$pred_xgb_stack
 
  RMSE_df[(nrow(RMSE_df) + 1), "model_name"] <- "xgb_stacked"
  RMSE_df[nrow(RMSE_df), "RMSE"] <- RMSE(pred_xgb_stack, data_test$QoL_simple)
 
-# RMSE_df
+RMSE_df
 
 ## Conclusion: RMSE lowest in rf model (not stacked)?
-## Try run also on ntr1 with more cores!
 
 
 ### R² of all models
@@ -262,7 +259,7 @@ metrics_df <- data.frame()
 list_models <- list("lm_stack" = model_lm_stack,
                     "rf" = model_rf,
                     "xgb" = model_xgb,
-                    "xgb_stack" = run_xgb_stack$model_bayes_xgb)
+                    "xgb_stack" = run_xgb_stack$run_xgb_stack)
 
 for(mod in 1:length(list_models)) {
   if (mod == 1) {
@@ -277,13 +274,8 @@ for(mod in 1:length(list_models)) {
       filter(FISNumber %in% test_ids) %>%
       select(predictions_xgb) %>%
       pull()
-  } else if (mod == 4){
-    predictions <- run_xgb_stack$preds_df_xgb %>%
-      filter(FISNumber %in% test_ids) %>%
-      select(predictions_xgb) %>%
-      pull()
   } else {
-    predictions <- NA
+    predictions <- run_xgb_stack$pred_xgb_stack
   }
   
   metrics_comp[[mod]] <- postResample(predictions, data_test$QoL_simple)
@@ -295,7 +287,13 @@ names(metrics_df) <- c("RMSE", "R²", "MAE")
 
 metrics_df <- cbind(data.frame(model_name = names(list_models)), metrics_df)
 
-## model performance: bootstrapped confidence intervals
+
+##-----------------------------------------------------------------------------
+
+
+
+
+## B) bootstrapped confidence intervals of model performance
 
 ## iterate over all bootstrapped workspace items (might need to switch order
 ## and place this part more at the beginning of the script)
@@ -353,6 +351,8 @@ for(run in 1:length(list_files)){
 }
 
 colnames(boot_metrics_rf) <- c("run", "RMSE", "R²", "MAE")
+## potentially later to create entire dataframe with the metrics of all models:
+## colnames(boot_metrics_rf) <- c("run", "RMSE_rf", "R²_rf", "MAE_rf")
 
 RMSE_rf_boot <- boot_metrics_rf %>%
   select(RMSE) %>%
@@ -431,6 +431,8 @@ for(run in 1:length(list_files)){
 }
 
 colnames(boot_metrics_xgb) <- c("run", "RMSE", "R²", "MAE")
+## potentially later to create entire dataframe with the metrics of all models:
+## colnames(boot_metrics_rf) <- c("run", "RMSE_xgb", "R²_xgb", "MAE_xgb")
 
 RMSE_xgb_boot <- boot_metrics_xgb %>%
   select(RMSE) %>%
@@ -463,8 +465,117 @@ boot.ci(boot_obj_MAE_xgb, type = "perc")
 
 
 ## For bootstrapped lm model (move training part here!)
-## cONTINUE HERE!! 
 
+## Something seems to be off here, values are way too good! 
+## CONTINUE HERE!!!
+
+boot_metrics_stacked_lm <- data.frame()
+
+for(run in 1:length(list_files)){
+  
+  filename <- paste0(filepath, "/", list_files[run])
+  
+  ## getting train and test IDs
+  if(run == 1){
+    train_ids_run <- readRDS(here::here("data", "intermediate",
+                                        "indices_train.rds"))
+  } else {
+    train_ids_run <- readRDS(
+      here::here("data", "intermediate",
+                 "indices_bootstrap.rds"))[[(run - 1)]][[1]]
+  }
+  
+  
+  if(run == 1){
+    test_ids_run <- readRDS(here::here("data", "intermediate",
+                                       "indices_test.rds"))
+  } else {
+    test_ids_run <- readRDS(
+      here::here("data", "intermediate",
+                 "indices_bootstrap.rds"))[[(run - 1)]][[2]]
+  }
+  
+  pred_rf <- readRDS(filename)$run_rf$preds_df_rf 
+  
+  pred_xgb <- readRDS(filename)$run_xgb$preds_df_xgb 
+  
+  data_full <- data_outcome %>% 
+    full_join(pred_rf, by = "FISNumber") %>%
+    full_join(pred_xgb, by = "FISNumber") %>%
+    full_join(df_FIS_fam, by = "FISNumber") %>%
+    mutate(QoL_simple =  as.numeric(QoL_simple)) ## recoding outcome to numeric
+  
+  data_train_run <- data_full %>%
+    filter(FISNumber %in% train_ids_run)
+  
+  data_test_run <- data_full %>%
+    filter(FISNumber %in% test_ids_run)
+  
+  set.seed(7)
+  folds <- groupKFold(group = data_train_run$FamilyNumber, k = 10)
+  
+  ## calculating stacked ensemble model (lm)
+  model_lm_stack_run <- train(QoL_simple ~ . - FISNumber - FamilyNumber, 
+                              data = data_train_run, 
+                              method = "lm",
+                              trControl = trainControl(method = "cv", 
+                                                       index = folds,
+                                                       savePredictions = TRUE,
+                                                       allowParallel = TRUE))
+  
+  
+  predictions <- predict(model_lm_stack_run, data_test_run)
+  
+  ## calculating metrics for this specific instance
+  metrics_run <- postResample(predictions, data_test_run$QoL_simple)
+  
+  metrics_line <- c(run, metrics_run)
+  boot_metrics_stacked_lm <- rbind(boot_metrics_stacked_lm, metrics_line)
+}
+
+colnames(boot_metrics_stacked_lm) <- c("run", "RMSE", "R²", "MAE")
+## potentially later to create entire dataframe with the metrics of all models:
+## colnames(boot_metrics_rf) <- c(
+  ## "run", "RMSE_stack_lm", "R²_stack_lm", "MAE_stack_lm")
+
+
+RMSE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
+  select(RMSE) %>%
+  pull()
+
+R2_stacked_lm_boot <- boot_metrics_stacked_lm %>%
+  select(`R²`) %>%
+  pull()
+
+MAE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
+  select(MAE) %>%
+  pull()
+
+## Calculate Bootstrapped CIs of the metrics
+
+## RMSE
+boot_obj_rmse_stacked_lm <- boot(data = RMSE_stacked_lm_boot,
+                          statistic = function(d, i) mean(d[i]), R = 1000)
+boot.ci(boot_obj_rmse_stacked_lm, type = "perc")
+
+## R²
+boot_obj_R2_stacked_lm <- boot(data = R2_stacked_lm_boot,
+                        statistic = function(d, i) mean(d[i]), R = 1000)
+boot.ci(boot_obj_R2_stacked_lm, type = "perc")
+
+## MAE
+boot_obj_MAE_stacked_lm <- boot(data = MAE_stacked_lm_boot,
+                         statistic = function(d, i) mean(d[i]), R = 1000)
+boot.ci(boot_obj_MAE_stacked_lm, type = "perc")
+
+
+## For stacked Xgboost model
+
+## First train the models on server (alternative: run 2 test runs on SNELLIUS,
+## check how much budget it consumed)
+
+
+##-----------------------------------------------------------------------------
 
 
 ## 4) Feature importance analysis (level 1 models)
@@ -475,45 +586,58 @@ boot.ci(boot_obj_MAE_xgb, type = "perc")
 ## calculating Shapley Additive exPlanation (SHAP) values for random forest 
 ## and xgboost model
 
+## accessing full ML prepared dataset of the model (preprocessed, elastinc net 
+## filtered training and test data per run)
 
-## ISSUE: So far, you can only do this with training data because 
-## full training and test data were not saved in the bootstrap run! 
+## Work into function: If feature was not selected in a run by elastic net, 
+## assign value 0!
+filepath_full_data <- 
+  "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/prep_data_A"
+list_files_full_data <- grep(".rds", list.files(filepath_full_data),
+  value = TRUE)
 
-## CONTINUE HERE!!
 
-## loading in full training data to access predictor values
-x_shap <- workspace_orig$run_rf$model_bayes_rf$trainingData %>%
-  select(-`.outcome`)
-
-y_shap <- data_full %>%
-  filter(FISNumber %in% train_ids) %>%
-  select(QoL_simple) %>%
-  pull()
-
-# Calculate SHAP values for the random forest model
-ranger_model <- model_rf$finalModel
-
-# Create a custom prediction function for iml
-predict_function <- function(model, newdata) {
-  predict(model, data = newdata)$predictions
+## for(i in 1:length(list_files_full_data)){
+for(i in 1:2) {
+  filename <- paste0(filepath, "/", list_files[i])
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[i])
+  predictors_run <- readRDS(filename)[["predictors_level_1"]]
+  x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
+                  readRDS(filename_data)[["x_test"]]) %>%
+    select(QoL_simple, all_of(predictors_run))
+  
+  ## Continue here!!! 
+    
+    
+  y_shap <- data_full %>%
+    filter(FISNumber %in% train_ids) %>%
+    select(QoL_simple) %>%
+    pull()
+  
+  # Calculate SHAP values for the random forest model
+  ranger_model <- model_rf$finalModel
+  
+  # Create a custom prediction function for iml
+  predict_function <- function(model, newdata) {
+    predict(model, data = newdata)$predictions
+  }
+  
+  # Prepare data (exclude target column)
+  
+  # Use the model and prediction function to create a Predictor object
+  predictor <- Predictor$new(
+    model = ranger_model,
+    data = X,
+    y = iris$Species,
+    predict.function = predict_function,
+    type = "prob"  # For classification
+  )
+  
+  shap <- Shapley$new(predictor, x.interest = X[1, ])
+  
+  plot(shap)
+  
 }
-
-# Prepare data (exclude target column)
-
-# Use the model and prediction function to create a Predictor object
-predictor <- Predictor$new(
-  model = ranger_model,
-  data = X,
-  y = iris$Species,
-  predict.function = predict_function,
-  type = "prob"  # For classification
-)
-
-shap <- Shapley$new(predictor, x.interest = X[1, ])
-
-plot(shap)
-
-
 
 
 
