@@ -39,10 +39,9 @@ source(here::here("scripts", "functions", "functions_plotting_ML.R"))
 ## Loading in the predictions from the B = 100 bootstrap procedures
 
 ## creating list of workspaces
-filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
-list_files <- grep("old", list.files(
-  "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"),
-   value = TRUE, invert = TRUE)
+#filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
+filepath <- here::here("data", "intermediate", "bootstrap")
+list_files <- grep("model_A", list.files(filepath), value = TRUE)
 
 
 
@@ -108,12 +107,14 @@ names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
 ## loading in data with true y scores
 outcome_saved <- TRUE
 if(outcome_saved == FALSE){
-load(here::here("data", "intermediate", "data_model_0.Rdata"))
+#load(here::here("data", "intermediate", "data_model_0.Rdata"))
+data_full_raw <- readRDS(here::here("data", "intermediate", "data_model_A.rds"))
 data_true_y <- data_full_raw %>%
   select(FISNumber, QoL_simple)
 
 ## saving outcome data to load them in simpler later
 saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome.RDS"))
+rm(data_full_raw)
 }
 
 ## loading in data with true y scores

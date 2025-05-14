@@ -39,7 +39,8 @@ setwd(here::here())
 ## loading in necessary dataset and vectors / tables of variables
 
 ## loading in training set
-load(here::here("data", "intermediate", "train_data.RData"))
+# load(here::here("data", "intermediate", "train_data.RData"))
+train_data <- readRDS(here::here("data", "intermediate", "train_data.rds"))
 
 ## loading in refined variable table (with labels and description of CBCL items)
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) %>%
@@ -47,20 +48,43 @@ CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) 
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-load(here::here("scripts", "variable_vectors.RData"))
+# load(here::here("scripts", "variable_vectors.RData"))
+CBCL_YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
+
+CBCL_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[2]]
+
+YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[3]]
+
+ea_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[4]]
+
+qol_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
 
 ## loading in list of CBCL items per question
-load(here::here("scripts", "CBCL_questions_list.RData"))
+# load(here::here("scripts", "CBCL_questions_list.RData"))
+CBCL_questions_list <- readRDS(
+  here::here("scripts", "CBCL_questions_list.rds"))
 
 ## loading in CBCL items to be retained and to be dropped
 load(here::here("scripts", "CBCL_items_keep"))
 load(here::here("scripts", "CBCL_items_drop"))
 
+CBCL_items_keep <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_keep.rds")
+)
+CBCL_items_drop <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_drop.rds")
+)
+
 #------------------------------------------------------------------------------
 
 ## Important step before actual analysis: For trial calculations, permute 
 ## IDs so one remains blind for data
-permute <- TRUE
+permute <- FALSE
 if(permute){
   train_data <- transform(train_data, FISNumber = sample(FISNumber))
 }

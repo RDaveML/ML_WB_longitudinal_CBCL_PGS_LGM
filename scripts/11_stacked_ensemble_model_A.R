@@ -52,7 +52,8 @@ test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))
 ## 2) Preparing data
 
 ## loading in data with family numbers (Object is called df_FIS_fam)
-load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
+# load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
+df_FIS_fam <- readRDS(here::here("data", "intermediate", "FIS_fam_nr.rds"))
 
 
 ## Loading in prediction data from random forest and xbg
@@ -688,7 +689,7 @@ if(bootstrap_metrics) {
 ## calculating Shapley Additive exPlanation (SHAP) values for random forest 
 ## and xgboost model
 
-## accessing full ML prepared dataset of the model (preprocessed, elastinc net 
+## accessing full ML prepared dataset of the model (preprocessed, elastic net 
 ## filtered training and test data per run)
 
 ## Work into function: If feature was not selected in a run by elastic net, 

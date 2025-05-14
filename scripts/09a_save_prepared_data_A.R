@@ -83,51 +83,23 @@ for(b_iter in 0:100) {
   ## loading in the data
   ## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
   ## Still to be renamed to model A
-  load(here::here("data", "intermediate", "data_model_0.Rdata"))
-  temp <- load(here::here("data", "intermediate", "data_model_0.Rdata"))
-  cat("full model_A data loaded in; name of object: ",
-      "'",
-      temp,
-      "'",
-      "\n",
-      "\n")
+  data_full_raw <- readRDS(here::here("data", "intermediate", "data_model_A.rds"))
   
   
   ## loading in covariate names
-  load(here::here("data", "intermediate", "names_covariates.RData"))
-  temp <- load(here::here("data", "intermediate", "names_covariates.RData"))
-  cat("vector with names of covariates loaded in; name of object: ",
-      "'",
-      temp,
-      "'",
-      "\n",
-      "\n")
+  covariates_names <- readRDS(
+    here::here("data", "intermediate", "names_covariates.rds")
+  )
   
   ## loading in rater covariates
   ## (created in script 06_longitudinal_features_no_LGM) and merging them to
   ## covariates names
-  load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
-  temp <- load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
-  cat(
-    "vector with names of rater covariates loaded in; name of object: ",
-    "'",
-    temp,
-    "'",
-    "\n",
-    "\n"
+  rater_covariates <- readRDS(
+    here::here("data", "intermediate", "names_rater_covariates.rds")
   )
   
   ## loading in df with Family Numbers
-  load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
-  temp <- load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
-  cat(
-    "saved df with FISNr and FamilyNumber loaded in; name of object: ",
-    "'",
-    temp,
-    "'",
-    "\n",
-    "\n"
-  )
+  df_FIS_fam <- readRDS(here::here("data", "intermediate", "FIS_fam_nr.rds"))
   
   ## one vector with all covariates names
   covariates_names <- c(covariates_names, rater_covariates)
@@ -206,3 +178,7 @@ t01 <- Sys.time()
 
 cat("duration entire script: ",
     difftime(t01, t00, unit = "mins"), " minutes")
+
+
+## note: include the step of saving data after the preprocessing in the run
+## scripts of models B, C, D and E!
