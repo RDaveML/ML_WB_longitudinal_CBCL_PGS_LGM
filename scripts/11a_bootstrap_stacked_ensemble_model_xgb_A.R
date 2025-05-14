@@ -17,24 +17,11 @@
 #
 #
 
-# Set options
-t00 <- Sys.time()
-
-cat("SETTING OPTIONS... \n\n", sep = "")
-options(scipen = 999)
-
-# Install and load packages (list can be enriched if needed)
-# install.packages("pacman")
-pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
-               "stringr", "readxl", "data.table", "caret", "car", "glmnet",
-               "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
-               "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
-               "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "boot", "iml")
+# --------------------------------------------------------------
+# ---------- Get Iteration Number ------------------------------
+# --------------------------------------------------------------
 
 
-
-## loading in ML custom ML + Hypertuning functions
-source(here::here("scripts", "functions", "functions_ml.R"))
 
 # !/usr/bin/env Rscript
 iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
@@ -59,33 +46,43 @@ if(test){
   stop("Iteration print works / does not work, testrun with only iteration saved successfully!")
 }
 
+# Set options
+t00 <- Sys.time()
+
+cat("SETTING OPTIONS... \n\n", sep = "")
+options(scipen = 999)
+
+# Install and load packages (list can be enriched if needed)
+# install.packages("pacman")
+pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
+               "stringr", "readxl", "data.table", "caret", "car", "glmnet",
+               "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
+               "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
+               "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "boot")
+
+
+
+## loading in ML custom ML + Hypertuning functions
+source(here::here("scripts", "functions", "functions_ml.R"))
+
 ## creating list of workspaces
-filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
-list_files <- grep(".rds", list.files(
-  "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"),
-  value = TRUE)
+filepath <- here::here("data", "intermediate", "bootstrap")
+list_files <- grep(".rds", list.files(filepath), value = TRUE)
 
-filename <- list_files[iter]
+run_id <- as.numeric(
+  regmatches(list_files, gregexpr("[0-9]+", list_files)))[iter]
+print(run_id)
 
-
-## readRDS solves the problem!
-if(b_iter == 0){
-  train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
-} else {
-  train_ids <- readRDS(
-    here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[1]]
-}
+filename <- paste0(filepath, "/", list_files[iter])
+print(filename)
 
 
-if(b_iter == 0){
-  test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))
-} else {
-  test_ids <- readRDS(
-    here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[2]]
-}
+## train and test ids were saved in the output of the boostrapped run
+train_ids <- readRDS(filename)[["train_ids"]]
+test_ids <- readRDS(filename)[["test_ids"]]
 
 ## specifying number of cores to be used for parallelization
-ncore_ntr <- 64
+ncore_ntr <- 72
 ## Preparing data
 
 ## loading in data with family numbers (Object is called df_FIS_fam)
@@ -137,6 +134,9 @@ data_train <- data_full %>%
 data_test <- data_full %>% 
   filter(FISNumber %in% test_ids) 
 
+set.seed(7)
+folds <- groupKFold(group = data_train$FamilyNumber, k = 10)
+
 ## setting bounds for the hyperparameter space for xgboost
 bounds_xgb <- list(
   num_parallel_tree = c(1L, 100L),
@@ -165,8 +165,9 @@ bounds_xgb <- list(
 )
 
 ## running if not yet run on server
-run_locally <- TRUE
-## run_locally <- FALSE
+
+## run_locally <- TRUE
+run_locally <- FALSE
 ## locally with 4 cores for checking code
 if (run_locally) {
   run_xgb_stack <- bayes_hyper_xgb(
@@ -193,16 +194,19 @@ if (run_locally) {
   
 }
 
+cat("stacked xgb model calculated successfully!", "\n")
+
 ## saving workspace objects needed for analyzing bootstrapped output
-workspace_objects <- mget(c("iter", "train_ids", "test_ids",
+workspace_objects <- mget(c("iter", "run_id", "train_ids", "test_ids",
                             "run_xgb_stack"))
 
 
 # Save the list to an RDS file
-filename_stack <- paste0("workspace_model_A_stack_xgb_iteration_", iter, ".rds")
+## with run ID instead of iteration! 
+filename_stack <- paste0("workspace_model_A_stack_xgb_run_", run_id, ".rds")
 saveRDS(workspace_objects,
         file = paste0(
-          here::here("data", "intermediate", "bootstrap", filename_stack))
+          here::here("data", "intermediate", "stack_xgb_A", filename_stack))
         )
 
 

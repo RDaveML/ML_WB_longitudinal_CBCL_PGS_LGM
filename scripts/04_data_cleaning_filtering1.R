@@ -46,18 +46,36 @@ CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-load(here::here("scripts", "variable_vectors.RData"))
+CBCL_YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
 
-## loading in sumamry dataframe from exploration
-load(here::here("scripts", "summary_CBCL.RData"))
+CBCL_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[2]]
+
+YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[3]]
+
+ea_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[4]]
+
+qol_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
+
+## loading in summary dataframe from exploration
+summary_df <- readRDS(here::here("data", "intermediate", "summary_CBCL.rds"))
 
 ## loading in list of CBCL items per question
-load(here::here("scripts", "CBCL_questions_list.RData"))
+CBCL_questions_list <- readRDS(
+  here::here("scripts", "CBCL_questions_list.rds"))
 
 ## loading in covariate data for further filtering
-load(here::here("scripts", "data_covariates.RData"))
+data_covariates <- readRDS(
+  here::here("data", "intermediate", "data_covariates.rds")
+  )
 ## loading in covariate names 
-load(here::here("scripts", "names_covariates.RData"))
+names_covariates <- readRDS(
+  here::here("data", "intermediate", "names_covariates.rds")
+)
 
 nrow(data)
 # Initially 92969 participants in dataset
@@ -65,10 +83,6 @@ nrow(data)
 ## filtering data in one compact function, outputting dropped participants 
 ## after each filtering step
 
-## DO THIS AGAIN! CHANGE THE FILTERING FUNCTION SO THAT FIRST ALL 
-## PARTICIPANTS WHO DO NOT HAVE ANY YSR ANSWERS ARE REMOVED, THEN RUN
-## THE CALCULATION SCRIPTS AGAIN
-## CONTINUE HERE!!!
 
 data_filtered <- filter_CBCL(df = data, CBCL_YSR_items_vec = CBCL_YSR_items_vec,
                              data_covariates = data_covariates)
@@ -207,11 +221,14 @@ data_CBCL_cols <- data_CBCL[, !cols_with_excessive_na]
 
 ## vector of CBCL items to retain
 CBCL_items_keep <- colnames(data_CBCL_cols)
-save(CBCL_items_keep, file = here::here("scripts", "CBCL_items_keep"))
+saveRDS(CBCL_items_keep,
+        file = here::here("data", "intermediate", "CBCL_items_keep.rds"))
 
 ## vector of columns to drop for later
 CBCL_items_drop <- setdiff(CBCL_YSR_items_vec, CBCL_items_keep)
-save(CBCL_items_drop, file = here::here("scripts", "CBCL_items_drop"))
+saveRDS(CBCL_items_drop,
+        file = here::here("data", "intermediate", "CBCL_items_drop.rds"))
+
 
 ##-----------------------------------------------------------------------------
 
@@ -279,7 +296,7 @@ summary_df <- summary_df %>%
 summary_df <- summary_df[, c(1, 2, 20, 21, 3:5, 19, 6:18)]
 
 ## saving summary dataframe
-save(summary_df, file = here::here("scripts", "summary_CBCL.RData"))
+saveRDS(summary_df, here::here("data", "intermediate", "summary_CBCL.rds"))
 
 ##-----------------------------------------------------------------------------
 
@@ -322,8 +339,8 @@ data_LGM <- data_filtered_recoded %>%
          all_of(CBCL_items_keep))
 
 ## Saving datasets to continue working with them
-save(data_full, file = here::here("data", "intermediate", "data_full.RData"))
-save(data_LGM, file = here::here("data", "intermediate", "data_LGM.RData"))
+saveRDS(data_full, here::here("data", "intermediate", "data_full.rds"))
+saveRDS(data_LGM, here::here("data", "intermediate", "data_LGM.rds"))
 
 } else {
   data_full <- data_filtered_recoded %>%
@@ -334,8 +351,8 @@ save(data_LGM, file = here::here("data", "intermediate", "data_LGM.RData"))
            all_of(CBCL_items_keep_IQR))
   
   ## Saving datasets to continue working with them
-  save(data_full, file = here::here("data", "intermediate", "data_full.RData"))
-  save(data_LGM, file = here::here("data", "intermediate", "data_LGM.RData"))
+  saveRDS(data_full, here::here("data", "intermediate", "data_full.rds"))
+  saveRDS(data_LGM, here::here("data", "intermediate", "data_LGM.rds"))
   }
 
 ## Note: This is all still without PGS calculations! Add those later in 

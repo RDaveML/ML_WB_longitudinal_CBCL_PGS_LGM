@@ -29,7 +29,8 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "stringr", "readxl", "data.table", "caret", "car", "glmnet",
                "ParBayesianOptimization", "ranger", "e1071", "randomForestSRC",
                "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
-               "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "boot", "iml")
+               "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "boot", "iml",
+               "fastshap", "shapviz")
 
 
 
@@ -299,277 +300,378 @@ metrics_df <- cbind(data.frame(model_name = names(list_models)), metrics_df)
 ## and place this part more at the beginning of the script)
 
 ## creating list of workspaces
-filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
-list_files <- grep(".rds", list.files(
-  "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"),
-  value = TRUE)
-
-
-## rf model level 1
-#boot_metrics_rf <- vector("list", length = length(list_files))
-boot_metrics_rf <- data.frame()
-
-for(run in 1:length(list_files)){
+bootstrap_metrics <- TRUE
+if(bootstrap_metrics) {
+  filepath <- here::here("data", "intermediate", "bootstrap")
+  list_files <- grep(".rds", list.files(filepath), value = TRUE)
   
-  filename <- paste0(filepath, "/", list_files[run])
   
-  ## getting train and test IDs
-  if(run == 1){
-    train_ids_run <- readRDS(here::here("data", "intermediate",
-                                        "indices_train.rds"))
-  } else {
-    train_ids_run <- readRDS(
-      here::here("data", "intermediate",
-                 "indices_bootstrap.rds"))[[(run - 1)]][[1]]
+  ## rf model level 1
+  #boot_metrics_rf <- vector("list", length = length(list_files))
+  boot_metrics_rf <- data.frame()
+  
+  for (run in 1:length(list_files)) {
+    
+    ## Because workspaces are not numerically sorted, assigning run_id 
+    ## anew
+    run_id <- as.numeric(
+      regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+    print(run_id)
+    
+    filename <- paste0(filepath, "/", list_files[run])
+    print(filename)
+    
+    
+    ## getting train and test IDs
+    train_ids_run <- readRDS(filename)[["train_ids"]]
+    
+    test_ids_run <- readRDS(filename)[["test_ids"]]
+    
+    data_test_run <- data_full %>%
+      filter(FISNumber %in% test_ids_run)
+    
+    rf_pred_df <- readRDS(filename)[["run_rf"]][["preds_df_rf"]]
+    
+    predictions <- rf_pred_df %>%
+      filter(FISNumber %in% test_ids_run) %>%
+      select(predictions_rf) %>%
+      pull()
+    
+    ## calculating metrics for this specific instance
+    metrics_run <- postResample(predictions, data_test_run$QoL_simple)
+    
+    metrics_line <- c(run_id, metrics_run)
+    boot_metrics_rf <- rbind(boot_metrics_rf, metrics_line)
   }
   
+  colnames(boot_metrics_rf) <- c("run", "RMSE", "R²", "MAE")
+  ## potentially later to create entire dataframe with the metrics of all models:
+  ## colnames(boot_metrics_rf) <- c("run", "RMSE_rf", "R²_rf", "MAE_rf")
   
-  if(run == 1){
-    test_ids_run <- readRDS(here::here("data", "intermediate",
-                                       "indices_test.rds"))
-  } else {
-    test_ids_run <- readRDS(
-      here::here("data", "intermediate",
-                 "indices_bootstrap.rds"))[[(run - 1)]][[2]]
-  }
-  
-  data_test_run <- data_full %>%
-    filter(FISNumber %in% test_ids_run)
-  
-  rf_pred_df <- readRDS(filename)[["run_rf"]][["preds_df_rf"]]
-  
-  predictions <- rf_pred_df %>%
-    filter(FISNumber %in% test_ids_run) %>%
-    select(predictions_rf) %>%
+  RMSE_rf_boot <- boot_metrics_rf %>%
+    select(RMSE) %>%
     pull()
   
-  ## calculating metrics for this specific instance
-  metrics_run <- postResample(predictions, data_test_run$QoL_simple)
-  
-  metrics_line <- c(run, metrics_run)
-  boot_metrics_rf <- rbind(boot_metrics_rf, metrics_line)
-}
-
-colnames(boot_metrics_rf) <- c("run", "RMSE", "R²", "MAE")
-## potentially later to create entire dataframe with the metrics of all models:
-## colnames(boot_metrics_rf) <- c("run", "RMSE_rf", "R²_rf", "MAE_rf")
-
-RMSE_rf_boot <- boot_metrics_rf %>%
-  select(RMSE) %>%
-  pull()
-
-R2_rf_boot <- boot_metrics_rf %>%
-  select(`R²`) %>%
-  pull()
-
-MAE_rf_boot <- boot_metrics_rf %>%
-  select(MAE) %>%
-  pull()
-
-## Calculate Bootstrapped CIs of the metrics
-
-## RMSE
-boot_obj_rmse_rf <- boot(data = RMSE_rf_boot,
-                         statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_rmse_rf, type = "perc")
-
-## R²
-boot_obj_R2_rf <- boot(data = R2_rf_boot,
-                       statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_R2_rf, type = "perc")
-
-## MAE
-boot_obj_MAE_rf <- boot(data = MAE_rf_boot,
-                        statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_MAE_rf, type = "perc")
-
-
-
-## xgb model level 1
-#boot_metrics_xgb <- vector("list", length = length(list_files))
-boot_metrics_xgb <- data.frame()
-
-for(run in 1:length(list_files)){
-  
-  filename <- paste0(filepath, "/", list_files[run])
-  
-  ## getting train and test IDs
-  if(run == 1){
-    train_ids_run <- readRDS(here::here("data", "intermediate",
-                                        "indices_train.rds"))
-  } else {
-    train_ids_run <- readRDS(
-      here::here("data", "intermediate",
-                 "indices_bootstrap.rds"))[[(run - 1)]][[1]]
-  }
-  
-  
-  if(run == 1){
-    test_ids_run <- readRDS(here::here("data", "intermediate",
-                                       "indices_test.rds"))
-  } else {
-    test_ids_run <- readRDS(
-      here::here("data", "intermediate",
-                 "indices_bootstrap.rds"))[[(run - 1)]][[2]]
-  }
-  
-  data_test_run <- data_full %>%
-    filter(FISNumber %in% test_ids_run)
-  
-  xgb_pred_df <- readRDS(filename)[["run_xgb"]][["preds_df_xgb"]]
-  
-  predictions <- xgb_pred_df %>%
-    filter(FISNumber %in% test_ids_run) %>%
-    select(predictions_xgb) %>%
+  R2_rf_boot <- boot_metrics_rf %>%
+    select(`R²`) %>%
     pull()
   
-  ## calculating metrics for this specific instance
-  metrics_run <- postResample(predictions, data_test_run$QoL_simple)
+  MAE_rf_boot <- boot_metrics_rf %>%
+    select(MAE) %>%
+    pull()
   
-  metrics_line <- c(run, metrics_run)
-  boot_metrics_xgb <- rbind(boot_metrics_xgb, metrics_line)
-}
-
-colnames(boot_metrics_xgb) <- c("run", "RMSE", "R²", "MAE")
-## potentially later to create entire dataframe with the metrics of all models:
-## colnames(boot_metrics_rf) <- c("run", "RMSE_xgb", "R²_xgb", "MAE_xgb")
-
-RMSE_xgb_boot <- boot_metrics_xgb %>%
-  select(RMSE) %>%
-  pull()
-
-R2_xgb_boot <- boot_metrics_xgb %>%
-  select(`R²`) %>%
-  pull()
-
-MAE_xgb_boot <- boot_metrics_xgb %>%
-  select(MAE) %>%
-  pull()
-
-## Calculate Bootstrapped CIs of the metrics
-
-## RMSE
-boot_obj_rmse_xgb <- boot(data = RMSE_xgb_boot,
-                         statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_rmse_xgb, type = "perc")
-
-## R²
-boot_obj_R2_xgb <- boot(data = R2_xgb_boot,
-                       statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_R2_xgb, type = "perc")
-
-## MAE
-boot_obj_MAE_xgb <- boot(data = MAE_xgb_boot,
-                        statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_MAE_xgb, type = "perc")
-
-
-## For bootstrapped lm model (move training part here!)
-
-## Something seems to be off here, values are way too good! 
-## CONTINUE HERE!!!
-
-boot_metrics_stacked_lm <- data.frame()
-
-for(run in 1:length(list_files)){
+  ## Calculate Bootstrapped CIs of the metrics
   
-  filename <- paste0(filepath, "/", list_files[run])
+  ## RMSE
+  boot_obj_rmse_rf <- boot(
+    data = RMSE_rf_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_rmse_rf, type = "perc")
   
-  ## getting train and test IDs
-  if(run == 1){
-    train_ids_run <- readRDS(here::here("data", "intermediate",
-                                        "indices_train.rds"))
-  } else {
-    train_ids_run <- readRDS(
-      here::here("data", "intermediate",
-                 "indices_bootstrap.rds"))[[(run - 1)]][[1]]
+  ## R²
+  boot_obj_R2_rf <- boot(
+    data = R2_rf_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_R2_rf, type = "perc")
+  
+  ## MAE
+  boot_obj_MAE_rf <- boot(
+    data = MAE_rf_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_MAE_rf, type = "perc")
+  
+  
+  
+  ## xgb model level 1
+  #boot_metrics_xgb <- vector("list", length = length(list_files))
+  boot_metrics_xgb <- data.frame()
+  
+  for (run in 1:length(list_files)) {
+    
+    ## Because workspaces are not numerically sorted, assigning run_id 
+    ## anew
+    run_id <- as.numeric(
+      regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+    print(run_id)
+    
+    filename <- paste0(filepath, "/", list_files[run])
+    print(filename)
+    
+    ## getting train and test IDs
+    train_ids_run <- readRDS(filename)[["train_ids"]]
+    
+    test_ids_run <- readRDS(filename)[["test_ids"]]
+    
+    data_test_run <- data_full %>%
+      filter(FISNumber %in% test_ids_run)
+    
+    xgb_pred_df <- readRDS(filename)[["run_xgb"]][["preds_df_xgb"]]
+    
+    predictions <- xgb_pred_df %>%
+      filter(FISNumber %in% test_ids_run) %>%
+      select(predictions_xgb) %>%
+      pull()
+    
+    ## calculating metrics for this specific instance
+    metrics_run <- postResample(predictions, data_test_run$QoL_simple)
+    
+    metrics_line <- c(run_id, metrics_run)
+    boot_metrics_xgb <- rbind(boot_metrics_xgb, metrics_line)
   }
   
+  colnames(boot_metrics_xgb) <- c("run", "RMSE", "R²", "MAE")
+  ## potentially later to create entire dataframe with the metrics of all models:
+  ## colnames(boot_metrics_rf) <- c("run", "RMSE_xgb", "R²_xgb", "MAE_xgb")
   
-  if(run == 1){
-    test_ids_run <- readRDS(here::here("data", "intermediate",
-                                       "indices_test.rds"))
-  } else {
-    test_ids_run <- readRDS(
-      here::here("data", "intermediate",
-                 "indices_bootstrap.rds"))[[(run - 1)]][[2]]
+  RMSE_xgb_boot <- boot_metrics_xgb %>%
+    select(RMSE) %>%
+    pull()
+  
+  R2_xgb_boot <- boot_metrics_xgb %>%
+    select(`R²`) %>%
+    pull()
+  
+  MAE_xgb_boot <- boot_metrics_xgb %>%
+    select(MAE) %>%
+    pull()
+  
+  ## Calculate Bootstrapped CIs of the metrics
+  
+  ## RMSE
+  boot_obj_rmse_xgb <- boot(
+    data = RMSE_xgb_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_rmse_xgb, type = "perc")
+  
+  ## R²
+  boot_obj_R2_xgb <- boot(
+    data = R2_xgb_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_R2_xgb, type = "perc")
+  
+  ## MAE
+  boot_obj_MAE_xgb <- boot(
+    data = MAE_xgb_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_MAE_xgb, type = "perc")
+  
+  
+  ## For bootstrapped lm model (move training part here!)
+  
+  boot_metrics_stacked_lm <- data.frame()
+  
+  for (run in 1:length(list_files)) {
+    
+    ## Because workspaces are not numerically sorted, assigning run_id 
+    ## anew
+    run_id <- as.numeric(
+      regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+    print(run_id)
+    
+    filename <- paste0(filepath, "/", list_files[run])
+    print(filename)
+    
+    ## getting train and test IDs
+    train_ids_run <- readRDS(filename)[["train_ids"]]
+    
+    test_ids_run <- readRDS(filename)[["test_ids"]]
+    
+    pred_rf <- readRDS(filename)$run_rf$preds_df_rf
+    
+    pred_xgb <- readRDS(filename)$run_xgb$preds_df_xgb
+    
+    data_full <- data_outcome %>%
+      full_join(pred_rf, by = "FISNumber") %>%
+      full_join(pred_xgb, by = "FISNumber") %>%
+      full_join(df_FIS_fam, by = "FISNumber") %>%
+      mutate(QoL_simple =  as.numeric(QoL_simple)) ## recoding outcome to numeric
+    
+    data_train_run <- data_full %>%
+      filter(FISNumber %in% train_ids_run)
+    
+    data_test_run <- data_full %>%
+      filter(FISNumber %in% test_ids_run)
+    
+    set.seed(7)
+    folds <- groupKFold(group = data_train_run$FamilyNumber, k = 10)
+    
+    ## calculating stacked ensemble model (lm)
+    model_lm_stack_run <- train(
+      QoL_simple ~ . - FISNumber - FamilyNumber,
+      data = data_train_run,
+      method = "lm",
+      trControl = trainControl(
+        method = "cv",
+        index = folds,
+        savePredictions = TRUE,
+        allowParallel = TRUE
+      )
+    )
+    
+    
+    predictions <- predict(model_lm_stack_run, data_test_run)
+    
+    ## calculating metrics for this specific instance
+    metrics_run <- postResample(predictions, data_test_run$QoL_simple)
+    
+    metrics_line <- c(run_id, metrics_run)
+    boot_metrics_stacked_lm <- rbind(boot_metrics_stacked_lm, metrics_line)
   }
   
-  pred_rf <- readRDS(filename)$run_rf$preds_df_rf 
-  
-  pred_xgb <- readRDS(filename)$run_xgb$preds_df_xgb 
-  
-  data_full <- data_outcome %>% 
-    full_join(pred_rf, by = "FISNumber") %>%
-    full_join(pred_xgb, by = "FISNumber") %>%
-    full_join(df_FIS_fam, by = "FISNumber") %>%
-    mutate(QoL_simple =  as.numeric(QoL_simple)) ## recoding outcome to numeric
-  
-  data_train_run <- data_full %>%
-    filter(FISNumber %in% train_ids_run)
-  
-  data_test_run <- data_full %>%
-    filter(FISNumber %in% test_ids_run)
-  
-  set.seed(7)
-  folds <- groupKFold(group = data_train_run$FamilyNumber, k = 10)
-  
-  ## calculating stacked ensemble model (lm)
-  model_lm_stack_run <- train(QoL_simple ~ . - FISNumber - FamilyNumber, 
-                              data = data_train_run, 
-                              method = "lm",
-                              trControl = trainControl(method = "cv", 
-                                                       index = folds,
-                                                       savePredictions = TRUE,
-                                                       allowParallel = TRUE))
-  
-  
-  predictions <- predict(model_lm_stack_run, data_test_run)
-  
-  ## calculating metrics for this specific instance
-  metrics_run <- postResample(predictions, data_test_run$QoL_simple)
-  
-  metrics_line <- c(run, metrics_run)
-  boot_metrics_stacked_lm <- rbind(boot_metrics_stacked_lm, metrics_line)
-}
-
-colnames(boot_metrics_stacked_lm) <- c("run", "RMSE", "R²", "MAE")
-## potentially later to create entire dataframe with the metrics of all models:
-## colnames(boot_metrics_rf) <- c(
+  colnames(boot_metrics_stacked_lm) <- c("run", "RMSE", "R²", "MAE")
+  ## potentially later to create entire dataframe with the metrics of all models:
+  ## colnames(boot_metrics_rf) <- c(
   ## "run", "RMSE_stack_lm", "R²_stack_lm", "MAE_stack_lm")
+  
+  
+  RMSE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
+    select(RMSE) %>%
+    pull()
+  
+  R2_stacked_lm_boot <- boot_metrics_stacked_lm %>%
+    select(`R²`) %>%
+    pull()
+  
+  MAE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
+    select(MAE) %>%
+    pull()
+  
+  ## Calculate Bootstrapped CIs of the metrics
+  
+  ## RMSE
+  boot_obj_rmse_stacked_lm <- boot(
+    data = RMSE_stacked_lm_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_rmse_stacked_lm, type = "perc")
+  
+  ## R²
+  boot_obj_R2_stacked_lm <- boot(
+    data = R2_stacked_lm_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_R2_stacked_lm, type = "perc")
+  
+  ## MAE
+  boot_obj_MAE_stacked_lm <- boot(
+    data = MAE_stacked_lm_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_MAE_stacked_lm, type = "perc")
 
+  
+  
+  ## For stacked Xgboost model
+  boot_metrics_xgb_stack <- data.frame()
+  filepath_xgb_stack <- here::here("data", "intermediate", "stack_xgb_A")
+  list_files_xgb_stack <- grep(
+    ".rds", list.files(filepath_xgb_stack), value = TRUE
+    )
+  
+  for (run in 1:length(list_files_xgb_stack)) {
+    ## Because workspaces are not numerically sorted, assigning run_id
+    ## anew
+    run_id <- as.numeric(
+      regmatches(list_files_xgb_stack, gregexpr("[0-9]+", list_files_xgb_stack))
+      )[run]
+    print(run_id)
+    
+    filename <- paste0(filepath_xgb_stack, "/", list_files_xgb_stack[run])
+    print(filename)
+    
+    ## getting train and test IDs
+    train_ids_run <- readRDS(filename)[["train_ids"]]
+    
+    test_ids_run <- readRDS(filename)[["test_ids"]]
+    
+    data_test_run <- data_full %>%
+      filter(FISNumber %in% test_ids_run)
+    
+    xgb_stack_pred_df <- readRDS(filename)[["run_xgb_stack"]][["preds_df_xgb"]]
+    
+    predictions <- xgb_stack_pred_df %>%
+      filter(FISNumber %in% test_ids_run) %>%
+      select(predictions_xgb) %>%
+      pull()
+    
+    ## calculating metrics for this specific instance
+    metrics_run <- postResample(predictions, data_test_run$QoL_simple)
+    
+    metrics_line <- c(run_id, metrics_run)
+    boot_metrics_xgb_stack <- rbind(boot_metrics_xgb_stack, metrics_line)
+  }
+  
+  colnames(boot_metrics_xgb_stack) <- c("run", "RMSE", "R²", "MAE")
+  ## potentially later to create entire dataframe with the metrics of all models:
+  ## colnames(boot_metrics_rf) <- c("run", "RMSE_xgb", "R²_xgb", "MAE_xgb")
+  
+  RMSE_xgb_stack_boot <- boot_metrics_xgb_stack %>%
+    select(RMSE) %>%
+    pull()
+  
+  R2_xgb_stack_boot <- boot_metrics_xgb_stack %>%
+    select(`R²`) %>%
+    pull()
+  
+  MAE_xgb_stack_boot <- boot_metrics_xgb_stack %>%
+    select(MAE) %>%
+    pull()
+  
+  ## Calculate Bootstrapped CIs of the metrics
+  
+  ## RMSE
+  boot_obj_rmse_xgb_stack <- boot(
+    data = RMSE_xgb_stack_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_rmse_xgb_stack, type = "perc")
+  
+  ## R²
+  boot_obj_R2_xgb_stack <- boot(
+    data = R2_xgb_stack_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_R2_xgb_stack, type = "perc")
+  
+  ## MAE
+  boot_obj_MAE_xgb_stack <- boot(
+    data = MAE_xgb_stack_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_MAE_xgb_stack, type = "perc")
+  
 
-RMSE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
-  select(RMSE) %>%
-  pull()
-
-R2_stacked_lm_boot <- boot_metrics_stacked_lm %>%
-  select(`R²`) %>%
-  pull()
-
-MAE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
-  select(MAE) %>%
-  pull()
-
-## Calculate Bootstrapped CIs of the metrics
-
-## RMSE
-boot_obj_rmse_stacked_lm <- boot(data = RMSE_stacked_lm_boot,
-                          statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_rmse_stacked_lm, type = "perc")
-
-## R²
-boot_obj_R2_stacked_lm <- boot(data = R2_stacked_lm_boot,
-                        statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_R2_stacked_lm, type = "perc")
-
-## MAE
-boot_obj_MAE_stacked_lm <- boot(data = MAE_stacked_lm_boot,
-                         statistic = function(d, i) mean(d[i]), R = 1000)
-boot.ci(boot_obj_MAE_stacked_lm, type = "perc")
-
-
-## For stacked Xgboost model
+}
 
 ## First train the models on server (alternative: run 2 test runs on SNELLIUS,
 ## check how much budget it consumed)
@@ -592,61 +694,328 @@ boot.ci(boot_obj_MAE_stacked_lm, type = "perc")
 ## Work into function: If feature was not selected in a run by elastic net, 
 ## assign value 0!
 filepath_full_data <- 
-  "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/prep_data_A"
+  here::here("data", "intermediate", "prep_data_A")
 list_files_full_data <- grep(".rds", list.files(filepath_full_data),
   value = TRUE)
 
 
 ## for(i in 1:length(list_files_full_data)){
-for(i in 1:2) {
-  filename <- paste0(filepath, "/", list_files[i])
-  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[i])
+for(run in 1:2) {
+  filename <- paste0(filepath, "/", list_files[run])
+  run_id <- as.numeric(
+    regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+  print(run_id)
+  print(filename)
+  
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[run])
+  run_id_data <- as.numeric(
+    regmatches(list_files_full_data, gregexpr("[0-9]+", list_files_full_data)))[run]
+  
+  print(run_id_data)
+  print(filename_data)
+  
+  ## stopping if indices are not aligned correctly
+  if(run_id != run_id_data){
+    stop("Error: dataset and bootstrapped model predictions need to have same index")
+  }
+  
   predictors_run <- readRDS(filename)[["predictors_level_1"]]
   x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
                   readRDS(filename_data)[["x_test"]]) %>%
-    select(QoL_simple, all_of(predictors_run))
-  
-  ## Continue here!!! 
-    
+    select(all_of(predictors_run))
     
   y_shap <- data_full %>%
-    filter(FISNumber %in% train_ids) %>%
+    # filter(FISNumber %in% train_ids) %>%
     select(QoL_simple) %>%
     pull()
   
   # Calculate SHAP values for the random forest model
-  ranger_model <- model_rf$finalModel
+  ## Note: The final model was a caret model object!
+  ## has implications for the predict function
+  model_rf <- readRDS(filename)$run_rf$model_bayes_rf$finalModel
   
   # Create a custom prediction function for iml
-  predict_function <- function(model, newdata) {
-    predict(model, data = newdata)$predictions
+  pfun_rf <- function(object, newdata) {
+      predict(object, data = newdata)$predictions
   }
   
-  # Prepare data (exclude target column)
+  registerDoParallel(cores = 48)
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+  system.time({  # estimate run time
+    set.seed(5038)
+    shap_rf <- fastshap::explain(model_rf, X = x_shap, pred_wrapper = pfun_rf,
+                                 nsim = 10, parallel = TRUE, adjust = TRUE)
+  })
+  ## on ntr1 with 48 cores, this takes about 3.5 minutes
   
-  # Use the model and prediction function to create a Predictor object
-  predictor <- Predictor$new(
-    model = ranger_model,
-    data = X,
-    y = iris$Species,
-    predict.function = predict_function,
-    type = "prob"  # For classification
-  )
+  baseline_rf <- attr(shap_rf, "baseline") 
   
-  shap <- Shapley$new(predictor, x.interest = X[1, ])
+  shv_rf <- shapviz(shap, X = x_shap, baseline = baseline_rf)
+
+  sv_importance(shv_rf)
+
+  ## sv_waterfall(shv_rf)  
+  ## sv_waterfall is more relevant for individual predictions
+  ## sv_dependence plots Scatterplot of the SHAP values of a feature 
+  ## against its feature values
+  ## sv_dependence(shv, v = "sd_self", alpha = 0.3)
   
-  plot(shap)
-  
+  ## aggregated table
+  shap_values_rf <- tibble::as_tibble(shap_rf)
+
+
 }
 
+## shap values for xgboost model
+for(run in 1:2) {
+  filename <- paste0(filepath, "/", list_files[run])
+  run_id <- as.numeric(
+    regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+  print(run_id)
+  print(filename)
+  
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[run])
+  run_id_data <- as.numeric(
+    regmatches(list_files_full_data, gregexpr("[0-9]+", list_files_full_data)))[run]
+  
+  print(run_id_data)
+  print(filename_data)
+  
+  ## stopping if indices are not aligned correctly
+  if(run_id != run_id_data){
+    stop("Error: dataset and bootstrapped model predictions need to have same index")
+  }
+  
+  predictors_run <- readRDS(filename)[["predictors_level_1"]]
+  x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
+                  readRDS(filename_data)[["x_test"]]) %>%
+    select(all_of(predictors_run))
+  
+  train_ids_run <- readRDS(filename)[["train_ids"]]
+  
+  test_ids_run <- readRDS(filename)[["test_ids"]]
+    
+  y_shap <- data_full %>%
+    # filter(FISNumber %in% train_ids) %>%
+    select(QoL_simple) %>%
+    pull()
+  
+  # Calculate SHAP values for the xgboost model
+  model_xgb <- readRDS(filename)$run_xgb$model_bayes_xgb
+  
+  # Create a custom prediction function for iml
+  pfun_xgb <- function(object, newdata) {
+      predict(object, newdata = newdata)
+  }
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+
+  ## note: for calculating the shap values for an xgboost model, 
+  ## x_shap needs to be a matrix!
+  registerDoParallel(cores = 48)
+  system.time({  # estimate run time
+    set.seed(5038)
+    shap_xgb <- fastshap::explain(
+      model_xgb, X = as.matrix(x_shap), pred_wrapper = pfun_xgb,
+      nsim = 10, parallel = TRUE, adjust = TRUE)
+  })
+  
+  
+  baseline_xgb <- attr(shap_xgb, "baseline") 
+
+  shv_xgb <- shapviz(model_xgb, X_pred = data.matrix(x_shap), X = x_shap)
+  
+  ## CONTINUE HERE!!!
+  # shv_xgb <- shapviz(shap, X = x_shap, baseline = baseline_xgb)
+
+  ## start printing device
+  ## for plots to be plotted in VSC window
+
+  sv_importance(shv_xgb)
+
+  ## sv_waterfall(shv_rf)  
+  ## sv_waterfall is more relevant for individual predictions
+  ## sv_dependence plots Scatterplot of the SHAP values of a feature 
+  ## against its feature values
+  ## sv_dependence(shv, v = "sd_self", alpha = 0.3)
+  
+  ## aggregated table
+  ## create a dataframe with all shap values of the xbg model
+  shap_values_xgb <- tibble::as_tibble(shap_xgb)
+  
+
+  ## got it for rf and xgb model
 
 
 
+}
+
+## CONTINUE HERE!! 
+load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
+
+## creating empty vector where all predictor variables that occured in any 
+## of the bootstrapped models are stored
+list_files <- paste0(
+  here::here("data", "intermediate", "bootstrap"), "/", list_files
+  )
+system.time({all_predictors_model_A <- list_files %>%
+  map(~ readRDS(.x)$predictors_level_1) %>%
+  unlist() %>%
+  unique()
+})
+
+## looping over all bootstrapped models: if a predictor that is contained in the 
+## compare the vectors "all_predictors_model_A and the element 
+## "predictors_level_1 from each element in the list_files list
+## all predictors that are not contained in predictors_level_1 should be 
+## assigned zero. Thus, a dataframe with one row and as many columns as there
+## are predictors in that are not contained in the list of predictors should be 
+## created and all values should be set to zero
+## afterwards, the shap values for a random forest model and and xgboost model
+## should be calculated as coded above. The table of shap values should then be 
+## combined with the dataframe of zero predictors so in the end, there is one 
+## dataframe where every predictor that is contained in all_predictors_model_A
+## has a value, either the actual SHAP value, or zero if this predictor was not in the 
+## model
+## SHAP_list <- lapply(1:length(list_files), function(run){
+system.time({SHAP_list <- lapply(1:3, function(run){
+  
+  predictors_run <- readRDS(list_files[run])[["predictors_level_1"]]
+  
+  ## creating dataframe with all predictors that are not contained in the 
+  ## model
+  predictors_not_in_model <- setdiff(all_predictors_model_A, predictors_run)
+  
+  ## creating dataframe with all predictors that are not contained in the 
+  ## model
+  shap_values_0 <- data.frame(matrix(0, nrow = 1, ncol = length(predictors_not_in_model)))
+  
+  ## coding the shap values for the random forest model
+  filename <- list_files[run]
+  ## only extracting the part of the filename after the last "/"
+  filename_root <- sub(".*/", "", list_files[run])
+  ## extract the numeric part of the filename_root
+  run_id <- as.numeric(
+    regmatches(filename_root, gregexpr("[0-9]+", filename_root)))
+
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[run])
+  run_id_data <- as.numeric(
+    regmatches(list_files_full_data, gregexpr("[0-9]+", list_files_full_data)))[run]
+  
+  print(run_id_data)
+  print(filename_data)
+  
+  ## stopping if indices are not aligned correctly
+  if(run_id != run_id_data){
+    stop("Error: dataset and bootstrapped model predictions need to have same index")
+  }
+  ## loading in data model was trained with and evaluated on
+  x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
+                  readRDS(filename_data)[["x_test"]]) %>%
+    select(all_of(predictors_run))
+
+  ## y_shap not needed for fastshap::explain  
+  # y_shap <- data_full %>%
+    # filter(FISNumber %in% train_ids) %>%
+    #select(QoL_simple) %>%
+    #pull()
+  
+  # Calculate SHAP values for the random forest model
+  ## Note: The final model was a caret model object!
+  ## has implications for the predict function
+  model_rf <- readRDS(filename)$run_rf$model_bayes_rf$finalModel
+  
+  # Create a custom prediction function for iml
+  pfun_rf <- function(object, newdata) {
+      predict(object, data = newdata)$predictions
+  }
+  
+  registerDoParallel(cores = 48)
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+  system.time({  # estimate run time
+    set.seed(5038)
+    shap_rf <- fastshap::explain(model_rf, X = x_shap, pred_wrapper = pfun_rf,
+                                 nsim = 10, parallel = TRUE, adjust = TRUE)
+  })
+  ## on ntr1 with 48 cores, this takes about 3.5 minutes
+  
+  baseline_rf <- attr(shap_rf, "baseline") 
+  
+  shv_rf <- shapviz(shap_rf, X = x_shap, baseline = baseline_rf)
+
+  ## no plotting
+  ## sv_importance(shv_rf)
+
+  ## sv_waterfall(shv_rf)  
+  ## sv_waterfall is more relevant for individual predictions
+  ## sv_dependence plots Scatterplot of the SHAP values of a feature 
+  ## against its feature values
+  ## sv_dependence(shv, v = "sd_self", alpha = 0.3)
+  
+  ## aggregated table
+  shap_values_rf <- tibble::as_tibble(shap_rf)
+
+  ## combining aggregated (mean) shap values with the zero dataframe
+  shap_values_rf_full <- cbind(as.data.frame(t(colMeans(shap_values_rf))), 
+                              shap_values_0)
+  
+
+   # Calculate SHAP values for the xgboost model
+  model_xgb <- readRDS(filename)$run_xgb$model_bayes_xgb
+  
+  # Create a custom prediction function for iml
+  pfun_xgb <- function(object, newdata) {
+      predict(object, newdata = newdata)
+  }
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+
+  ## note: for calculating the shap values for an xgboost model, 
+  ## x_shap needs to be a matrix!
+  registerDoParallel(cores = 48)
+  system.time({  # estimate run time
+    set.seed(5038)
+    shap_xgb <- fastshap::explain(
+      model_xgb, X = as.matrix(x_shap), pred_wrapper = pfun_xgb,
+      nsim = 10, parallel = TRUE, adjust = TRUE)
+  })
+  
+  
+  baseline_xgb <- attr(shap_xgb, "baseline") 
+
+  shv_xgb <- shapviz(model_xgb, X_pred = data.matrix(x_shap), X = x_shap)
+  
+  ## no plotting
+  ## sv_importance(shv_xgb)
+
+  ## create a dataframe with all shap values of the xbg model
+  ## aggregated table
+  shap_values_xgb <- tibble::as_tibble(shap_xgb)
+
+  ## combining aggregated (mean) shap values with the zero dataframe
+  shap_values_xgb_full <- cbind(as.data.frame(t(colMeans(shap_values_xgb))), 
+                                shap_values_0)
 
 
 
+  return(shap_rf = shap_values_rf_full,
+         shap_xgb = shap_values_xgb_full)
 
+}
+)
+})
 
+## saving and loading in workspace
+## CONTINUE HERE (next: turn part above into function, also including xgboost model, 
+## so that data do not have to be loaded in several times)
+save.image(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
+load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
 
 
 

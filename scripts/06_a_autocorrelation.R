@@ -51,20 +51,40 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
 
 ## 1) load in data 
 load(here("data", "intermediate", "data_full_prep.Rdata"))
+data_full <- readRDS(here::here("data", "intermediate", "data_full_prep.rds"))
 
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) %>%
   as.data.frame()
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-load(here::here("scripts", "variable_vectors.RData"))
+CBCL_YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
+
+CBCL_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[2]]
+
+YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[3]]
+
+ea_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[4]]
+
+qol_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
+
 
 ## loading in list of CBCL items per question
-load(here::here("scripts", "CBCL_questions_list.RData"))
+CBCL_questions_list <- readRDS(
+  here::here("scripts", "CBCL_questions_list.rds"))
 
 ## loading in CBCL items to be retained and to be dropped
-load(here::here("scripts", "CBCL_items_keep"))
-load(here::here("scripts", "CBCL_items_drop"))
+CBCL_items_keep <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_keep.rds")
+)
+CBCL_items_drop <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_drop.rds")
+)
 
 
 ## filtering out the CBCL_items that were dropped previously
@@ -176,7 +196,8 @@ pad_autocor_df <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
 ## saving workspace in case knn crashes
 save.image(here("data", "intermediate", "workspace_05a_KNN_acf.Rdata"))
 
-save(pad_autocor_df, file = here::here("data", "intermediate", "pad_autocor_df.RData"))
+saveRDS(pad_autocor_df,
+        here::here("data", "intermediate", "pad_autocor_df.rds"))
 t2 <- Sys.time()
 
 cat("Time elapsed padding data: ", t2 - t1)
@@ -188,13 +209,14 @@ cat("Time elapsed padding data: ", t2 - t1)
 ##-----------------------------------------------------------------------------
 
 ## loading in pad_autocor_df
-load(here("data", "intermediate", "pad_autocor_df.RData"))
+pad_autocor_df <- readRDS(
+  here::here("data", "intermediate", "pad_autocor_df.rds"))
 
 ## loading in training and test set for KNN imputation first on training 
 ## set, then on test set
-load(here("data", "intermediate", "train_data.RData"))
+train_data <- readRDS(here::here("data", "intermediate", "train_data.rds"))
 
-load(here("data", "intermediate", "test_data.RData"))
+test_data <- readRDS(here::here("data", "intermediate", "test_data.rds"))
 
 ## saving unique FISNumbers
 indices_train <- unique(train_data$FISNumber)
@@ -471,7 +493,7 @@ full_acf_df <- full_acf_df %>%
   left_join(full_ar_df, by = "FISNumber")
 
 ## saving full acf_df
-save(full_acf_df, file = here("data", "intermediate", "data_acf_imp.Rdata"))
+saveRDS(full_acf_df, here::here("data", "intermediate", "data_acf_imp.rds"))
 
 
 print(ncol(full_acf_df))
@@ -489,9 +511,9 @@ full_acf_df_test <- full_acf_df %>%
 
 
 ## 6) save feature set with (only) all autocorrelation features
-save(full_acf_df_train, file = here("data", "intermediate", "data_acf_imp_train.Rdata"))
-save(full_acf_df_test, file = here("data", "intermediate", "data_acf_imp_test.Rdata"))
+saveRDS(full_acf_df_train, here::here("data", "intermediate", "data_acf_imp_train.rds"))
 
+saveRDS(full_acf_df_test, here::here("data", "intermediate", "data_acf_imp_test.rds"))
 
 ## 7) merge autocorrelation set back with full Non-Lgm feature data
 ## (in script 06_longitudinal_features_no_LGM or later)

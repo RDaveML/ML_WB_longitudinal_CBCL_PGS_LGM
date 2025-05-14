@@ -34,13 +34,27 @@ CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-load(here::here("scripts", "variable_vectors.RData"))
+CBCL_YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
 
-## loading in sumamry dataframe from exploration
-load(here::here("scripts", "summary_CBCL.RData"))
+CBCL_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[2]]
+
+YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[3]]
+
+ea_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[4]]
+
+qol_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
+
+## loading in summary dataframe from exploration
+summary_df <- readRDS(here::here("data", "intermediate", "summary_CBCL.rds"))
 
 ## loading in list of CBCL items per question
-load(here::here("scripts", "CBCL_questions_list.RData"))
+CBCL_questions_list <- readRDS(
+  here::here("scripts", "CBCL_questions_list.rds"))
 
 
 data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
@@ -229,8 +243,8 @@ covariates_names <- names(data_covariates)[names(data_covariates)
 
 ## saving covariate data and names of covariates to call later in the filtering
 ## script
-save(data_covariates, file = here::here("data", "intermediate", "data_covariates.RData"))
-save(covariates_names, file = here::here("scripts", "names_covariates.RData"))
+saveRDS(data_covariates, here::here("data", "intermediate", "data_covariates.rds"))
+saveRDS(covariates_names, here::here("data", "intermediate", "names_covariates.rds"))
 
 ## question still where in filtering script to apply filtering
 ## Decision for now: when filtering (before the 50% filtering, then remove the

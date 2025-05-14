@@ -37,22 +37,16 @@ source(here::here("scripts", "functions", "functions_longitudinal_features.R"))
 
 ## Loading in data and item vectors
 ## loading in full cleaned dataset (CBLC + IDs + covariates, PGS still missing)
-load(here::here("data", "intermediate", "data_full.RData"))
-temp <- load(here::here("data", "intermediate", "data_full.RData"))
-cat("full raw CBCL data loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+# load(here::here("data", "intermediate", "data_full.RData"))
+data_full <- readRDS(here::here("data", "intermediate", "data_full.rds"))
 
 
 ## loading in training ids and test ids (split created)
-load(here::here("data", "intermediate", "indices_train.RData"))
-temp <- load(here::here("data", "intermediate", "indices_train.RData"))
-cat("saved indices of participants in training set loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+# load(here::here("data", "intermediate", "indices_train.RData"))
+train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
 
-load(here::here("data", "intermediate", "indices_test.RData"))
-temp <- load(here::here("data", "intermediate", "indices_test.RData"))
-cat("saved indices of participants in training set loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+# load(here::here("data", "intermediate", "indices_test.RData"))
+test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))
 
 
 ## loading in refined variable table (with labels and description of CBCL items)
@@ -61,24 +55,33 @@ CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) 
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-load(here::here("scripts", "variable_vectors.RData"))
-temp <- load(here::here("scripts", "variable_vectors.RData"))
-cat("CBCL variable names vectors loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+CBCL_YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
+
+CBCL_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[2]]
+
+YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[3]]
+
+ea_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[4]]
+
+qol_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
 
 ## loading in list of CBCL items per question
-load(here::here("scripts", "CBCL_questions_list.RData"))
-temp <- load(here::here("scripts", "CBCL_questions_list.RData"))
-cat("list of CBCL items per question loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+CBCL_questions_list <- readRDS(
+  here::here("scripts", "CBCL_questions_list.rds"))
 
 
 ## loading in CBCL items to be retained and to be dropped
-load(here::here("scripts", "CBCL_items_keep"))
-load(here::here("scripts", "CBCL_items_drop"))
-temp <- load(here::here("scripts", "CBCL_items_drop"))
-cat("list of CBCL itemstp be dropped loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+CBCL_items_keep <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_keep.rds")
+)
+CBCL_items_drop <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_drop.rds")
+)
 
 
 
@@ -93,26 +96,24 @@ for(i in 1:length(CBCL_questions_list)){
 ## loading in feature dfs
 
 ## longitudinal mean & SD
-load(here::here("data", "intermediate", "df_mean_SD_long.Rdata"))
-temp <- load(here::here("data", "intermediate", "df_mean_SD_long.Rdata"))
-cat("df with longitudinal means and SDs loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+# load(here::here("data", "intermediate", "df_mean_SD_long.Rdata"))
+mean_long_df <- readRDS(here::here("data", "intermediate", "df_mean_SD_long.rds"))
+
 
 ## RMSSD
-load(here::here("data", "intermediate", "df_RMSSD.Rdata"))
-temp <- load(here::here("data", "intermediate", "df_RMSSD.Rdata"))
-cat("df with RMSSD features loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+# load(here::here("data", "intermediate", "df_RMSSD.Rdata"))
+rmssd_df1 <- readRDS(here::here("data", "intermediate", "df_RMSSD.rds"))
+
 
 ## autocorrelation and autoregression features
-load(here::here("data", "intermediate", "data_acf_imp.Rdata"))
-temp <- load(here::here("data", "intermediate", "data_acf_imp.Rdata"))
-cat("df with autocorrelation and autoregression features loaded in; name of object: ",
-    "'", temp, "'", "\n", "\n")
+# load(here::here("data", "intermediate", "data_acf_imp.Rdata"))
+full_acf_df <- readRDS(here::here("data", "intermediate", "data_acf_imp.rds"))
 
 
 ## rater means and sds for every participant
+## CONTINUE HERE!!! 
 load(here::here("data", "intermediate", "df_rater_covariates.Rdata"))
+data_rater <- here::here("data", "intermediate", "df_rater_covariates.rds")
 temp <- load(here::here("data", "intermediate", "df_rater_covariates.Rdata"))
 cat("df with mean and sd per rater for every participant; name of object: ",
     "'", temp, "'", "\n", "\n")

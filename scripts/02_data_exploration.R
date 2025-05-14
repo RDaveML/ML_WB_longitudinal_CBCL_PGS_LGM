@@ -186,8 +186,8 @@ ea_vars <- sort(c("ea4_agg", "ea4_age_agg", "ea4_info_agg", "ea4_n_agg", # subje
 qol_vars <- c("levenc8", "levenc10", "levenc12", "levenc14")
 
 ## saving all vectors of variable names to re-use in later scripts
-save(CBCL_YSR_items_vec, CBCL_items_vec, YSR_items_vec, ea_vars, qol_vars, 
-     file = here::here("scripts", "variable_vectors.RData"))
+saveRDS(list(CBCL_YSR_items_vec, CBCL_items_vec, YSR_items_vec, ea_vars, qol_vars),
+        here::here("data", "intermediate", "variable_vectors.rds"))
 
 ## change to TRUE to print large output of following lines
 inspect <- FALSE
@@ -903,13 +903,12 @@ length(caret::nzv(data_CBCL_filter2))
 ## variables, likely to be eliminated later
 
 # summary dataframe
-save(summary_df, file = here::here("scripts", "summary_CBCL_pre.RData"))
+saveRDS(summary_df, here::here("data", "intermediate", "summary_CBCL.rds"))
 
 # table with possible item codes
-save(labels_table, file = here::here("scripts", "labels_table.RData"))
+saveRDS(labels_table, here::here("scripts", "labels_table.rds"))
 
 # list of items per CBCL question
-save(CBCL_questions_list,
-     file = here::here("scripts", "CBCL_questions_list.RData"))
+saveRDS(CBCL_questions_list, here::here("scripts", "CBCL_questions_list.rds"))
 
 ## These can be loaded when continuing working on the analysis

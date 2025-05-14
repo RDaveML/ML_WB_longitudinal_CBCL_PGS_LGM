@@ -41,22 +41,42 @@ source(here::here("scripts", "functions", "functions_longitudinal_features.R"))
 
 ## Loading in data and item vectors
 ## loading in full cleaned dataset (CBLC + IDs + covariates, PGS still missing)
-load(here::here("data", "intermediate", "data_full.RData"))
+data_full <- readRDS(here::here("data", "intermediate", "data_full.rds"))
 
 ## loading in refined variable table (with labels and description of CBCL items)
-CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) %>%
+CBCL_items_table <- read_excel(
+  here::here("doc", "CBCL_table_t_per_item.xlsx")
+  ) %>%
   as.data.frame()
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-load(here::here("scripts", "variable_vectors.RData"))
+CBCL_YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
+
+CBCL_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[2]]
+
+YSR_items_vec <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[3]]
+
+ea_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[4]]
+
+qol_vars <- readRDS(
+  here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
 
 ## loading in list of CBCL items per question
-load(here::here("scripts", "CBCL_questions_list.RData"))
+CBCL_questions_list <- readRDS(
+  here::here("scripts", "CBCL_questions_list.rds"))
 
 ## loading in CBCL items to be retained and to be dropped
-load(here::here("scripts", "CBCL_items_keep"))
-load(here::here("scripts", "CBCL_items_drop"))
+CBCL_items_keep <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_keep.rds")
+  )
+CBCL_items_drop <- readRDS(
+  here::here("data", "intermediate", "CBCL_items_drop.rds")
+  )
 
 ## Cropping down the CBCL items per question (removing dropped items)
 for(i in 1:length(CBCL_questions_list)){
@@ -79,7 +99,8 @@ if(permute){
   data_full <- transform(data_full, FISNumber = sample(FISNumber))
 }
 
-save(data_full, file = here("data", "intermediate", "data_full_prep.Rdata"))
+saveRDS(data_full, here::here("data", "intermediate", "data_full_prep.rds"))
+# load(here::here("data", "intermediate", "data_full_prep.Rdata"))
 
 #------------------------------------------------------------------------------
 
@@ -145,7 +166,7 @@ mean_long_df <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
 #  left_join(mean_long_df, by = "FISNumber")
 
 ## saving longitudinal mean and SD
-save(mean_long_df, file = here("data", "intermediate", "df_mean_SD_long.Rdata"))
+saveRDS(mean_long_df, here::here("data", "intermediate", "df_mean_SD_long.rds"))
 
 ##-----------------------------------------------------------------------------
 
@@ -202,7 +223,7 @@ rmssd_df1 <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
 #  left_join(rmssd_df1, by = "FISNumber")
 
 ## saving rmssd_df
-save(rmssd_df1, file = here("data", "intermediate", "df_RMSSD.Rdata"))
+saveRDS(rmssd_df1, here::here("data", "intermediate", "df_RMSSD.rds"))
 
 ## RMSSD calculation successfully rounded off
 
@@ -232,14 +253,17 @@ data_rater <- data_rater %>%
 
 
 ## saving rater_covariates
-save(rater_covariates, file = here("data", "intermediate",
-                                   "names_rater_covariates.Rdata"))
-save(data_rater, file = here("data", "intermediate", "df_rater_covariates.Rdata"))
+saveRDS(rater_covariates, here::here(
+  "data", "intermediate", "names_rater_covariates.rds")
+  )
+
+saveRDS(data_rater, here::here("data", "intermediate", "df_rater_covariates.rds"))
 
 
 ## saving df
 dim(data_full)
-save(data_full, file = here("data", "intermediate", "df_full_nonLGM.Rdata"))
+saveRDS(data_full, here::here("data", "intermediate", "df_full_nonLGM.rds"))
+
 
 ## end of script, merging together with autocorrelation and autoregression 
 ## features in separate script

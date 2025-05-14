@@ -4,12 +4,13 @@
 # Year, 2024
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2024-08-16
+# Date: 2025-05-13
 #
-# Script Name: 06_split_training_test_data.R
+# Script Name: 13_split_training_test_data.R
 #
-# Script Description: In this script, the original split of the 
-# data in training and test data is created
+# Script Description: In this script, the split into training and test data
+# is made for all models that include PGS (different sample than used for model 
+# A!)
 #
 #
 # Notes: Family members need to stay in the same sample
@@ -17,7 +18,6 @@
 # the bootstrap assessment of machine learning model stability. this 
 # also needs to be implemented when looping over the B bootstrapped samples
 #
-#   PGS is still missing! 
 #
 #
 
@@ -32,15 +32,13 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "stringr", "readxl", "data.table")
 
 
-## loading in full cleaned dataset (CBLC + IDs + covariates, PGS still missing)
-data_full <- readRDS(here::here("data", "intermediate", "data_full.rds"))
+## loading in full PGS dataset (with covariates)
+data_full_PGS <- readRDS(
+  file = here::here("data", "intermediate", "PGS", "data_PCA_PGS.rds"))
 
-## initial step: saving df with FISNr and FamilyNumber (needed later when
-## creating training folds
-df_FIS_fam <- data_full %>%
-  select(FISNumber, FamilyNumber)
-saveRDS(df_FIS_fam, file = here::here("data", "intermediate", "FIS_fam_nr.rds"))
-
+## loading in family df 
+df_FIS_fam <- readRDS(here::here("data", "intermediate", "PGS", "FIS_fam_nr.rds"))
+## CONTINUE HERE!!!
 
 #------------------------------------------------------------------------------
 
@@ -137,28 +135,28 @@ for(b in 1:length(boot_inds)){
   family_ids <- unique(data_full$FamilyNumber)
   family_sizes <- table(data_full$FamilyNumber)
   total_rows <- nrow(data_full)
-
+  
   # Initialize empty indices for training data
   train_indices <- integer(0)
-
+  
   # Keep a set of family IDs to sample from
   remaining_family_ids <- family_ids
-
+  
   # While loop to accumulate training data until it's about 80% of the data
   while (length(train_indices) < 0.8 * total_rows) {
     # Sample a random family ID from remaining families
     family_id <- sample(remaining_family_ids, 1)
-  
+    
     # Get indices for this family
     family_indices <- which(data_full$FamilyNumber == family_id)
-  
+    
     # Append these indices to the training indices
     train_indices <- c(train_indices, family_indices)
-  
+    
     # Remove the chosen family ID from the remaining families
     remaining_family_ids <- setdiff(remaining_family_ids, family_id)
   }
-
+  
   # Use the indices to create train and test datasets
   train_ids <- data_full[train_indices, ] %>%
     select(FISNumber) %>%
@@ -167,7 +165,7 @@ for(b in 1:length(boot_inds)){
   test_ids <- data_full[-train_indices, ] %>%
     select(FISNumber) %>%
     pull()
-
+  
   boot_inds[[b]] <- list(train_ids, test_ids, seed)
   
 }
