@@ -1390,18 +1390,35 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   
 }
 
-
-
-  
-#hypertuning_bayes <- function(df, algorithm, tuneGrid, bounds){}
-
-
-## this function runs the entire pipeline constructed from the previous functions
-## over various datasets
-## Idea: Test this with another copy of the Model A dataset where simply
-## the IDs are permuted, or with the model_0 only raw features
 #ml_longitudinal <- function(datasets = list){}
 
 #ml_stability <- function{}
 
 #ml_compare <- function{}
+
+shap_calc <- function(x_shap, model, pfun, ncores, nsim = 10){
+  ## xgboost model requires different format
+
+  if(class(model) == "xgb.Booster"){
+
+    shap_obj <- fastshap::explain(object = model, X = as.matrix(x_shap), pred_wrapper = pfun,
+                                 nsim = nsim, parallel = TRUE, adjust = TRUE)
+
+
+  } else if(class(model) == "ranger") {
+      shap_obj <- fastshap::explain(object = model, X = x_shap, pred_wrapper = pfun,
+                                   nsim = nsim, parallel = TRUE, adjust = TRUE)
+  }
+  ## on ntr1 with 48 cores, this takes about 3.5 minutes
+  
+  baseline_model <- attr(shap_obj, "baseline") 
+  
+  # shv <- shapviz(shap_obj, X = x_shap, baseline = baseline_model)
+  # sv_importance(shv_rf)
+  
+  ## create table
+  shap_values <- as.data.frame(tibble::as_tibble(shap_obj))
+  
+  return(shap_values = shap_values)
+}
+

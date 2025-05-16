@@ -38,7 +38,30 @@ data_full_PGS <- readRDS(
 
 ## loading in family df 
 df_FIS_fam <- readRDS(here::here("data", "intermediate", "PGS", "FIS_fam_nr.rds"))
-## CONTINUE HERE!!!
+
+## loading in QoL outcome data
+data_outcome <- readRDS(
+  here::here("data", "intermediate", "data_outcome.rds")) %>%
+  mutate(QoL_simple = as.numeric(QoL_simple))
+
+## joining dfs (the sample of 5087 is the sample with QoL outcome)
+data_PGS_FIS <- df_FIS_fam %>%
+  right_join(data_outcome, by = "FISNumber") %>%
+  inner_join(data_full_PGS, by = "FISNumber")
+
+## saving the dataframe with shrunken down sample
+saveRDS(data_PGS_FIS, here::here("data", "intermediate", "PGS",
+                                 "data_PGS_model_B.rds"))
+
+data_PGS_fam <- data_PGS_FIS %>%
+  select(FISNumber, FamilyNumber)
+
+saveRDS(data_PGS_fam, here::here("data", "intermediate", "PGS",
+                                 "data_fam_PGS.rds"))
+
+
+## Updated sample size: Only 2656 participants have PGS AND QoL outcome
+
 
 #------------------------------------------------------------------------------
 
@@ -47,7 +70,7 @@ df_FIS_fam <- readRDS(here::here("data", "intermediate", "PGS", "FIS_fam_nr.rds"
 ## first, copy this code and execute it
 permute <- FALSE
 if(permute){
-  data_full <- transform(data_full, FISNumber = sample(FISNumber))
+  data_PGS_FIS <- transform(data_PGS_FIS, FISNumber = sample(FISNumber))
 }
 
 #------------------------------------------------------------------------------
@@ -62,9 +85,9 @@ if(permute){
 seed <- 2911
 set.seed(seed)
 
-family_ids <- unique(data_full$FamilyNumber)
-family_sizes <- table(data_full$FamilyNumber)
-total_rows <- nrow(data_full)
+family_ids <- unique(data_PGS_FIS$FamilyNumber)
+family_sizes <- table(data_PGS_FIS$FamilyNumber)
+total_rows <- nrow(data_PGS_FIS)
 
 # Initialize empty indices for training data
 train_indices <- integer(0)
@@ -78,7 +101,7 @@ while (length(train_indices) < 0.8 * total_rows) {
   family_id <- sample(remaining_family_ids, 1)
   
   # Get indices for this family
-  family_indices <- which(data_full$FamilyNumber == family_id)
+  family_indices <- which(data_PGS_FIS$FamilyNumber == family_id)
   
   # Append these indices to the training indices
   train_indices <- c(train_indices, family_indices)
@@ -88,8 +111,8 @@ while (length(train_indices) < 0.8 * total_rows) {
 }
 
 # Use the indices to create train and test datasets
-train_data <- data_full[train_indices, ]
-test_data <- data_full[-train_indices, ]
+train_data <- data_PGS_FIS[train_indices, ]
+test_data <- data_PGS_FIS[-train_indices, ]
 
 train_ids <- train_data %>%
   select(FISNumber) %>%
@@ -107,10 +130,10 @@ test_ids <- test_data %>%
 
 ## saving training and test ids 
 #save(train_ids, file = here::here("data", "intermediate", "indices_train.RData"))
-saveRDS(train_ids, file = here::here("data", "intermediate", "indices_train.rds"))
+saveRDS(train_ids, file = here::here("data", "intermediate", "indices_train_PGS.rds"))
 
 #save(test_ids, file = here::here("data", "intermediate", "indices_test.RData"))
-saveRDS(test_ids, file = here::here("data", "intermediate", "indices_test.rds"))
+saveRDS(test_ids, file = here::here("data", "intermediate", "indices_test_PGS.rds"))
 
 
 
@@ -132,9 +155,9 @@ boot_inds <- vector("list", length = B)
 for(b in 1:length(boot_inds)){
   seed <- b
   set.seed(b)
-  family_ids <- unique(data_full$FamilyNumber)
-  family_sizes <- table(data_full$FamilyNumber)
-  total_rows <- nrow(data_full)
+  family_ids <- unique(data_PGS_FIS$FamilyNumber)
+  family_sizes <- table(data_PGS_FIS$FamilyNumber)
+  total_rows <- nrow(data_PGS_FIS)
   
   # Initialize empty indices for training data
   train_indices <- integer(0)
@@ -148,7 +171,7 @@ for(b in 1:length(boot_inds)){
     family_id <- sample(remaining_family_ids, 1)
     
     # Get indices for this family
-    family_indices <- which(data_full$FamilyNumber == family_id)
+    family_indices <- which(data_PGS_FIS$FamilyNumber == family_id)
     
     # Append these indices to the training indices
     train_indices <- c(train_indices, family_indices)
@@ -158,11 +181,11 @@ for(b in 1:length(boot_inds)){
   }
   
   # Use the indices to create train and test datasets
-  train_ids <- data_full[train_indices, ] %>%
+  train_ids <- data_PGS_FIS[train_indices, ] %>%
     select(FISNumber) %>%
     pull()
   
-  test_ids <- data_full[-train_indices, ] %>%
+  test_ids <- data_PGS_FIS[-train_indices, ] %>%
     select(FISNumber) %>%
     pull()
   
@@ -172,7 +195,7 @@ for(b in 1:length(boot_inds)){
 
 ## saving training and test ids for all B bootstrapped samples
 #save(boot_inds, file = here::here("data", "intermediate", "indices_bootstrap.RData"))
-saveRDS(boot_inds, file = here::here("data", "intermediate", "indices_bootstrap.rds"))
+saveRDS(boot_inds, file = here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))
 
 ## note: Do entire split again after outlier removal
 

@@ -16,13 +16,382 @@
 #
 
 # Set options
+t00 <- Sys.time()
+
 cat("SETTING OPTIONS... \n\n", sep = "")
 options(scipen = 999)
 
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
-pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table")
+pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
+               "stringr", "readxl", "data.table", "caret", "car", "glmnet",
+               "ranger", "e1071", "randomForestSRC",
+               "xgboost", "parallel", "doParallel", "RANN",
+               "kernlab", "ggplot2", "purrr", "tidyr", "rvest",
+               "fastshap", "shapviz")
 
-## Here insert the SHAP part of the code of script 11
-## CONTINUE HERE!!!
+
+## loading in ML custom ML + Hypertuning functions
+source(here::here("scripts", "functions", "functions_ml.R"))
+
+## Feature importance analysis (level 1 models)
+
+## object of random forest model: model_rf
+## object of xgboost model: model_xgb
+
+## calculating Shapley Additive exPlanation (SHAP) values for random forest 
+## and xgboost model
+
+## accessing full ML prepared dataset of the model (preprocessed, elastic net 
+## filtered training and test data per run)
+
+## Work into function: If feature was not selected in a run by elastic net, 
+## assign value 0!
+
+## listing files with bootstrapped models
+filepath <- here::here("data", "intermediate", "bootstrap")
+list_files <- paste0(filepath, "/", grep(".rds", list.files(filepath),
+                                         value = TRUE))
+
+## listing files with the full prepared data
+filepath_full_data <- here::here("data", "intermediate", "prep_data_A")
+list_files_full_data <- grep(".rds", list.files(filepath_full_data),
+                             value = TRUE)
+
+## creating vector of all predictors that were in any of the bootstrapped models
+system.time({all_predictors_model_A <- list_files %>%
+  map(~ readRDS(.x)$predictors_level_1) %>%
+  unlist() %>%
+  unique()
+})
+
+## preparatory objects
+
+ncores_ntr <- 48
+nsim_shap <- 10
+# Create a custom prediction function for ranger model
+pfun_rf <- function(object, newdata) {
+  predict(object, data = newdata)$predictions
+}
+
+# Create a custom prediction function for xgbmodel
+pfun_xgb <- function(object, newdata) {
+  predict(object, newdata = newdata)
+}
+
+## running over all workspaces: extracting predictor set and 
+## run shap value calculation over all predictors that were in model
+## if a predictor was not in the model, assign value 0
+## in the end, create dataframe and visualize
+## note: run for both models
+
+system.time({SHAP_list <- lapply(1:length(list_files), function(run){
+# system.time({SHAP_list <- lapply(1:2, function(run){
+  
+  predictors_run <- readRDS(list_files[run])[["predictors_level_1"]]
+  
+  ## creating dataframe with all predictors that are not contained in the 
+  ## model
+  predictors_not_in_model <- setdiff(all_predictors_model_A, predictors_run)
+  
+  ## creating dataframe with all predictors that are not contained in the 
+  ## model
+  shap_values_0 <- data.frame(matrix(0, nrow = 1, ncol = length(predictors_not_in_model)))
+  colnames(shap_values_0) <- predictors_not_in_model
+  
+  ## coding the shap values for the random forest model
+  filename <- list_files[run]
+  ## only extracting the part of the filename after the last "/"
+  filename_root <- sub(".*/", "", list_files[run])
+  ## extract the numeric part of the filename_root
+  run_id <- as.numeric(
+    regmatches(filename_root, gregexpr("[0-9]+", filename_root)))
+  
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[run])
+  run_id_data <- as.numeric(
+    regmatches(list_files_full_data, gregexpr("[0-9]+", list_files_full_data)))[run]
+  
+  print(run_id_data)
+  print(filename_data)
+  
+  ## stopping if indices are not aligned correctly
+  if(run_id != run_id_data){
+    stop("Error: dataset and bootstrapped model predictions need to have same index")
+  }
+  ## loading in data model was trained with and evaluated on
+  x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
+                  readRDS(filename_data)[["x_test"]]) %>%
+    select(all_of(predictors_run))
+  
+
+  # Calculate SHAP values for the random forest model
+  ## Note: The final model was a caret model object!
+  ## has implications for the predict function
+  model_rf <- readRDS(filename)$run_rf$model_bayes_rf$finalModel
+  
+  registerDoParallel(cores = ncores_ntr)
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+  set.seed(run)
+  system.time({  # estimate run time
+    shap_values_rf <- shap_calc(x_shap = x_shap, model = model_rf,
+                                pfun = pfun_rf, ncores = ncores_ntr, nsim = nsim_shap)
+  })
+
+  stopImplicitCluster()
+
+  shap_df_rf <- cbind(shap_values_rf, shap_values_0)
+  
+  ## combining aggregated (mean) shap values with the zero dataframe
+  shap_values_rf_run <- cbind(as.data.frame(t(colMeans(shap_values_rf))), 
+                               shap_values_0)
+
+  shap_values_rf_run$run <- run
+  
+  
+  # Calculate SHAP values for the xgboost model
+  model_xgb <- readRDS(filename)$run_xgb$model_bayes_xgb
+  
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+  
+  ## note: for calculating the shap values for an xgboost model, 
+  ## x_shap needs to be a matrix!
+  registerDoParallel(cores = ncores_ntr)
+  set.seed(run)
+  system.time({  # estimate run time
+    shap_values_xgb <- shap_calc(x_shap = x_shap, model = model_xgb,
+                                 pfun = pfun_xgb, ncores = ncores_ntr,
+                                 nsim = nsim_shap)
+  })
+
+  stopImplicitCluster()
+  
+  shap_df_xgb <- cbind(shap_values_xgb, shap_values_0)
+  
+  ## combining aggregated (mean) shap values with the zero dataframe
+  shap_values_xgb_run <- cbind(as.data.frame(t(colMeans(shap_values_xgb))), 
+                                shap_values_0)
+  shap_values_xgb_run$run <- run
+  
+  
+  
+  return(list(shap_df_rf = shap_values_rf,
+              shap_df_xgb = shap_values_xgb,
+              shap_values_rf_run = shap_values_rf_run,
+              shap_values_xgb_run = shap_values_xgb_run))
+  
+}
+)
+})
+
+## creating dataframe out of all the single row elements in SHAP_list
+save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+
+## combining all sub elements of the SHAP_list list into one data frame, separately 
+## for rf and xgb. The elements of the list are not named but the subelements of each
+## list elements always have the same name. I want to combine the subelements 
+## with the same names into one dataframe
+## the subelements are named shap_values_rf_full and shap_values_xgb_full into each
+## list element
+## shap_values_rf_full <- lapply(SHAP_list, function(x) x$shap_values_rf_full) is incorrect
+shap_values_bootstrapped_rf <- do.call(rbind, lapply(SHAP_list, function(x) x[["shap_values_rf_run"]]))
+shap_values_bootstrapped_xgb <- do.call(rbind, lapply(SHAP_list, function(x) x[["shap_values_xgb_run"]]))
+
+save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+
+
+old <- FALSE
+if(old){
+## for(i in 1:length(list_files_full_data)){
+for(run in 1:2) {
+  filename <- paste0(filepath, "/", list_files[run])
+  run_id <- as.numeric(
+    regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+  print(run_id)
+  print(filename)
+  
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[run])
+  run_id_data <- as.numeric(
+    regmatches(list_files_full_data, gregexpr("[0-9]+", list_files_full_data)))[run]
+  
+  print(run_id_data)
+  print(filename_data)
+  
+  ## stopping if indices are not aligned correctly
+  if(run_id != run_id_data){
+    stop("Error: dataset and bootstrapped model predictions need to have same index")
+  }
+  
+  predictors_run <- readRDS(filename)[["predictors_level_1"]]
+  x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
+                  readRDS(filename_data)[["x_test"]]) %>%
+    select(all_of(predictors_run))
+  
+  y_shap <- data_full %>%
+    # filter(FISNumber %in% train_ids) %>%
+    select(QoL_simple) %>%
+    pull()
+  
+  # Calculate SHAP values for the random forest model
+  ## Note: The final model was a caret model object!
+  ## has implications for the predict function
+  model_rf <- readRDS(filename)$run_rf$model_bayes_rf$finalModel
+  
+  # Create a custom prediction function for iml
+  pfun_rf <- function(object, newdata) {
+    predict(object, data = newdata)$predictions
+  }
+  
+  registerDoParallel(cores = 48)
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+  system.time({  # estimate run time
+    set.seed(5038)
+    shap_rf <- fastshap::explain(model_rf, X = x_shap, pred_wrapper = pfun_rf,
+                                 nsim = 10, parallel = TRUE, adjust = TRUE)
+  })
+  ## on ntr1 with 48 cores, this takes about 3.5 minutes
+  
+  baseline_rf <- attr(shap_rf, "baseline") 
+  
+  shv_rf <- shapviz(shap, X = x_shap, baseline = baseline_rf)
+  
+  sv_importance(shv_rf)
+  
+  ## sv_waterfall(shv_rf)  
+  ## sv_waterfall is more relevant for individual predictions
+  ## sv_dependence plots Scatterplot of the SHAP values of a feature 
+  ## against its feature values
+  ## sv_dependence(shv, v = "sd_self", alpha = 0.3)
+  
+  ## aggregated table
+  shap_values_rf <- tibble::as_tibble(shap_rf)
+  
+  
+}
+
+## shap values for xgboost model
+for(run in 1:2) {
+  filename <- paste0(filepath, "/", list_files[run])
+  run_id <- as.numeric(
+    regmatches(list_files, gregexpr("[0-9]+", list_files)))[run]
+  print(run_id)
+  print(filename)
+  
+  filename_data <- paste0(filepath_full_data, "/", list_files_full_data[run])
+  run_id_data <- as.numeric(
+    regmatches(list_files_full_data, gregexpr("[0-9]+", list_files_full_data)))[run]
+  
+  print(run_id_data)
+  print(filename_data)
+  
+  ## stopping if indices are not aligned correctly
+  if(run_id != run_id_data){
+    stop("Error: dataset and bootstrapped model predictions need to have same index")
+  }
+  
+  predictors_run <- readRDS(filename)[["predictors_level_1"]]
+  x_shap <- rbind(readRDS(filename_data)[["x_train"]], 
+                  readRDS(filename_data)[["x_test"]]) %>%
+    select(all_of(predictors_run))
+  
+  train_ids_run <- readRDS(filename)[["train_ids"]]
+  
+  test_ids_run <- readRDS(filename)[["test_ids"]]
+  
+  y_shap <- data_full %>%
+    # filter(FISNumber %in% train_ids) %>%
+    select(QoL_simple) %>%
+    pull()
+  
+  # Calculate SHAP values for the xgboost model
+  model_xgb <- readRDS(filename)$run_xgb$model_bayes_xgb
+  
+  # Create a custom prediction function for iml
+  pfun_xgb <- function(object, newdata) {
+    predict(object, newdata = newdata)
+  }
+  # Compute fast (approximate) Shapley values using 10 Monte Carlo repetitions
+  ## note that these are aggregate values for the entire dataset, no local
+  ## importance values
+  
+  ## note: for calculating the shap values for an xgboost model, 
+  ## x_shap needs to be a matrix!
+  registerDoParallel(cores = 48)
+  system.time({  # estimate run time
+    set.seed(5038)
+    shap_xgb <- fastshap::explain(
+      model_xgb, X = as.matrix(x_shap), pred_wrapper = pfun_xgb,
+      nsim = 10, parallel = TRUE, adjust = TRUE)
+  })
+  
+  
+  baseline_xgb <- attr(shap_xgb, "baseline") 
+  
+  shv_xgb <- shapviz(model_xgb, X_pred = data.matrix(x_shap), X = x_shap)
+  
+  ## CONTINUE HERE!!!
+  # shv_xgb <- shapviz(shap, X = x_shap, baseline = baseline_xgb)
+  
+  ## start printing device
+  ## for plots to be plotted in VSC window
+  
+  sv_importance(shv_xgb)
+  
+  ## sv_waterfall(shv_rf)  
+  ## sv_waterfall is more relevant for individual predictions
+  ## sv_dependence plots Scatterplot of the SHAP values of a feature 
+  ## against its feature values
+  ## sv_dependence(shv, v = "sd_self", alpha = 0.3)
+  
+  ## aggregated table
+  ## create a dataframe with all shap values of the xbg model
+  shap_values_xgb <- tibble::as_tibble(shap_xgb)
+  
+  
+  ## got it for rf and xgb model
+  
+  
+  
+}
+
+## CONTINUE HERE!! 
+load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
+
+## creating empty vector where all predictor variables that occured in any 
+## of the bootstrapped models are stored
+list_files <- paste0(
+  here::here("data", "intermediate", "bootstrap"), "/", list_files
+)
+system.time({all_predictors_model_A <- list_files %>%
+  map(~ readRDS(.x)$predictors_level_1) %>%
+  unlist() %>%
+  unique()
+})
+
+## looping over all bootstrapped models: if a predictor that is contained in the 
+## compare the vectors "all_predictors_model_A and the element 
+## "predictors_level_1 from each element in the list_files list
+## all predictors that are not contained in predictors_level_1 should be 
+## assigned zero. Thus, a dataframe with one row and as many columns as there
+## are predictors in that are not contained in the list of predictors should be 
+## created and all values should be set to zero
+## afterwards, the shap values for a random forest model and and xgboost model
+## should be calculated as coded above. The table of shap values should then be 
+## combined with the dataframe of zero predictors so in the end, there is one 
+## dataframe where every predictor that is contained in all_predictors_model_A
+## has a value, either the actual SHAP value, or zero if this predictor was not in the 
+## model
+## SHAP_list <- lapply(1:length(list_files), function(run){
+}
+
+t01 <- Sys.time()
+
+cat("duration entire script (model A, Bootstrapping SHAP values): ",
+    difftime(t01, t00, unit = "mins"), " minutes")
+
+## eoS

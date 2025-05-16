@@ -6,7 +6,7 @@
 #   
 # Date: 2025-04-14
 #
-# Script Name: 12_model_B_run_bootstrap_stability.R
+# Script Name: 14_model_B_run_bootstrap_stability.R
 #
 # Script Description: This script is supposed to run the original and the B = 100
 # bootstrapped versions of the ML script to inspect model stability
@@ -17,7 +17,7 @@
 # the stability check takes place
 #
 #
-# Notes: 12_model_B_run_bootstrap_stability.R runs model B
+# Notes: 14_model_B_run_bootstrap_stability.R runs model B
 # (PGS + covariates)
 #
 #
@@ -30,7 +30,7 @@
 
 # !/usr/bin/env Rscript
 iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
-# iter <- 1
+iter <- 1
 ## this can be tested and returned on ntr1 server run exiting the script 
 iter <- as.numeric(iter)
 
@@ -99,40 +99,46 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 
 ## readRDS solves the problem!
 if(b_iter == 0){
-  train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
+  train_ids <- readRDS(here::here("data", "intermediate", "indices_train_PGS.rds"))
 } else {
   train_ids <- readRDS(
-    here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[1]]
+    here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
 }
 
 
 if(b_iter == 0){
-  test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))
+  test_ids <- readRDS(here::here("data", "intermediate", "indices_test_PGS.rds"))
 } else {
   test_ids <- readRDS(
-    here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[2]]
+    here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
 }
-
-## specifying number of cores to be used for parallelization
-ncore_cl <- 96
 
 
 ## loading in the data
 ## loading in full model_B data (created in script 08)
-## CONTINUE HERE
 
-## Load this in with readRDS
-load(here::here("data", "intermediate", "data_model_B.Rdata"))
-temp <- load(here::here("data", "intermediate", "data_model_B.Rdata"))
-cat("full model_A data loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+
+## here insert if statement that specifies to only run this if data 
+## prepared are not yet done
+
+data_prepared <- FALSE
+
+if(data_prepared == FALSE){
+
+## Load this in with readRDS (Also loading in family and covariate data)
+data_model_B <- readRDS(here::here("data", "intermediate", "PGS",
+                                   "data_PGS_model_B.rds")) %>%
+  left_join(readRDS(
+    here::here("data", "intermediate", "data_covariates.rds")) %>%
+      filter(FISNumber %in% c(train_ids, test_ids)),
+    by = c("FISNumber", "QoL_simple")
+    )
 
 
 ## loading in covariate names
-load(here::here("data", "intermediate", "names_covariates.RData"))
-temp <- load(here::here("data", "intermediate", "names_covariates.RData"))
-cat("vector with names of covariates loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+covariates_names <- readRDS(
+  here::here("data", "intermediate", "names_covariates.rds")
+)
 
 covariates_names
 
@@ -142,21 +148,38 @@ gen_covariates <- readRDS(here::here("data", "intermediate",
 
 ## (rater covariates not necessary here)
 
-## loading in df with Family Numbers
-load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
-temp <- load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
-cat("saved df with FISNr and FamilyNumber loaded in; name of object: ", "'", temp, "'",
-    "\n", "\n")
+## loading in df with Family Numbers (not necessary, already adressed in begin)
+df_FIS_fam <-  readRDS(here::here("data", "intermediate", "PGS",
+                                  "data_fam_PGS.rds"))
 
 ## one vector with all covariates names
 covariates_names <- c(covariates_names, gen_covariates)
 
+## loading in covariate data and filtering for only FISNumbers that are still 
+## contained in dataset
+## (Not necessary, already adressed in begin)
+covariate_data <- readRDS(
+  here::here("data", "intermediate", "data_covariates.rds")) %>%
+  filter(FISNumber %in% c(train_ids, test_ids))
+
 
 ## further distinction: numeric and factor covariates
 num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
-                    grep("age_qol", covariates_names, value = TRUE))
+                    grep("age_qol", covariates_names, value = TRUE),
+                    grep("[0-9]+_1KG", colnames(data_model_B), value = TRUE))
 
-factor_covariates <- setdiff(covariates_names, num_covariates)
+factor_covariates <- c("PLD_AXIOM", "PLD_GSA", "EUR_1KG_Outlier",
+                       "NL_Strict_Outlier", "sex", "twzyg", "ea4fa_agg",
+                       "ea4mo_agg", "QoL_indicator")
+
+## here check values of the factor covariates
+
+## check classes of df (remove when needed)
+## CONTINUE HERE!!!
+for(column in 1:ncol(data_model_B)){
+  print(colnames(data_model_B)[column])
+  print(class(data_model_B[[column]]))
+}
 
 
 ## converting covariates to factors
@@ -164,7 +187,6 @@ factor_covariates <- setdiff(covariates_names, num_covariates)
 
 ## check here if function also works with data model B! 
 ## sandbox with functions and model B data!
-## CONTINUE HERE
 data_model_B <- f_conv(df = data_model_B, covariates = factor_covariates)
 
 
@@ -183,7 +205,7 @@ data_dummies_0 <- dummy_cols(data_model_B,
 dummy_vars <- setdiff(colnames(data_dummies_0), colnames(data_model_B))
 
 ## check if the covariates are still correct
-## CONTINUE HERE
+## CONTINUE HERE!!! 
 covariates_full <- c(num_covariates, dummy_vars)
 
 
@@ -202,6 +224,26 @@ x_train <- preprocessed_0$x_train_comb
 
 x_test <- preprocessed_0$x_test_comb
 
+## saving data
+filename_dataset_processed <- paste0("full_prepared_data_B_", b_iter, ".rds")
+saveRDS(list(x_train, x_test), here::here("data", "intermediate", "prep_data_B",
+                                          filename_dataset_processed))
+
+stop(paste0("data preparation finished for run: ", iter))
+}
+
+## here insert how to load in correct dataset
+
+## IMPORTANT: CHECK ALSO WHICH OTHER ELEMENTS FROM ABOVE ARE STILL NEEDED! 
+## INCLUDE THEM IN LIST 
+
+## continue HERE!!! 
+x_train <- readRDS()
+
+x_test <- readRDS()
+
+## specifying number of cores to be used for parallelization
+ncore_cl <- 96
 set.seed(7)
 
 ## creating folds so that during training, families stay together
