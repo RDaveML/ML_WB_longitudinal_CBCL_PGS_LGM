@@ -202,6 +202,8 @@ shap_values_bootstrapped_xgb <- do.call(rbind, lapply(SHAP_list, function(x) x[[
 
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
 
+#load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+
 
 old <- FALSE
 if(old){
@@ -393,5 +395,33 @@ t01 <- Sys.time()
 
 cat("duration entire script (model A, Bootstrapping SHAP values): ",
     difftime(t01, t00, unit = "mins"), " minutes")
+
+
+## loading in covariates names for model A to compare importance of covariates 
+## against raw CBCL item scores
+
+covariates_full <- readRDS(
+  here::here("data", "intermediate", "bootstrap",
+             "workspace_model_A_iteration_1.rds"))[["covariates_full"]]
+
+## here: still add Confidence intervals (quantiles 0.025 and 0.975)
+df_aggregate <- colMeans(shap_values_bootstrapped_rf %>% select(-run)) %>%
+  as.data.frame() %>%
+  tibble::rownames_to_column() %>%
+  dplyr::rename(var_name = 1, mean_SHAP = 2) %>%
+  mutate(covariate = ifelse(
+    var_name %in% covariates_full, "covariate", "feature"),
+    ## column to detect the features with the highest absolute mean SHAP values
+         abs_mean_SHAP = abs(mean_SHAP)) %>%
+  arrange(desc(abs_mean_SHAP))
+
+## visualizing top 20 columns
+ggplot(df_aggregate[1:20,], aes(x = var_name, y = mean_SHAP, fill = covariate)) + 
+  geom_col()
+
+## flag plaatsen wel of niet significant in afbeelding
+  
+  
+
 
 ## eoS

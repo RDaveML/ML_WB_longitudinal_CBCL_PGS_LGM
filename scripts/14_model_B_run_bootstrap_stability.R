@@ -22,36 +22,9 @@
 #
 #
 
-# --------------------------------------------------------------
-# ---------- Get Iteration Number ------------------------------
-# --------------------------------------------------------------
-
 
 
 # !/usr/bin/env Rscript
-iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
-iter <- 1
-## this can be tested and returned on ntr1 server run exiting the script 
-iter <- as.numeric(iter)
-
-if(iter > 1){
-  b_iter <- iter - 1
-} else {
-  b_iter <- 0
-}
-print(b_iter)
-b_iter <- as.numeric(b_iter)
-print(b_iter)
-cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
-
-test <- FALSE
-if(test){
-  filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
-  saveRDS(iter, file = paste0(here::here("data", "intermediate", "bootstrap", filename)))
-  stop("Iteration print works / does not work, testrun with only iteration saved successfully!")
-}
-
-
 
 
 # Set options
@@ -87,150 +60,238 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
 ## (files need to be located in same directory, also on cluster)
 source(here::here("scripts", "functions", "functions_ml.R"))
 
-
-## Find out if you can also load in only a slice of a list, otherwise load in
-## entire list and slice the object here in R
-
-## adjust this! the filenames need to be different since we have different 
-## train test split and much smaller sample
-
-## the new train and test split was created in script 11
-## CONTINUE HERE
-
-## readRDS solves the problem!
-if(b_iter == 0){
-  train_ids <- readRDS(here::here("data", "intermediate", "indices_train_PGS.rds"))
-} else {
-  train_ids <- readRDS(
-    here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
-}
-
-
-if(b_iter == 0){
-  test_ids <- readRDS(here::here("data", "intermediate", "indices_test_PGS.rds"))
-} else {
-  test_ids <- readRDS(
-    here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
-}
-
-
-## loading in the data
-## loading in full model_B data (created in script 08)
-
-
-## here insert if statement that specifies to only run this if data 
-## prepared are not yet done
-
-data_prepared <- FALSE
-
-if(data_prepared == FALSE){
-
-## Load this in with readRDS (Also loading in family and covariate data)
-data_model_B <- readRDS(here::here("data", "intermediate", "PGS",
-                                   "data_PGS_model_B.rds")) %>%
-  left_join(readRDS(
-    here::here("data", "intermediate", "data_covariates.rds")) %>%
-      filter(FISNumber %in% c(train_ids, test_ids)),
-    by = c("FISNumber", "QoL_simple")
-    )
-
-
 ## loading in covariate names
 covariates_names <- readRDS(
-  here::here("data", "intermediate", "names_covariates.rds")
-)
-
+  here::here("data", "intermediate", "names_covariates.rds"))
 covariates_names
-
+    
 ## loading in vector with names genetic covariates
-gen_covariates <- readRDS(here::here("data", "intermediate",
-                                     "names_genetic_covariates.rds"))
-
-## (rater covariates not necessary here)
-
-## loading in df with Family Numbers (not necessary, already adressed in begin)
-df_FIS_fam <-  readRDS(here::here("data", "intermediate", "PGS",
-                                  "data_fam_PGS.rds"))
+gen_covariates <- readRDS(
+  here::here("data", "intermediate", "names_genetic_covariates.rds"))
 
 ## one vector with all covariates names
 covariates_names <- c(covariates_names, gen_covariates)
 
-## loading in covariate data and filtering for only FISNumbers that are still 
-## contained in dataset
-## (Not necessary, already adressed in begin)
-covariate_data <- readRDS(
-  here::here("data", "intermediate", "data_covariates.rds")) %>%
-  filter(FISNumber %in% c(train_ids, test_ids))
+## part 1 (not run on server): preprocess the datasets for the original run
+## and all 100 bootstrapped runs, save them as .rds files that
+## can later be read in
+data_prepared <- FALSE
 
+if(data_prepared) {
 
-## further distinction: numeric and factor covariates
-num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
-                    grep("age_qol", covariates_names, value = TRUE),
-                    grep("[0-9]+_1KG", colnames(data_model_B), value = TRUE))
+# --------------------------------------------------------------
+# ---------- Get Iteration Number ------------------------------
+# --------------------------------------------------------------
 
-factor_covariates <- c("PLD_AXIOM", "PLD_GSA", "EUR_1KG_Outlier",
-                       "NL_Strict_Outlier", "sex", "twzyg", "ea4fa_agg",
-                       "ea4mo_agg", "QoL_indicator")
+  iter <- commandArgs(trailingOnly = TRUE) ## use this as index for the datasets!
+  iter <- as.numeric(iter)
+  if (iter > 1) {
+    b_iter <- iter - 1
+  } else {
+    b_iter <- 0
+  }
+  b_iter <- as.numeric(b_iter)
+  cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
+  
+  test <- FALSE
+  if (test) {
+    filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
+    saveRDS(iter, file = paste0(here::here(
+      "data", "intermediate", "bootstrap", filename
+    )))
+    stop(
+      "Iteration print works / does not work, testrun with only iteration saved successfully!"
+    )
+  }
+  ## only execute this when data are not yet preprocessed
 
-## here check values of the factor covariates
+  }  
+  
+  if(data_prepared == FALSE){
+  iterations <- c(1:101)
+  
+  ## loading in dataset
+  data_model_B_base <- readRDS(here::here("data", "intermediate", "PGS", "data_PGS_model_B.rds"))
+  
+  ## initiating for loop to prepare the entire set
+  
+  for (iter in iterations) {
+    ## this can be tested and returned on ntr1 server run exiting the script
+    iter <- as.numeric(iter)
+    
+    if (iter > 1) {
+      b_iter <- iter - 1
+    } else {
+      b_iter <- 0
+    }
+    print(b_iter)
+    b_iter <- as.numeric(b_iter)
+    print(b_iter)
+    cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
+    
+    test <- FALSE
+    if (test) {
+      filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
+      saveRDS(iter, file = paste0(here::here(
+        "data", "intermediate", "bootstrap", filename
+      )))
+      stop(
+        "Iteration print works / does not work, testrun with only iteration saved successfully!"
+      )
+    }
+    
+    ## the new train and test split was created in script 13
+    
+    ## readRDS solves the problem!
+    if (b_iter == 0) {
+      train_ids <- readRDS(here::here("data", "intermediate", "indices_train_PGS.rds"))
+    } else {
+      train_ids <- readRDS(here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
+    }
+    
+    
+    if (b_iter == 0) {
+      test_ids <- readRDS(here::here("data", "intermediate", "indices_test_PGS.rds"))
+    } else {
+      test_ids <- readRDS(here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
+    }
+    
+    
+    ## loading in the data
+    ## loading in full model_B data (created in script 08)
+    
+    
+    ## here insert if statement that specifies to only run this if data
+    ## prepared are not yet done
+    
+    ## Load this in with readRDS (Also loading in family and covariate data)
+    data_model_B <- data_model_B_base %>%
+      left_join(readRDS(here::here(
+        "data", "intermediate", "data_covariates.rds"
+      )) %>%
+        filter(FISNumber %in% c(train_ids, test_ids)),
+      by = c("FISNumber", "QoL_simple"))
+    
+    
+    
+    ## (rater covariates not necessary here)
+    
+    ## loading in df with Family Numbers (not necessary, already adressed in begin)
+    #df_FIS_fam <-  readRDS(here::here("data", "intermediate", "PGS", "data_fam_PGS.rds"))
+    
+    ## loading in covariate data and filtering for only FISNumbers that are still
+    ## contained in dataset
+    ## (Not necessary, already adressed in begin)
+    #covariate_data <- readRDS(here::here("data", "intermediate", "data_covariates.rds")) %>%
+    #  filter(FISNumber %in% c(train_ids, test_ids))
+    
+    
+    ## further distinction: numeric and factor covariates
+    num_covariates <- c(
+      grep("time_lag", covariates_names, value = TRUE),
+      grep("age_qol", covariates_names, value = TRUE),
+      grep("[0-9]+_1KG", colnames(data_model_B), value = TRUE)
+    )
+    
+    factor_covariates <- c(
+      "PLD_AXIOM",
+      "PLD_GSA",
+      "EUR_1KG_Outlier",
+      "NL_Strict_Outlier",
+      "sex",
+      "twzyg",
+      "ea4fa_agg",
+      "ea4mo_agg",
+      "QoL_indicator"
+    )
+    
+    ## here check values of the factor covariates
+    #for (f_col in factor_covariates) {
+    #  cat("distribution of values for variable ", f_col, "\n")
+    #  print(table(data_model_B[[f_col]]))
+    #  cat("\n", "\n")
+    #}
+    
+    ## converting covariates to factors
+    ## (this is done in the function f_conv)
+    
+    ## check here if function also works with data model B!
+    ## sandbox with functions and model B data!
+    data_model_B <- f_conv(df = data_model_B, covariates = factor_covariates)
+    
+    
+    ## converting columns with multiple
+    ## class types to numeric
+    data_model_B <- mult_to_numeric(df = data_model_B)
+    
+    
+    ## dummy coding categorical covariates
+    data_dummies_B <- dummy_cols(
+      data_model_B,
+      select_columns = factor_covariates,
+      remove_first_dummy = TRUE,
+      remove_selected_columns = TRUE,
+      ignore_na = TRUE
+    ) ## not own column, but missing
+    ## information here will be imputed as well
+    
+    dummy_vars <- setdiff(colnames(data_dummies_B), colnames(data_model_B))
+    
+    ## check if the covariates are still correct
+    covariates_full <- c(num_covariates, dummy_vars)
+    
+    if (iter == 1) {
+      saveRDS(covariates_full,
+              here::here("data", "intermediate", "covariates_full_B.rds"))
+    }
+    
+    covariates_full <- readRDS(
+      here::here("data", "intermediate", "covariates_full_B.rds"))
+    ## preprocessing for machine learning
+    ## (this is done in the function f_preprocess)
+    ## nzv removal, high cor removal, linear combination removal, imputation
+    preprocessed_B <- ml_preprocess(
+      df = data_dummies_B,
+      train_ids = train_ids,
+      test_ids = test_ids,
+      covariates = covariates_full
+    )
+    
+    ## checking if family is still included in traning variables
+    "FamilyNumber" %in% colnames(preprocessed_B$x_train_comb)
+    
+    x_train <- preprocessed_B$x_train_comb
+    
+    x_test <- preprocessed_B$x_test_comb
+    
+    ## saving data
+    filename_dataset_processed <- paste0("full_prepared_data_B_", iter, ".rds")
+    
+    saveRDS(
+      list(
+        x_train = x_train,
+        x_test = x_test,
+        train_ids = train_ids,
+        test_ids = test_ids
+      ),
+      here::here(
+        "data",
+        "intermediate",
+        "prep_data_B",
+        filename_dataset_processed
+      )
+    )
+    cat("data preparation finished for iteration ", iter, "\n", "\n")
+  }
+  
+  t0a <- Sys.time()
+  cat("duration data preparation model B all bootstrap: ",
+    difftime(t0a, t00, unit = "mins"), " minutes")
 
-## check classes of df (remove when needed)
-## CONTINUE HERE!!!
-for(column in 1:ncol(data_model_B)){
-  print(colnames(data_model_B)[column])
-  print(class(data_model_B[[column]]))
+  stop(paste0("data preparation finished for alls runs"))
 }
 
-
-## converting covariates to factors
-## (this is done in the function f_conv)
-
-## check here if function also works with data model B! 
-## sandbox with functions and model B data!
-data_model_B <- f_conv(df = data_model_B, covariates = factor_covariates)
-
-
-## converting columns with multiple
-## class types to numeric
-data_model_B <- mult_to_numeric(df = data_model_B)
-
-## dummy coding categorical covariates
-data_dummies_0 <- dummy_cols(data_model_B,
-                             select_columns = factor_covariates,
-                             remove_first_dummy = TRUE,
-                             remove_selected_columns = TRUE,
-                             ignore_na = TRUE) ## not own column, but missing
-## information here will be imputed as well
-
-dummy_vars <- setdiff(colnames(data_dummies_0), colnames(data_model_B))
-
-## check if the covariates are still correct
-## CONTINUE HERE!!! 
-covariates_full <- c(num_covariates, dummy_vars)
-
-
-## preprocessing for machine learning
-## (this is done in the function f_preprocess)
-## nzv removal, high cor removal, linear combination removal, imputation
-preprocessed_0 <- ml_preprocess(df = data_dummies_0,
-                                train_ids = train_ids,
-                                test_ids = test_ids,
-                                covariates = covariates_full)
-
-## checking if family is still included in traning variables
-"FamilyNumber" %in% colnames(preprocessed_0$x_train_comb)
-
-x_train <- preprocessed_0$x_train_comb
-
-x_test <- preprocessed_0$x_test_comb
-
-## saving data
-filename_dataset_processed <- paste0("full_prepared_data_B_", b_iter, ".rds")
-saveRDS(list(x_train, x_test), here::here("data", "intermediate", "prep_data_B",
-                                          filename_dataset_processed))
-
-stop(paste0("data preparation finished for run: ", iter))
-}
+## CONTINUE HERE!! 
 
 ## here insert how to load in correct dataset
 

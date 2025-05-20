@@ -180,22 +180,23 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   data_train <- data_train %>%
     select(-all_of(covariates), -FISNumber, -QoL_simple, -FamilyNumber)
   
-  
+
   ## i) near-zero variance
   nzv_train <- nearZeroVar(data_train)
   
-  ncol(data_train)
   
-  data_train <- data_train[-nzv_train]
+  if (length(nzv_train) != 0) {
+    data_train <- data_train[, -nzv_train, drop = FALSE]
+  }
+  
   
   cat(length(nzv_train), " columns removed (near zero variance)", "\n")
   
-  ncol(data_train)
+  cat(ncol(data_train), " columns remaining in training set", "\n")
   
   
   ## ii) high correlation (note that all columns must be numeric, df not changed here)
   ## Note: here no non-numeric column, still kept in in case changes
-  
   num_data <- data_train[, sapply(data_train, is.numeric)]
   
   high_cor <- findCorrelation(cor(num_data,
@@ -206,11 +207,13 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   num_data <- num_data[-high_cor]
   
   cat(length(high_cor), " columns removed (high correlation; .95)", "\n")
+  cat(ncol(data_train), " columns remaining in training set", "\n")
   
   ## re-appending non-numeric columns (here: none)
   data_train <- cbind(data_train[, !sapply(data_train, is.numeric)], num_data)
   } else {
     cat(length(high_cor), " columns removed (high correlation; .95)", "\n")
+    cat(ncol(data_train), " columns remaining in training set", "\n")
     data_train <- data_train
   }
   
