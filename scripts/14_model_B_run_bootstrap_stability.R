@@ -75,7 +75,7 @@ covariates_names <- c(covariates_names, gen_covariates)
 ## part 1 (not run on server): preprocess the datasets for the original run
 ## and all 100 bootstrapped runs, save them as .rds files that
 ## can later be read in
-data_prepared <- FALSE
+data_prepared <- TRUE
 
 if(data_prepared) {
 
@@ -83,6 +83,10 @@ if(data_prepared) {
 # ---------- Get Iteration Number ------------------------------
 # --------------------------------------------------------------
 
+  ## FOR TEST RUN: SET ITER TO 1, remove later 
+
+  ## iter <- 1
+  ## CONTINUE HERE LATER!!
   iter <- commandArgs(trailingOnly = TRUE) ## use this as index for the datasets!
   iter <- as.numeric(iter)
   if (iter > 1) {
@@ -291,12 +295,12 @@ if(data_prepared) {
   stop(paste0("data preparation finished for alls runs"))
 }
 
-## CONTINUE HERE!! 
+##-----------------------------------------------------------------------------
 
-## here insert how to load in correct dataset
+## Machine learning
 
-## IMPORTANT: CHECK ALSO WHICH OTHER ELEMENTS FROM ABOVE ARE STILL NEEDED! 
-## INCLUDE THEM IN LIST 
+
+
 
 ## listing files with the full prepared data
 filepath_prep_data <- here::here("data", "intermediate", "prep_data_B")
@@ -314,10 +318,28 @@ x_train <- readRDS(filename)[["x_train"]]
 
 x_test <- readRDS(filename)[["x_test"]]
 
+## loading in train and test ids for saving
+load_ids <- TRUE
+if(load_ids){ 
+    if (b_iter == 0) {
+      train_ids <- readRDS(here::here("data", "intermediate", "indices_train_PGS.rds"))
+    } else {
+      train_ids <- readRDS(here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
+    }
+    
+    
+    if (b_iter == 0) {
+      test_ids <- readRDS(here::here("data", "intermediate", "indices_test_PGS.rds"))
+    } else {
+      test_ids <- readRDS(here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
+    }
+}
+
 covariates_full <- readRDS(
   here::here("data", "intermediate", "covariates_full_B.rds"))
 
 ## specifying number of cores to be used for parallelization
+## ncore_cl <- 48
 ncore_cl <- 96
 set.seed(iter)
 
@@ -508,7 +530,7 @@ bounds_xgb <- list(
   gamma = c(0, 5),
   lambda = c(0, 10),
   alpha = c(0, 10),
-  nrounds = c(50L, 500L)
+  nrounds = c(50L, 200L)
 )
 
 ## Running the xgboost with bayesian hyperparameter tuning
@@ -533,7 +555,7 @@ cat("Iterations run", "\n")
 run_xgb$niters
 cat("Stopping status", "\n")
 run_xgb$stopStatus
-cat("Best parameters for random forest: ", "\n")
+cat("Total time xgb: ", "\n")
 run_xgb$totalTime
 
 cat("hypertuning XGBoost successful!", "\n")
@@ -581,12 +603,12 @@ cat("duration entire script model B iteration ", iter, ": ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
 
-timer_total <- proc.time()[3]
+#timer_total <- proc.time()[3]
 
 
 # print total time of nodes
-print(paste0("Full Timing Iteration ", iter, ":"))
-proc.time()[3] - timer_total
+#print(paste0("Full Timing Iteration ", iter, ":"))
+#proc.time()[3] - timer_total
 
 # eoS
 

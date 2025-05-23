@@ -202,7 +202,7 @@ shap_values_bootstrapped_xgb <- do.call(rbind, lapply(SHAP_list, function(x) x[[
 
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
 
-#load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
 
 
 old <- FALSE
@@ -404,23 +404,59 @@ covariates_full <- readRDS(
   here::here("data", "intermediate", "bootstrap",
              "workspace_model_A_iteration_1.rds"))[["covariates_full"]]
 
+
+## calculating for every variable 0.025 and 0.975 quantile 
+
+## function if different significance level should be used
+## move to functions folder
+df_sig_quantile <- function(df, alpha = 0.05){
+  lower_alpha <- (0 + alpha) / 2
+  upper_alpha <- 1 - lower_alpha
+  ## CONTINUE HERE!!
+  CI_bounds_df <- t(apply(
+    df, 2, quantile, probs = c(lower_alpha, upper_alpha))) %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column() %>%
+    dplyr::rename("var_name"= rowname,
+                  "lower_bound_CI" = 2,
+                  "upper_bound_CI" = 3)
+  return(CI_bounds_df)
+}
+
+CI_bounds_rf <- df_sig_quantile(
+  shap_values_bootstrapped_rf[, -ncol(shap_values_bootstrapped_rf)],
+  alpha = 0.05)
+
+
 ## here: still add Confidence intervals (quantiles 0.025 and 0.975)
 df_aggregate <- colMeans(shap_values_bootstrapped_rf %>% select(-run)) %>%
   as.data.frame() %>%
   tibble::rownames_to_column() %>%
   dplyr::rename(var_name = 1, mean_SHAP = 2) %>%
+  left_join(CI_bounds_rf, by = "var_name") %>%
   mutate(covariate = ifelse(
     var_name %in% covariates_full, "covariate", "feature"),
     ## column to detect the features with the highest absolute mean SHAP values
-         abs_mean_SHAP = abs(mean_SHAP)) %>%
+         abs_mean_SHAP = abs(mean_SHAP),
+         significant = ifelse(upper_bound_CI < 0 | lower_bound_CI > 0,
+                       "significant",
+                       "non-significant")) %>%
   arrange(desc(abs_mean_SHAP))
+
+table(df_aggregate$significant)
+## all variables are non significant in the contributions of their SHAP values
+## (mean contributions across all participants; thus global explanations)
+## does not need to be extra visualized
 
 ## visualizing top 20 columns
 ggplot(df_aggregate[1:20,], aes(x = var_name, y = mean_SHAP, fill = covariate)) + 
-  geom_col()
+  geom_col() +
+  geom_errorbar(aes(ymin = lower_bound_CI, ymax = upper_bound_CI)) +
+  geom_hline(yintercept = 0)
 
-## flag plaatsen wel of niet significant in afbeelding
-  
+## Next: Also do this for the xgb dataframe, then lapply over the two dfs all yiz operations  
+## CONTINUE HERE!!
+
   
 
 

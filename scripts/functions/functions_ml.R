@@ -106,11 +106,13 @@ mult_to_numeric <- function(df){
       next
     }
   }
-  
+  # cat("multiclass variables: ", vars_mult_class, "\n")
   if(length_mult_class > 0){
     #cat("variables ", vars_mult_class, " will be converted to numeric")
     df_converted <- df %>%
       mutate_at(vars_mult_class, as.numeric)
+  } else {
+    df_converted <- df
   }
   
   

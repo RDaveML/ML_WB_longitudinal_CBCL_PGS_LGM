@@ -96,7 +96,7 @@ if(data_prepared) {
     b_iter <- 0
   }
   b_iter <- as.numeric(b_iter)
-  cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
+  cat("Iteration / Index for Bootstrapped dataset: ", b_iter, "\n")
   
   test <- FALSE
   if (test) {
@@ -128,7 +128,7 @@ if(data_prepared == FALSE){
   intersect(colnames(data_model_A_base), colnames(data_model_B_base))
   
   ## joining datasets together
-  data_model_C <- data_model_B_base %>%
+  data_model_C_base <- data_model_B_base %>%
     left_join(data_model_A_base,
               by = c("FISNumber", "FamilyNumber", "QoL_simple"))
   
@@ -180,8 +180,6 @@ if(data_prepared == FALSE){
     }
     
     
-    ## loading in the data
-    ## loading in full model_B data (created in script 08)
     
     
     ## here insert if statement that specifies to only run this if data
@@ -201,7 +199,7 @@ if(data_prepared == FALSE){
     num_covariates <- c(
       grep("time_lag", covariates_names, value = TRUE),
       grep("age_qol", covariates_names, value = TRUE),
-      grep("[0-9]+_1KG", colnames(data_model_C), value = TRUE),
+      grep("[0-9]+_1KG", colnames(data_model_C_base), value = TRUE),
       rater_covariates
     )
     
@@ -209,8 +207,6 @@ if(data_prepared == FALSE){
                            "EUR_1KG_Outlier",
                            "NL_Strict_Outlier")
                            
-    ## still figure out how these tow need to be integrated 
-    ## CONTINUE HERE!! 
     #factor_covariates <- c(
     #  "PLD_AXIOM",
     #  "PLD_GSA",
@@ -235,7 +231,7 @@ if(data_prepared == FALSE){
     
     ## check here if function also works with data model B!
     ## sandbox with functions and model B data!
-    data_model_C <- f_conv(df = data_model_C, covariates = factor_covariates)
+    data_model_C <- f_conv(df = data_model_C_base, covariates = factor_covariates)
     
     
     ## converting columns with multiple
@@ -309,15 +305,16 @@ if(data_prepared == FALSE){
   stop(paste0("data preparation finished for alls runs"))
 }
 
-## CONTINUE HERE!! (actually true, 21st May 2025)
 
-## here insert how to load in correct dataset
+##-----------------------------------------------------------------------------
 
-## IMPORTANT: CHECK ALSO WHICH OTHER ELEMENTS FROM ABOVE ARE STILL NEEDED! 
-## INCLUDE THEM IN LIST 
+## Machine learning
+
+
+
 
 ## listing files with the full prepared data
-filepath_prep_data <- here::here("data", "intermediate", "prep_data_B")
+filepath_prep_data <- here::here("data", "intermediate", "prep_data_C")
 list_files_prep_data <- grep(".rds", list.files(filepath_prep_data),
                              value = TRUE)
 
@@ -332,9 +329,25 @@ x_train <- readRDS(filename)[["x_train"]]
 
 x_test <- readRDS(filename)[["x_test"]]
 
-covariates_full <- readRDS(
-  here::here("data", "intermediate", "covariates_full_B.rds"))
 
+covariates_full <- readRDS(
+  here::here("data", "intermediate", "covariates_full_C.rds"))
+## loading in train and test ids for saving
+load_ids <- TRUE
+if(load_ids){ 
+    if (b_iter == 0) {
+      train_ids <- readRDS(here::here("data", "intermediate", "indices_train_PGS.rds"))
+    } else {
+      train_ids <- readRDS(here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
+    }
+    
+    
+    if (b_iter == 0) {
+      test_ids <- readRDS(here::here("data", "intermediate", "indices_test_PGS.rds"))
+    } else {
+      test_ids <- readRDS(here::here("data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
+    }
+}
 ## specifying number of cores to be used for parallelization
 ncore_cl <- 96
 set.seed(iter)
@@ -585,7 +598,7 @@ workspace_objects <- mget(c("covariates_full", "iter", "ncore_cl",
 
 
 # Save the list to an RDS file
-filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
+filename <- paste0("workspace_model_C_iteration_", iter, ".rds")
 saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate",
                                                     "bootstrap", filename)))
 
@@ -595,7 +608,7 @@ saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate",
 ## time tracking
 t01 <- Sys.time()
 
-cat("duration entire script model B iteration ", iter, ": ",
+cat("duration entire script model C iteration ", iter, ": ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
 
