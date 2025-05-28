@@ -45,12 +45,12 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 ## accessing full ML prepared dataset of the model (preprocessed, elastic net 
 ## filtered training and test data per run)
 
-## Work into function: If feature was not selected in a run by elastic net, 
-## assign value 0!
+## Note: Run SHAP value calculation on server!
+## at ntr: ntrcompute1
 
 ## listing files with bootstrapped models
 filepath <- here::here("data", "intermediate", "bootstrap")
-list_files <- paste0(filepath, "/", grep(".rds", list.files(filepath),
+list_files <- paste0(filepath, "/", grep("workspace_model_A", list.files(filepath),
                                          value = TRUE))
 
 ## listing files with the full prepared data
@@ -68,7 +68,7 @@ system.time({all_predictors_model_A <- list_files %>%
 ## preparatory objects
 
 ncores_ntr <- 48
-nsim_shap <- 10
+nsim_shap <- 50
 # Create a custom prediction function for ranger model
 pfun_rf <- function(object, newdata) {
   predict(object, data = newdata)$predictions
@@ -191,16 +191,21 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
 
 ## combining all sub elements of the SHAP_list list into one data frame, separately 
-## for rf and xgb. The elements of the list are not named but the subelements of each
-## list elements always have the same name. I want to combine the subelements 
-## with the same names into one dataframe
-## the subelements are named shap_values_rf_full and shap_values_xgb_full into each
-## list element
-## shap_values_rf_full <- lapply(SHAP_list, function(x) x$shap_values_rf_full) is incorrect
+## for rf and xgb. 
 shap_values_bootstrapped_rf <- do.call(rbind, lapply(SHAP_list, function(x) x[["shap_values_rf_run"]]))
 shap_values_bootstrapped_xgb <- do.call(rbind, lapply(SHAP_list, function(x) x[["shap_values_xgb_run"]]))
 
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+
+t01 <- Sys.time()
+
+cat("duration entire script (model A, Bootstrapping SHAP values): ",
+    difftime(t01, t00, unit = "mins"), " minutes")
+
+plot(FALSE)
+if(plot == FALSE){
+  stop("only calculating the SHAP values, no plotting")
+}
 
 load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
 
@@ -391,10 +396,6 @@ system.time({all_predictors_model_A <- list_files %>%
 ## SHAP_list <- lapply(1:length(list_files), function(run){
 }
 
-t01 <- Sys.time()
-
-cat("duration entire script (model A, Bootstrapping SHAP values): ",
-    difftime(t01, t00, unit = "mins"), " minutes")
 
 
 ## loading in covariates names for model A to compare importance of covariates 
@@ -405,59 +406,26 @@ covariates_full <- readRDS(
              "workspace_model_A_iteration_1.rds"))[["covariates_full"]]
 
 
-## calculating for every variable 0.025 and 0.975 quantile 
 
-## function if different significance level should be used
-## move to functions folder
-df_sig_quantile <- function(df, alpha = 0.05){
-  lower_alpha <- (0 + alpha) / 2
-  upper_alpha <- 1 - lower_alpha
-  ## CONTINUE HERE!!
-  CI_bounds_df <- t(apply(
-    df, 2, quantile, probs = c(lower_alpha, upper_alpha))) %>%
-    as.data.frame() %>%
-    tibble::rownames_to_column() %>%
-    dplyr::rename("var_name"= rowname,
-                  "lower_bound_CI" = 2,
-                  "upper_bound_CI" = 3)
-  return(CI_bounds_df)
-}
-
-CI_bounds_rf <- df_sig_quantile(
-  shap_values_bootstrapped_rf[, -ncol(shap_values_bootstrapped_rf)],
-  alpha = 0.05)
+list_SHAP_dfs <- list(
+  "shap_values_bootstrapped_rf" = shap_values_bootstrapped_rf,
+  "shap_values_bootstrapped_xgb" = shap_values_bootstrapped_xgb)
 
 
-## here: still add Confidence intervals (quantiles 0.025 and 0.975)
-df_aggregate <- colMeans(shap_values_bootstrapped_rf %>% select(-run)) %>%
-  as.data.frame() %>%
-  tibble::rownames_to_column() %>%
-  dplyr::rename(var_name = 1, mean_SHAP = 2) %>%
-  left_join(CI_bounds_rf, by = "var_name") %>%
-  mutate(covariate = ifelse(
-    var_name %in% covariates_full, "covariate", "feature"),
-    ## column to detect the features with the highest absolute mean SHAP values
-         abs_mean_SHAP = abs(mean_SHAP),
-         significant = ifelse(upper_bound_CI < 0 | lower_bound_CI > 0,
-                       "significant",
-                       "non-significant")) %>%
-  arrange(desc(abs_mean_SHAP))
 
-table(df_aggregate$significant)
-## all variables are non significant in the contributions of their SHAP values
-## (mean contributions across all participants; thus global explanations)
-## does not need to be extra visualized
-
-## visualizing top 20 columns
-ggplot(df_aggregate[1:20,], aes(x = var_name, y = mean_SHAP, fill = covariate)) + 
-  geom_col() +
-  geom_errorbar(aes(ymin = lower_bound_CI, ymax = upper_bound_CI)) +
-  geom_hline(yintercept = 0)
-
-## Next: Also do this for the xgb dataframe, then lapply over the two dfs all yiz operations  
-## CONTINUE HERE!!
-
+## plotting: visualizing the top x features with highest mean absolute
+## SHAP feature importance over all bootstrapped runs, with CIs 
+## plotted according to specified significance level
+SHAP_analysis_plots <- lapply(names(list_SHAP_dfs), function(df_name) {
+  df <- list_SHAP_dfs[[df_name]]
+  SHAP_viz_top_x(
+    shap_df = df,
+    shap_df_name = df_name,
+    show_features = 20,
+    alpha = 0.05,
+    covariates = covariates_full
+  )
+})
   
-
-
+  
 ## eoS

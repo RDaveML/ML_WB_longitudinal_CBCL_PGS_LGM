@@ -688,6 +688,28 @@ save.image(here::here("data", "intermediate", "workspace_stacking_A_server.RData
 load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
 
 
+##-----------------------------------------------------------------------------
+
+
+## Comparison of models: Friedman's Test
+
+
+
+
+
+
+
+
+
+## Comparison of models: Nememyi's Test
+
+
+
+
+
+
+
+## Comparison of models: Wilcoxon signed rank tests
 
 
 

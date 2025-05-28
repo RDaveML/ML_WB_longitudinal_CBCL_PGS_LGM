@@ -1427,3 +1427,97 @@ shap_calc <- function(x_shap, model, pfun, ncores, nsim = 10){
   return(shap_values = shap_values)
 }
 
+
+df_sig_quantile <- function(df, alpha = 0.05){
+  lower_alpha <- (0 + alpha) / 2
+  upper_alpha <- 1 - lower_alpha
+  ## CONTINUE HERE!!
+  CI_bounds_df <- t(apply(
+    df, 2, quantile, probs = c(lower_alpha, upper_alpha))) %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column() %>%
+    dplyr::rename("var_name"= rowname,
+                  "lower_bound_CI" = 2,
+                  "upper_bound_CI" = 3)
+  return(CI_bounds_df)
+}
+
+
+
+SHAP_viz_top_x <- function(shap_df, shap_df_name,
+                           show_features = 20,
+                           alpha, covariates){
+  
+  if(class(covariates)!= "character"){
+    stop("'covariates' needs to be character vector of covariates")
+  }
+  ## Assiging the name of the object that was given to the argument "shap_df"
+    model_name <- case_when(
+    grepl("rf", shap_df_name, ignore.case = TRUE) ~ "Random Forest",
+    grepl("xgb", shap_df_name, ignore.case = TRUE) ~ "XGBoost",
+    grepl("svr", shap_df_name, ignore.case = TRUE) ~ "Support Vector Regression",
+    ## here add further possibilities
+    TRUE ~ "Model"
+  )
+  
+  ## calculate the confidence interval bounds
+  CI_bounds_df <- df_sig_quantile(df = select(shap_df, -run), alpha)
+  
+  ## calculating aggrated df
+  df_aggregate <- colMeans(select(shap_df, -run)) %>%
+    as.data.frame() %>%
+    tibble::rownames_to_column() %>%
+    dplyr::rename(var_name = 1, mean_SHAP = 2) %>%
+    left_join(CI_bounds_df, by = "var_name") %>%
+    mutate(covariate = ifelse(
+      var_name %in% covariates, "covariate", "feature"),
+      ## column to detect the features with the highest absolute mean SHAP values
+      abs_mean_SHAP = abs(mean_SHAP),
+      significant = ifelse(upper_bound_CI < 0 | lower_bound_CI > 0,
+                           "significant",
+                           "non-significant")) %>%
+    arrange(desc(abs_mean_SHAP))
+  
+  ## printing frequency of significant SHAP values
+  table_sig <- table(df_aggregate$significant)
+  cat("How many predictors show (non-)significant feature importance (SHAP)
+      over all bootstrapped runs in model ", model_name, " ?", "\n ")
+  print(table_sig)
+  
+  ## plotting the top x columns
+  plot_SHAPviz <- ggplot(df_aggregate[1:show_features,],
+         aes(x = var_name, y = mean_SHAP, fill = covariate)) + 
+    geom_col() +
+    geom_errorbar(aes(ymin = lower_bound_CI, ymax = upper_bound_CI)) +
+    geom_hline(yintercept = 0, size = 1.5) + 
+    labs(title = paste0("Top ", show_features, " features with highest mean absolut feature importance for model ",
+                        model_name),
+         subtitle = paste0("Significance level: ", alpha),
+         x = "Feature",
+         y = "Mean SHAP value",
+         fill = "Feature type") +
+    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
+  
+  return(list(plot = plot_SHAPviz,
+              table_sig = table_sig))
+
+}
+
+
+df_name <- function(shap_df){
+  
+  ## Assiging the name of the object that was given to the argument "shap_df"
+  df_name_name <- deparse(substitute(shap_df))
+  print(df_name_name)
+  ## assigning model name
+  model_name <- case_when(
+    grepl("rf", df_name_name, ignore.case = TRUE) ~ "Random Forest",
+    grepl("xgb", df_name_name, ignore.case = TRUE) ~ "XGBoost",
+    grepl("svr", df_name_name, ignore.case = TRUE) ~ "Support Vector Regression",
+    ## here add further possibilities
+    TRUE ~ "Model"
+  )
+}
+
+
+
