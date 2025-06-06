@@ -80,7 +80,7 @@ covariates_names <- c(covariates_names, gen_covariates)
 ## part 1 (not run on server): preprocess the datasets for the original run
 ## and all 100 bootstrapped runs, save them as .rds files that
 ## can later be read in
-data_prepared <- FALSE
+data_prepared <- TRUE
 
 if(data_prepared) {
   

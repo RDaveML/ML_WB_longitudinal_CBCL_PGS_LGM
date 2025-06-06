@@ -85,9 +85,9 @@ if(data_prepared) {
 
   ## FOR TEST RUN: SET ITER TO 1, remove later 
 
-  ## iter <- 1
+  iter <- 1
   ## CONTINUE HERE LATER!!
-  iter <- commandArgs(trailingOnly = TRUE) ## use this as index for the datasets!
+  #iter <- commandArgs(trailingOnly = TRUE) ## use this as index for the datasets!
   iter <- as.numeric(iter)
   if (iter > 1) {
     b_iter <- iter - 1

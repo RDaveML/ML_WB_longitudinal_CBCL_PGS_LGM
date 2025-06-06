@@ -4,9 +4,9 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-03-06
+# Date: 2025-06-06
 #
-# Script Name: 10_inspection_bootstrap_stability_model_A.R
+# Script Name: 15_inspection_bootstrap_stability_model_B.R
 #
 # Script Description: 
 # This script does the bootstraping stability check of ML predictions (Riley et.
@@ -41,23 +41,22 @@ source(here::here("scripts", "functions", "functions_plotting_ML.R"))
 ## creating list of workspaces
 #filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
 filepath <- here::here("data", "intermediate", "bootstrap")
-list_files <- grep("model_A", list.files(filepath), value = TRUE)
+list_files <- grep("model_B", list.files(filepath), value = TRUE)
 
 
 
 
 workspaces_bootstrap <- vector("list", length = length(list_files))
 ## from all workspaces, only load in the objects "run_rf$preds_df_rf", 
-## "run_svr$preds_df_svr" and "run_xgb$preds_df_xgb"
+## and "run_xgb$preds_df_xgb"
 ## it should result in a list of dataframes for each model
 
-
+## (Note: svr model was dropped after model A)
 
 for(workspace in 1:length(workspaces_bootstrap)){
   filename <- paste0(filepath, "/", list_files[workspace])
   workspaces_bootstrap[[workspace]][[1]] <- readRDS(filename)[["run_rf"]][["preds_df_rf"]]
-  workspaces_bootstrap[[workspace]][[2]] <- readRDS(filename)[["run_svr"]][["preds_df_svr"]]
-  workspaces_bootstrap[[workspace]][[3]] <- readRDS(filename)[["run_xgb"]][["preds_df_xgb"]]
+  workspaces_bootstrap[[workspace]][[2]] <- readRDS(filename)[["run_xgb"]][["preds_df_xgb"]]
 }
 
 ## re-write code lines 56 to 61 with vectorized loop instead of inefficient for loop 
@@ -105,20 +104,31 @@ names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
 ## outcome dataset. 
 
 ## loading in data with true y scores
+## outcome_saved <- TRUE
 outcome_saved <- TRUE
 if(outcome_saved == FALSE){
-#load(here::here("data", "intermediate", "data_model_0.Rdata"))
-data_full_raw <- readRDS(here::here("data", "intermediate", "data_model_A.rds"))
-data_true_y <- data_full_raw %>%
-  select(FISNumber, QoL_simple)
-
-## saving outcome data to load them in simpler later
-saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome.RDS"))
-rm(data_full_raw)
+  
+  train_ids <- readRDS(
+    here::here("data", "intermediate", "indices_train_PGS.rds")) 
+  test_ids <- readRDS(
+    here::here("data", "intermediate", "indices_test_PGS.rds")) 
+  ids_full <- c(train_ids, test_ids)
+  
+  ## reading in full data, selecting output column and filter for ids that 
+  ## have PGS
+  data_full_raw <- readRDS(
+    here::here("data", "intermediate", "data_model_A.rds"))
+  data_true_y <- data_full_raw %>%
+    select(FISNumber, QoL_simple) %>%
+    filter(FISNumber %in% ids_full)
+  
+  ## saving outcome data to load them in simpler later
+  saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome_B.RDS"))
+  rm(data_full_raw)
 }
 
 ## loading in data with true y scores
-data_true_y <- readRDS(here::here("data", "intermediate", "data_outcome.RDS")) %>%
+data_true_y <- readRDS(here::here("data", "intermediate", "data_outcome_B.RDS")) %>%
   rename(true_y = QoL_simple)
 
 ## Make one dataframe for all random forest predictions from the workspaces
@@ -133,22 +143,22 @@ list_bootstrap_rf <- lapply(1:length(workspaces_bootstrap), function(i){
     rename(orig_indicator = original_prediction) %>%
     ## prediction indicator not needed here
     select(FISNumber, predictions_rf)
-
-    if(i == 1){
-      pred_df <- pred_df %>%
-        rename(original_prediction = predictions_rf)
-    } else {
-      colname_boot <- paste0("bootstrapped_prediction_", i-1)
-      pred_df <- pred_df %>%
-        rename(!!colname_boot := predictions_rf)
-    }
-    return(pred_df)
+  
+  if(i == 1){
+    pred_df <- pred_df %>%
+      rename(original_prediction = predictions_rf)
+  } else {
+    colname_boot <- paste0("bootstrapped_prediction_", i-1)
+    pred_df <- pred_df %>%
+      rename(!!colname_boot := predictions_rf)
+  }
+  return(pred_df)
 })
 
 ## joining all dataframes in the list by FISNumber
 
 data_bootstrap_rf <- Reduce(function(x, y) merge(x, y, by = "FISNumber"),
-                     list_bootstrap_rf)
+                            list_bootstrap_rf)
 
 ## joining with true_y data
 data_bootstrap_rf <- data_bootstrap_rf %>%
@@ -160,48 +170,10 @@ plot_pred_inst_rf <- plot_pred_inst(data_bootstrap_rf)
 
 plot_pred_inst_rf
 
-## svr
-list_bootstrap_svr <- lapply(1:length(workspaces_bootstrap), function(i){
-  ## first element in list is svr dataframe
-  pred_df <- workspaces_bootstrap[[i]][[2]] %>%
-    ## renaming the indicator column because plotting function
-    ## takes the column name original_prediction for the predicted values
-    rename(orig_indicator = original_prediction) %>%
-    ## prediction indicator not needed here
-    select(FISNumber, predictions_svr)
-  
-  if(i == 1){
-    pred_df <- pred_df %>%
-      rename(original_prediction = predictions_svr)
-  } else {
-    colname_boot <- paste0("bootstrapped_prediction_", i-1)
-    pred_df <- pred_df %>%
-      rename(!!colname_boot := predictions_svr)
-  }
-  return(pred_df)
-})
-
-## joining all dataframes in the list by FISNumber
-
-data_bootstrap_svr <- Reduce(function(x, y) merge(x, y, by = "FISNumber"),
-                            list_bootstrap_svr)
-
-## joining with true_y data
-data_bootstrap_svr <- data_bootstrap_svr %>%
-  full_join(data_true_y, by = "FISNumber")
-
-
-## plotting prediction instability plot for svr model
-plot_pred_inst_svr <- plot_pred_inst(data_bootstrap_svr)
-
-plot_pred_inst_svr
-
-
-## xbg
 ## xgb
 list_bootstrap_xgb <- lapply(1:length(workspaces_bootstrap), function(i){
   ## first element in list is xgb dataframe
-  pred_df <- workspaces_bootstrap[[i]][[3]] %>%
+  pred_df <- workspaces_bootstrap[[i]][[2]] %>%
     ## renaming the indicator column because plotting function
     ## takes the column name original_prediction for the predicted values
     rename(orig_indicator = original_prediction) %>%
@@ -250,8 +222,7 @@ plot_pred_inst_xgb
 # Model metadata
 model_info <- list(
   rf = list(index = 1, pred_col = "predictions_rf"),
-  svr = list(index = 2, pred_col = "predictions_svr"),
-  xgb = list(index = 3, pred_col = "predictions_xgb")
+  xgb = list(index = 2, pred_col = "predictions_xgb")
 )
 
 # Container to store outputs
@@ -295,7 +266,7 @@ for (model_name in names(model_info)) {
   plot_pred_inst_model <- plot_pred_inst(data_bootstrap)
   plot_cal_inst_model <- plot_cal_inst(data_bootstrap,
                                        round = FALSE #TRUE
-                                       )
+  )
   plot_mape_inst_model <- plot_mape_inst(data_bootstrap)
   
   # Store result
@@ -311,38 +282,26 @@ for (model_name in names(model_info)) {
 ## saving plots
 
 ## prediction instability
-ggsave(filename = "A_pred_inst_rf.png",
+ggsave(filename = "B_pred_inst_rf.png",
        plot = all_plots_models$rf$plot_pred_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "A_pred_inst_svr.png",
-       plot = all_plots_models$svr$plot_pred_inst_model,
-       device = "png",
-       path = here::here("data", "intermediate", "bootstrap", "plots"),
-       create.dir = TRUE)
-
-ggsave(filename = "A_pred_inst_xgb.png",
+ggsave(filename = "B_pred_inst_xgb.png",
        plot = all_plots_models$xgb$plot_pred_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
 ## calibration instability
-ggsave(filename = "A_cal_inst_smooth_rf.png",
+ggsave(filename = "B_cal_inst_smooth_rf.png",
        plot = all_plots_models$rf$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "A_cal_inst_smooth_svr.png",
-       plot = all_plots_models$svr$plot_cal_inst_model,
-       device = "png",
-       path = here::here("data", "intermediate", "bootstrap", "plots"),
-       create.dir = TRUE)
-
-ggsave(filename = "A_cal_inst_smooth_xgb.png",
+ggsave(filename = "B_cal_inst_smooth_xgb.png",
        plot = all_plots_models$xgb$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
@@ -353,15 +312,11 @@ ggsave(filename = "A_cal_inst_smooth_xgb.png",
 plot_path <- here::here("data", "intermediate", "bootstrap", "plots")
 
 # Save the plot
-png(filename = file.path(plot_path, "A_mape_inst_rf.png"), width = 800, height = 600)
+png(filename = file.path(plot_path, "B_mape_inst_rf.png"), width = 800, height = 600)
 replayPlot(all_plots_models$rf$plot_mape_inst_model)
 dev.off()
 
-png(filename = file.path(plot_path, "A_mape_inst_svr.png"), width = 800, height = 600)
-replayPlot(all_plots_models$svr$plot_mape_inst_model)
-dev.off()
-
-png(filename = file.path(plot_path, "A_mape_inst_xgb.png"), width = 800, height = 600)
+png(filename = file.path(plot_path, "B_mape_inst_xgb.png"), width = 800, height = 600)
 replayPlot(all_plots_models$xgb$plot_mape_inst_model)
 dev.off()
 

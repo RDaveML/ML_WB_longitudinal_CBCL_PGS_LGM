@@ -427,5 +427,12 @@ SHAP_analysis_plots <- lapply(names(list_SHAP_dfs), function(df_name) {
   )
 })
   
+
+## plot for random forest
+SHAP_analysis_plots[[1]]$plot
+
+## plot for xgb
+SHAP_analysis_plots[[2]]$plot
+
   
 ## eoS
