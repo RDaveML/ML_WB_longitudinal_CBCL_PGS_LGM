@@ -332,6 +332,9 @@ x_test <- readRDS(filename)[["x_test"]]
 
 covariates_full <- readRDS(
   here::here("data", "intermediate", "covariates_full_C.rds"))
+
+## Continue HERE!! Align covariates correctly
+
 ## loading in train and test ids for saving
 load_ids <- TRUE
 if(load_ids){ 

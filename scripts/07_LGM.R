@@ -33,6 +33,9 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "stringr", "readxl", "data.table", "MplusAutomation", "glue")
 
 
+## custom preparation functions
+source(here::here("scripts", "functions", "functions_ml.R"))
+
 ## setting working directory
 setwd(here::here())
 
@@ -68,6 +71,8 @@ qol_vars <- readRDS(
 # load(here::here("scripts", "CBCL_questions_list.RData"))
 CBCL_questions_list <- readRDS(
   here::here("scripts", "CBCL_questions_list.rds"))
+
+## note that this still contains the CBCL items to be dropped
 
 ## loading in CBCL items to be retained and to be dropped
 load(here::here("scripts", "CBCL_items_keep"))
@@ -122,6 +127,13 @@ CBCL_items_table <- CBCL_items_table %>%
 CBCL_items_table_reduced <- CBCL_items_table %>%
   select(starts_with("Age"), question_number)
 
+## adjusting CBCL_questions_list (filtering for only valid CBCL questions 
+## that can be used for longitudinal modeling)
+CBCL_items_valid <- unique(CBCL_items_table_reduced$question_number)
+
+## selecting only the elements of the list that are contained in CBCL_items_valid
+CBCL_questions_list <- CBCL_questions_list[CBCL_items_valid]
+
 
 ## Checking structure of missing:
 # colMeans(is.na(data_LGM)) %>% as.data.frame() %>% View()
@@ -147,13 +159,13 @@ for(question in unique(CBCL_items_table_reduced$question_number)){
   
   colnames(data_question) <- c("FISNumber", q_col)
   
-  #if(step == 1){
-  #n_m_df <- data_question
-  #} else {
-  #  n_m_df <- n_m_df %>%
-  #    left_join(data_question, by = "FISNumber")
-  #}
-  #step <- step + 1
+  if(step == 1){
+  n_m_df <- data_question
+  } else {
+    n_m_df <- n_m_df %>%
+      left_join(data_question, by = "FISNumber")
+  }
+  step <- step + 1
   train_data <- train_data %>%
     left_join(data_question, by = "FISNumber")
   
@@ -173,6 +185,14 @@ for(question in unique(CBCL_items_table_reduced$question_number)){
 ## you remain blind to the actual content of the data! 
 
 
+##----------------------------------------------------------------------------
+
+## LGM part: Bottom-up from simpler to more complex models
+
+## Note: this was moved to 07_old_LGM.R
+
+
+## data preparation for LGM in Mplus
 
 ## sampling test Question
 test_q <- na.omit(as.character(sample_n(CBCL_items_table_reduced, 1)))
@@ -180,333 +200,193 @@ test_q <- na.omit(as.character(sample_n(CBCL_items_table_reduced, 1)))
 # question name
 test_q_name <- test_q[length(test_q)]
 
+var_names_test <- unlist(unname(CBCL_questions_list[test_q_name]))
+
 test_df <- train_data %>%
   select(FISNumber, FamilyNumber, twzyg, any_of(test_q),
-         matches(paste0(test_q, "\\b")))
+         matches(paste0(test_q, "\\b"))) %>%
+  rename("FISNr" = FISNumber, "FamNr" = FamilyNumber,
+  ## renaming the variable that contains the string "n_measures" to "n_t"
+         "n_t" = paste0("n_measures_", test_q_name))
+## renaming so that variable names are max 8 characters long
+
+colnames(test_df)[colnames(test_df) %in% var_names_test] <- 
+  paste0("t", 1:length(var_names_test))
 
 
 ## Add number of family members for each participant
-count_fam <- test_df[,c("FamilyNumber","FISNumber")] %>%
-  count(FamilyNumber) %>%
-  rename(fam_count = "n")
+count_fam <- test_df[,c("FamNr","FISNr")] %>%
+  count(FamNr) %>%
+  rename("fam_count" = n)
 
-test_df <- merge(test_df, count_fam, by = "FamilyNumber")
+test_df <- merge(test_df, count_fam, by = "FamNr")
 
-##----------------------------------------------------------------------------
+saveRDS(test_df, here::here("mplus_files", "test_df_CBCL.rds"))
+test_df <- readRDS(here::here("mplus_files", "test_df_CBCL.rds"))
 
-## LGM part: Bottom-up from simpler to more complex models
-
-
-
-## Leave out this part for now, long pivoting and rater coding comes later,
-## family mean can be omitted from analysis
-
-
-rater <- TRUE
-
-if(rater) { ## initiating parenthesis rater coding
-
-## Now: In order to take into account Time AND Rater change, 
-## data needs to be pivoted to long format
-# make data long
-# note: order of variable names in "varying" is important
-long_df <- reshape(test_df, direction = "long", 
-                   varying = test_q[1:length(test_q) - 1], 
-                   timevar = "time",
-                   times = c(1:(length(test_q) - 1)),
-                   v.names = c(test_q[length(test_q)]),
-                   idvar=c("FISNumber")) %>%
-  mutate(item_name = NA) ## initialize item_name column
-
-## Code rater in there as well (other-rating vs. self-rating)
-## All ysr items need to be coded as rater - self 
-long_df$item_name <- sapply(long_df$time, function(x) {
-  test_q[x]  # Directly use the value of 'time' to index into 'test_q'
-})
-
-long_df <- long_df %>%
-  mutate(rater = ifelse(grepl("ysr", item_name), 1, 0))
+## conversion of columns to proper factors 
+test_df <- f_conv(df = test_df,
+                  covariates = c("FamNr", "FISNr", "twzyg",
+                                 paste0("t", 1:length(var_names_test))))
 
 
+classes <- c(1:4)
 
-## next: calculate family means and deviation (if single family member, 
-## take deviation from grand mean)
+list_models <- vector("list")
 
-long_df <- long_df[order(long_df$FISNumber),]      # order on person id
-long_df <- long_df[order(long_df$FamilyNumber),]   # order on fam id
+data_files_before <- list.files(here::here("mplus_files"))
 
-## calculate person mean
-long_df <- long_df %>%
-  group_by(FISNumber) %>%
-  mutate(mean_CBCL_question_ind = mean(!!sym(test_q_name), na.rm = TRUE)) %>%
-  ungroup()
+for(class_nr in classes){
 
-long_df <- long_df %>%
-  group_by(FamilyNumber) %>%
-  mutate(m_fam = mean(mean_CBCL_question_ind, na.rm = TRUE)) %>%
-  ungroup
-
-## calculate mean of family means (for participants who don't have
-## family members in the sample)
-fam_means <- long_df %>%
-  group_by(FamilyNumber) %>%
-  summarise(mean_fam_mean = mean(m_fam, na.rm = TRUE), n = n())
-
-
-## calculation of dependent variable! Individual deviation from family mean
-## Or grand family mean median (If no siblings)
-
-long_df <- long_df %>%
-  mutate(DV_LGM = case_when(
-    fam_count == 1 ~ !!sym(test_q_name) - median(fam_means$mean_fam_mean),
-    TRUE ~ !!sym(test_q_name) - m_fam),
-         FISNumber = as.character(FISNumber))
-  
-
-## renaming columns for Mplus (max 8 characters)
-n_measures_col <- grep("n_measures", colnames(long_df), value = TRUE)
-score_col <- grep("^CBCL_", colnames(long_df), value = TRUE)
-  
-long_df <- long_df %>%
-  rename("FISNr" = FISNumber,
-         "FamNr" = FamilyNumber,
-         "t_valid" = !!(n_measures_col),
-         "score" = !!(score_col),
-         "mean_ind" = mean_CBCL_question_ind,
-         "i_name" = item_name,
-         "n_fam" = fam_count
-         )
-
-
-## This is the long_df that is needed for the Longitudinal modeling! 
-
-## saving long_df for separate inspection
-#save(long_df, file = here::here("data", "intermediate", "long_df_test.RData"))
-
-
-} ## closing parenthesis rater coding
-
-## Next step: Give this to the MplusAutomation syntax
-
-## base model: latent growth model (1 group) with latent slope and intercept
-
-## reminder: after fully working model has been programmed for one question
-## this needs to be looped over all questions, aliasing the columns names 
-## and question names
-
-working_full <- FALSE
-if(working_full){
-  print("Looping over question names with creating of vectors for var names")
-}
-
-## renaming the variables that are the longitudinal measures
-## getting variable names (starting with q)
-var_t <- grep("^q", colnames(test_df), value = TRUE, invert = FALSE)
-
-cols_t <- colnames(test_df) %in% var_t
-
-## renaming variable simply with t1 - tmax (note that later still needs to 
-## be adjusted to the presumed ages!)
-colnames(test_df)[cols_t] <- paste0("t", 1:length(var_t))
-colnames(test_df)
-## again saving vector of longitudinal var names
-var_t <- grep("^t[0-9]", colnames(test_df), value = TRUE)
-
-## changing column names of df (Mplus allows max 8 characters length)
-## so that all columns have max a character name length
-
-n_measures_col <- grep("n_measures", colnames(test_df), value = TRUE)
-
-test_df <- test_df %>%
-  dplyr::rename("FamNr" = FamilyNumber,
-                "FISNr" = FISNumber,
-                "t_valid" = !!(n_measures_col),
-                "n_fam" = fam_count) %>%
-  mutate(FISNr = as.character(FISNr)) ## preventing numerical issues with
-  ## non-numerical variable
-
-## changing ids to avoid large numbers causing trouble with Mplus
-#test_df$FISNr <- c(1:nrow(test_df))
-
-
-
-model_base <- mplusObject(
-  VARIABLE =
-  "usevar = t1-t5;
-   categorical = t1-t5;",
-  ANALYSIS = 
-  "estimator = ML;",
-  MODEL = 
-  "i s | t1@0 t2@3 t3* t4* t5*;",
-  # alternative: tech1 tech8?
-  OUTPUT = "sampstat standardized;",
-  usevariables = colnames(test_df), # alternative tech1 tech8;
-  rdata = test_df
-)
-
-fit_base <- mplusModeler(model_base,
-                         dataout = here("mplus_files", "model_base.dat"),
-                         # note: data needs to be given to model! 
-                         # only solution seems to be to directly delete it 
-                         # afterwards!
-                         modelout = here("mplus_files", "model_base.inp"),
-                         check = TRUE, run = TRUE, hashfilename = FALSE,
-                         Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-
-
-## This created a working model! The data are also correct!
-
-## removing the .dat file to save memory and not confuse Mplus for the next
-## model! 
-unlink(list.files(here("mplus_files"), pattern = "\\.dat$", full.names = TRUE))
-
-#-----------------------------------------------------------------------------
-
-old_model <- FALSE
-if(old_model){
-  model_old <- mplusObject(
+  if(class_nr == 1){
+    ## most easy case: code model with one class, then 2-4 classes
+    title_string <- paste0(class_nr, "-class model CBCL_question ", test_q_name)
     
-    VARIABLE = 	"usevar = FIS_NR time DV_LGM rater m_fam twzyg;
-               CLASSES = c(2);
-               cluster = FIS_NR twzyg;",
-    ANALYSIS = "type = twolevel mixture complex;
-                 starts = 100 20;",
-    ## note: the starts argument here specifies that 100 initial stage random
-    ## sets of starting values are used and 20 final stage optimizations are
-    ## carried out
-    MODEL = "%WITHIN% 
-  %OVERALL%
-  iw sw | DV_LGM; ! intercept and slope are defined by the dependent variable
-  iw sw ON time; ! instead of wide data, in long data, time is covariate
-  iw sw ON rater; ! rater has an effect on the intercept and slope because we assume differences other vs. self-rating
-  c ON m_fam; ! on within-level, only family mean has influence on group-membership
-  ! DV_LGM ON time rater; (Does this need to be specified explicitly? Or is it enough to mention that the intercept and slope are influenced?)
-  %BETWEEN%
-  %OVERALL%
-  DV_LGM ON m_fam; ! is m_fam effective on within or between level or both?
-  ib sb | DV_LGM; ! definition of ib and sb, what exactly is this here?
-  ib sb ON time; ! also dependent on time?
-  c#1 ON m_fam; ! what influences the latent class variable on between level?
-  !ib sb ON twzyg; ! unclear where twin status is effective at all, only influencing standard errors?
-  ! This causes error because twzyg is not found, unclear why, it was given to 
-  ! the variable names at all previous steps
-  sb@0; ! residual variance of slope growth factor fixed at 0? 
-  c#1*1; ! unclear what this is exactly
-  %c#1%
-  [ib sb]; ! starting values of mean of intercept and slope = 0 in class 1?
-  %c#2%
-  [ib*3 sb*1]; ! starting values of mean of intercept and slope = [3;1] in class 2?",
-    rdata = long_df,
-    OUTPUT = "standardized tech1 tech8;"
-  )
+    
+    ## still code the missings here! 
+    ## CONTINUE HERE!!!
+    variable_string <- gsub("\n", "", paste0("usevar = t1",
+                              "-",
+                              paste0("t", length(var_names_test)),
+                              " FamNr;",
+                              "\n",
+                              "categorical = t1",
+                              "-",
+                              paste0("t", length(var_names_test)),
+                              ";",
+                              "\n",
+                              "cluster = FamNr;" ##classes = c(2);
+                              ))
+    analysis_string <-gsub("\n", "", paste0(
+    "estimator = mlr;
+     link = probit;
+     ALGORITHM = INTEGRATION;"
+    ))
+    
+    if(length(var_names_test) == 4){ 
+      model_string <- gsub("\n", "", paste0(
+     "i by t1@0 t2* t3* t4@1;
+      s by t1@0 t2* t3* t4@1;
+      ![t1$1@0 t2$1@0 t3$1@0 t4$1@0] (thr1);
+      ![t1$2*1 t2$2*1 t3$2*1 t4$2*1] (thr2);
+      ! Freely estimate means of latent intercept and slope
+      [i];  
+      [s];
+      ! Freely estimate variances of intercept and slope
+      i*;  
+      s*;
+      i WITH s@0;"
+      ))
+    } else if(length(var_names_test) == 5){ 
+      model_string <- gsub("\n", "", paste0(  
+     "i by t1@0 t2* t3* t4* t5@1;
+      s by t1@0 t2* t3* t4* t5@1;
+      ![t1$1@0 t2$1@0 t3$1@0 t4$1@0 t5$1@0] (thr1);
+      ![t1$2*1 t2$2*1 t3$2*1 t4$2*1 t5$2*1] (thr2);
+      ! Freely estimate means of latent intercept and slope
+      [i];  
+      [s];
+      ! Freely estimate variances of intercept and slope
+      i*;  
+      s*;
+      i WITH s@0;"
+      ))
+    } else if(length(var_names_test) == 6){ 
+      model_string <-
+     "i by t1@0 t2* t3* t4* t5* t6@1;
+      s by t1@0 t2* t3* t4* t5* t6@1;
+      ![t1$1@0 t2$1@0 t3$1@0 t4$1@0 t5$1@0 t6$1@0] (thr1);
+      ![t1$2*1 t2$2*1 t3$2*1 t4$2*1 t5$2*1 t6$2*1] (thr2);
+      ! Freely estimate means of latent intercept and slope
+      [i];  
+      [s];
+      ! Freely estimate variances of intercept and slope
+      i*;  
+      s*;
+      i WITH s@0;"  
+    } else {
+      model_string <- gsub("\n", "", paste0(
+     "i by t1@0 t2* t3* t4* t5* t6* t7@1;
+      s by t1@0 t2* t3* t4* t5* t6* t7@1;
+      ![t1$1@0 t2$1@0 t3$1@0 t4$1@0 t5$1@0 t6$1@0 t7$1@0] (thr1);
+      ![t1$2*1 t2$2*1 t3$2*1 t4$2*1 t5$2*1 t6$2*1 t7$2*1] (thr2);
+      ! Freely estimate means of latent intercept and slope
+      [i];  
+      [s];
+      ! Freely estimate variances of intercept and slope
+      i*;  
+      s*;
+      i WITH s@0;"
+      ))
+        }
+    
+    output_string <- "standardized tech1 tech4 tech10;"
+    
+    model_1_class <- mplusObject(
+      TITLE = title_string,
+      VARIABLE = variable_string,
+      ANALYSIS = analysis_string,
+      MODEL = model_string,
+      OUTPUT = output_string,
+      ## here still add which outputs are actually relevant
+      usevariables = colnames(test_df), # alternative tech1 tech8;
+      rdata = test_df
+    )
+    
+    ## try this with one test df where you save the data before! 
+    ## CONTINUE HERE!!!
+    
+    ## Issue: Model seems to be with correct syntax but takes forever to run
+    
+    fit_model_1_class <- mplusModeler(model_1_class,
+                                dataout = here("mplus_files",
+                                               paste0("model_", class_nr, "_class_", test_q_name, ".dat")),
+                                # note: data needs to be given to model! 
+                                # only solution seems to be to directly delete it 
+                                # afterwards!
+                                modelout = here("mplus_files",
+                                                paste0("model_", class_nr, "_class_", test_q_name, ".inp")),
+                                check = TRUE, run = TRUE, hashfilename = FALSE,
+                                Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
+    ## note: if you run this on server, the filepath to the Mplus command also
+    ## needs to be changed!
+    ## CONTINUE HERE!!!
+    
+    ## R syntax correct but Mplus not, check output and try again
+    
+    ## removing the datafile that was newly created 
+    data_files_after <- setdiff(list.files(here::here("mplus_files")), 
+                                data_files_before)
+    
+    ## selecting .dat file contained in data_files_after
+    dat_file <- data_files_after[grep("\\.dat$", data_files_after)]
+    
+    ## removing the .dat file from the directory 
+    file.remove(here("mplus_files", dat_file))
+    
+    ## saving name of .out file that was newly created
+    out_file <- data_files_after[grep("\\.out$", data_files_after)]
+    
+    ## changing name of the newly created .out file in the directory
+    ## to "out_file_new.out"
+    file.rename(here("mplus_files", out_file), 
+                here("mplus_files",
+                     paste0("model_", class_nr, "_class_", test_q_name, ".out")
+                )
+    ) ## suppress TRUE in the output
+    ## writing function from lines 357 - 376
+    ## CONTINUE HERE!!!
+    
+    ## saving model fit to list
+    list_models <- append(list_models, fit_model_1_class)
+    ## still rename the saved element with the name of the CBCL question
+    ## currently being iterated
+    }
 }
 
 
-
-## next more complicated model: Multilevel latent growth curve model (no classes)
-## but every cluster (here individual) is allowed to 
-## have their own slope and intercept
-t1 <- Sys.time()
-model_base_ml <- mplusObject(
-  TITLE = "test multilevel LCGM",
-  VARIABLE = 
-    "usevar = t1-t5 FISNr;
-     categorical = t1-t5;
-     cluster = FISNr;",
-  ANALYSIS = 
-    "type = twolevel;
-     algorithm = integration;
-     processors = 7;
-     convergence = 0.01;
-     miterations = 500;",
-  MODEL = 
-    "%within%
-  iw sw | t1@0 t2@1 t3@2 t4@3 t5@4; !no within covariate (yet)
-    %between%
-  ib sb | t1@0 t2@1 t3@2 t4@3 t5@4;",
-  OUTPUT = "sampstat standardized tech1 tech4 tech8;",
-  usevariables = colnames(test_df), # alternative tech1 tech8;
-  rdata = test_df[1:500,]
-)
-
-## Here, for a simple multilevel model, I needed to specify within and 
-## between
-
-fit_base_ml <- mplusModeler(model_base_ml,
-                            dataout = here("mplus_files", "model_base.dat"),
-                         # note: data needs to be given to model! 
-                         # only solution seems to be to directly delete it 
-                         # afterwards!
-                         modelout = here("mplus_files", "model_base_ml.inp"),
-                         check = TRUE, run = TRUE, hashfilename = FALSE,
-                         Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-
-
-t2 <- Sys.time()
-
-print(t2 - t1)
-## 4.1 min runtime with adjusted settings (less strict convergence criterion,
-## less iterations, only 10% of sample, definitely needs to be parallelized)
-
-
-##-----------------------------------------------------------------------------
-
-## Next more complicated version: Adding family cluster
-t3 <- Sys.time()
-model_fam_ml <- mplusObject(
-  TITLE = "test multilevel LCGM",
-  VARIABLE = 
-    "usevar = t1-t5 FamNr;
-     categorical = t1-t5;
-     cluster = FamNr;
-     !IDVARIABLE = FISNr;",
-  ANALYSIS = 
-    "type = twolevel;
-     algorithm = integration;
-     processors = 7;
-     convergence = 0.01;
-     miterations = 500;",
-  MODEL = 
-    "%within%
-  iw sw | t1@0 t2@1 t3@2 t4@3 t5@4; !no within covariate (yet)
-  iw (0); ! setting starting value of within intercept at 0
-    %between%
-  ib sb | t1@0 t2@1 t3@2 t4@3 t5@4;",
-  OUTPUT = "sampstat standardized tech1 tech4 tech8;",
-  usevariables = colnames(test_df), # alternative tech1 tech8;
-  rdata = test_df[1:500,]
-)
-
-## Issue: Model seems to be with correct syntax but takes forever to run
-
-fit_fam_ml <- mplusModeler(model_fam_ml,
-                            dataout = here("mplus_files", "model_base.dat"),
-                            # note: data needs to be given to model! 
-                            # only solution seems to be to directly delete it 
-                            # afterwards!
-                            modelout = here("mplus_files", "model_fam_ml.inp"),
-                            check = TRUE, run = TRUE, hashfilename = FALSE,
-                            Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-
-t4 <- Sys.time()
-
-print(t4 - t3)
-## 3 min running time with adjusted settings (less strict convergence criterion,
-## less iterations, only 10% of sample, definitely needs to be parallelized), 
-## starting value of intercept to 0 helped convergence and made estimation a lot 
-## faster
-
-##-----------------------------------------------------------------------------
-
-## Next step: updating model making it a mixture with 2 latent classes!
-## However, the family model still is not properly calculated to the end
-## needs to be set right first
-## keeping the option that participants are clustered in families
-
-t5 <- Sys.time()
-
-model_fam_mix <- mplusObject(
-  TITLE = "test 2 class growth mixture model",
+dummy_model_Mplus <- mplusObject(
+  TITLE = title,
   VARIABLE = 
     "usevar = t1-t5 FamNr;
      categorical = t1-t5;
@@ -535,230 +415,16 @@ model_fam_mix <- mplusObject(
 ## Issue: Model seems to be with correct syntax but takes forever to run
 
 fit_fam_mix <- mplusModeler(model_fam_mix,
-                           dataout = here("mplus_files", "model_base.dat"),
-                           # note: data needs to be given to model! 
-                           # only solution seems to be to directly delete it 
-                           # afterwards!
-                           modelout = here("mplus_files", "model_fam_mix.inp"),
-                           check = TRUE, run = TRUE, hashfilename = FALSE,
-                           Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-
-t6 <- Sys.time()
-
-print(t6 - t5)
-
-## now, with outcommenting the starting values, it seemed to work
+                            dataout = here("mplus_files", "model_base.dat"),
+                            # note: data needs to be given to model! 
+                            # only solution seems to be to directly delete it 
+                            # afterwards!
+                            modelout = here("mplus_files", "model_fam_mix.inp"),
+                            check = TRUE, run = TRUE, hashfilename = FALSE,
+                            Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
 
 
-## note that the starting values are totally arbitrary, more material will be 
-## helpful, now the only priority is that the model will run, 
-## regardless how bad it fits, it will be adjusted in the next step
 
-fit_mixture0 <- mplusModeler(model_mixture0,
-                             dataout = here("mplus_files", "m_mix0.dat"),
-                             modelout = here("mplus_files", "m_mix0.inp"),
-                             check = TRUE, run = TRUE, hashfilename = FALSE,
-                             Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-
-
-##-----------------------------------------------------------------------------
-
-## next step: adding the within level covariate (rater)
-
-## explicit coding of the rater: if else block
-
-## last two time points are always self-reports (YSR)
-## note: It makes sense to only do this inside the loop
-## and then within the Mplus model with the glue and the parameters
-## extract the last element of a vector that contains the variable names
-## of the rater coding
-
-
-if(length(test_q) == 4) { ## CBCL measure was taken 4 times
-  test_df <- test_df %>%
-    mutate(ra_t1 = ifelse(!is.na(t1), 0, NA), ## NAs if scores as missing  
-           ra_t2 = ifelse(!is.na(t2), 0, NA), ## cause covariate must not be
-           ra_t3 = ifelse(!is.na(t3), 1, NA), ## effective anymore then
-           ra_t4 = ifelse(!is.na(t4), 1, NA))
-} else if(length(test_q) == 5) { ## CBCL measure was taken 5 times
-  test_df <- test_df %>%
-    mutate(ra_t1 = ifelse(!is.na(t1), 0, NA),
-           ra_t2 = ifelse(!is.na(t2), 0, NA),
-           ra_t3 = ifelse(!is.na(t3), 0, NA),
-           ra_t4 = ifelse(!is.na(t4), 1, NA),
-           ra_t5 = ifelse(!is.na(t5), 1, NA))
-} else { ## CBCL measure was taken 6 times
-  test_df <- test_df %>% 
-    mutate(ra_t1 = ifelse(!is.na(t1), 0, NA),
-           ra_t2 = ifelse(!is.na(t2), 0, NA),
-           ra_t3 = ifelse(!is.na(t3), 0, NA),
-           ra_t4 = ifelse(!is.na(t4), 0, NA),
-           ra_t5 = ifelse(!is.na(t5), 1, NA),
-           ra_t6 = ifelse(!is.na(t6), 1, NA))
-}
-
-## coding the same model with a within-person time-varying covariate (rater)
-## Next more complicated version: Adding family cluster
-
-## Note: This does not work because all rater coding variables
-## have 0 variance and only one category
-## Needs to be given to a long format variable then!
-
-## making long data with the DATA WIDETOLONG option IS NOT POSSIBLE
-## DATA NEED TO BE PIVOTED BEFORE, thus all new models need to 
-## be adapted to long format!!!
-
-## working with long_df now
-
-## renaming score column to unify across items
-colnames(long_df)[grep("^CBCL_", colnames(long_df))] <- "score"
-
-## Note: This does not yet encode mixture
-
-rater <- FALSE
-
-if(rater){
-  t7 <- Sys.time()
-  model_rater_ml <- mplusObject(
-    TITLE = "test multilevel LCGM with rater covariate",
-    VARIABLE = 
-      "usevar = score rater time FISNr FamNr;
-     categorical = score rater; 
-     !nominal = rater;
-     idvariable = FISNr;
-     within = rater time;
-     cluster = FamNr;",
-    ANALYSIS = 
-      "type = twolevel random;
-     algorithm = integration;
-     processors = 7;
-     convergence = 0.01;
-     miterations = 500;",
-    MODEL = 
-      "%within%
-        iw sw | score by time;
-        score on rater;
-      %between%
-        ib sb | score by time;",
-    OUTPUT = "sampstat standardized tech1 tech4 tech8;",
-    usevariables = colnames(long_df), # alternative tech1 tech8;
-    rdata = long_df
-  )
-  
-  
-  fit_rater_ml <- mplusModeler(model_rater_ml,
-                               dataout = here("mplus_files", "model_long.dat"),
-                               # note: data needs to be given to model! 
-                               # only solution seems to be to directly delete it 
-                               # afterwards!
-                               modelout = here("mplus_files", "model_rater_ml.inp"),
-                               check = TRUE, run = TRUE, hashfilename = FALSE,
-                               Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-  
-  t8 <- Sys.time()
-  print(t8 - t7)
-  
-  ## Not working, DATA WIDETOLONG is not supported by mplusAutomation
-  ## might not be possible to specify this kind of model in long data format 
-  ## with a time varying covariate at all!
-  
-  ## x min running time with adjusted settings (less strict convergence criterion,
-  ## less iterations, only 10% of sample, definitely needs to be parallelized)
-  
-}
-
-##-----------------------------------------------------------------------------
-
-
-##-----------------------------------------------------------------------------
-
-## another option: Loop over models with 1-3 classes, BUT DON'T DEFINE 
-## THE MODEL PARAMETERs
-models_mix0_loop  <- lapply(1:5, function(k) {
-  model_enum  <- mplusObject(
-    
-    TITLE = glue("Class {k}"), 
-    # the glue function I should probably use for my loops and automatization as well
-    VARIABLE = glue(
-    "usevar = t1-t5;
-     categorical = t1-t5;
-     classes = c({k});"), # !categorical = 
-    
-    ANALYSIS = 
-    "algorithm = integration; 
-    type = mixture;
-    stseed = 5212020;
-    starts = 200 100;",
-    ## note: no specification of the parameters 
-    MODEL = 
-      "%overall% 
-  i s | t1@0 t2@1 t3@2 t4@3 t5@4;",
-    OUTPUT = "sampstat standardized residual tech4 tech11 tech14;",
-    
-    #PLOT = 
-    #  "type = plot3; 
-    #series = Enjoy-Adult(*);",
-    
-    usevariables = colnames(test_df),
-    rdata = test_df)
-  
-  model_enum_fit <- mplusModeler(model_enum, 
-                                 dataout = glue(here("mplus_files",
-                                                     "m_mix0_loop.dat")),
-                               modelout = glue(here("mplus_files",
-                                                    "c{k}_m_mix0_loop.inp")) ,
-                               ## dataout is always the same, modelout specified 
-                               ## according to current value of k
-                               check = TRUE, run = TRUE, hashfilename = FALSE)
-})
-
-## Note: With 200 100 starts, this takes VERY LONG to RUN!!!
-
-## Next more complicated option: clustering (family level)
-model_mixture_clus0 <- update(
-  model_mixture0, 
-  VARIABLE = 	~ "usevar = t1-t5;
-               CLASSES = c(2);
-               cluster = FamilyNumber; ! might be too long and thus shortened
-               ! categorical = t1-t5;",
-  ANALYSIS = ~"type = mixture complex;
-                 starts = 100 20;",
-  MODEL = 
-    ~"%overall% 
-  ! this is still very unclear! change once read more about GMM
-  b0 by t1@1 t2@1 t3@1 t4@1 t5@1;
-  b1 by t1@0 t2@1 t3@2 t4@3 t5@4;
-  [t1@0 t2@0 t3@0 t4@0 t5@0]; 
-  t1* t2* t3* t4* t5*
-  b0*1;
-  b1*.2;
-  b0 with b1@0;
-  %c#1%
-  [b0*1 b1*.1];
-  %c#2%
-  [b0*5 b1*.1];"
-)
-
-fit_mixture_clus0 <- mplusModeler(
-  model_mixture_clus0,
-  dataout = here("mplus_files", "m_mix_clus0.dat"),
-  modelout = here("mplus_files", "m_mix_clus0.inp"),
-  check = TRUE, run = TRUE, hashfilename = FALSE,
-  Mplus_command = "C:/Program Files/Mplus/Mplus.exe")
-
-## Model is working!, clustering should be taken into account now 
-## at least from families, check if twin status can also be 
-## taken into account, check if models are correctly calculated with AIC 
-## difference
-
-
-## example code for the update of models! always needs the tilde to 
-## update what R thinks is a formula! 
-example1 <- mplusObject(MODEL = "mpg ON wt;",
-                        usevariables = c("mpg", "hp"), rdata = mtcars)
-x <- ~ "ESTIMATOR = ML;"
-example1 <- update(example1, ANALYSIS = ~ "ESTIMATOR = ML;")
-str(update(example1, ANALYSIS = x))
 
 
 
