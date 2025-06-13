@@ -202,9 +202,12 @@ test_q_name <- test_q[length(test_q)]
 
 var_names_test <- unlist(unname(CBCL_questions_list[test_q_name]))
 
+## issue here: getting the number of measures also included in the select statement! 
+
 test_df <- train_data %>%
-  select(FISNumber, FamilyNumber, twzyg, any_of(test_q),
-         matches(paste0(test_q, "\\b"))) %>%
+  select(FISNumber, FamilyNumber, twzyg, any_of(var_names_test),
+         #matches(paste0(test_q, "\\b"))
+         ) %>%
   rename("FISNr" = FISNumber, "FamNr" = FamilyNumber,
   ## renaming the variable that contains the string "n_measures" to "n_t"
          "n_t" = paste0("n_measures_", test_q_name))
@@ -242,8 +245,6 @@ for(class_nr in classes){
     ## most easy case: code model with one class, then 2-4 classes
     title_string <- paste0(class_nr, "-class model CBCL_question ", test_q_name)
     
-    
-    ## still code the missings here! 
     ## CONTINUE HERE!!!
     variable_string <- gsub("\n", "", paste0("usevar = t1",
                               "-",
@@ -258,7 +259,8 @@ for(class_nr in classes){
                               "cluster = FamNr;" ##classes = c(2);
                               ))
     analysis_string <-gsub("\n", "", paste0(
-    "estimator = mlr;
+    "type = complex;
+     estimator = mlr;
      link = probit;
      ALGORITHM = INTEGRATION;"
     ))
@@ -318,7 +320,9 @@ for(class_nr in classes){
       s*;
       i WITH s@0;"
       ))
-        }
+    }
+    
+    ## this model string works!
     
     output_string <- "standardized tech1 tech4 tech10;"
     
@@ -352,8 +356,6 @@ for(class_nr in classes){
     ## needs to be changed!
     ## CONTINUE HERE!!!
     
-    ## R syntax correct but Mplus not, check output and try again
-    
     ## removing the datafile that was newly created 
     data_files_after <- setdiff(list.files(here::here("mplus_files")), 
                                 data_files_before)
@@ -362,6 +364,7 @@ for(class_nr in classes){
     dat_file <- data_files_after[grep("\\.dat$", data_files_after)]
     
     ## removing the .dat file from the directory 
+    cat("Removing .dat file", "\n")
     file.remove(here("mplus_files", dat_file))
     
     ## saving name of .out file that was newly created
@@ -369,19 +372,32 @@ for(class_nr in classes){
     
     ## changing name of the newly created .out file in the directory
     ## to "out_file_new.out"
+    cat("Renaming .out file", "\n")
     file.rename(here("mplus_files", out_file), 
                 here("mplus_files",
                      paste0("model_", class_nr, "_class_", test_q_name, ".out")
                 )
-    ) ## suppress TRUE in the output
-    ## writing function from lines 357 - 376
-    ## CONTINUE HERE!!!
+    )
     
     ## saving model fit to list
     list_models <- append(list_models, fit_model_1_class)
     ## still rename the saved element with the name of the CBCL question
     ## currently being iterated
-    }
+  }
+  
+  else {
+    ## here code mixture model with 2-4 classes (automatic starting values,
+    ## use the material from the SEM classes)
+    
+    
+  }
+  
+  
+  
+  
+  
+  ## idea: instead of loading all the model output into R, only read in AICs, 
+  ## then select lowest, only load in this model with the readModels command
 }
 
 
