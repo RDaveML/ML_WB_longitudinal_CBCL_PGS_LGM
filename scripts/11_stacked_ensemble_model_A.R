@@ -304,7 +304,7 @@ metrics_df <- cbind(data.frame(model_name = names(list_models)), metrics_df)
 bootstrap_metrics <- TRUE
 if(bootstrap_metrics) {
   filepath <- here::here("data", "intermediate", "bootstrap")
-  list_files <- grep(".rds", list.files(filepath), value = TRUE)
+  list_files <- grep("workspace_model_A", list.files(filepath), value = TRUE)
   
   
   ## rf model level 1
@@ -352,14 +352,25 @@ if(bootstrap_metrics) {
   RMSE_rf_boot <- boot_metrics_rf %>%
     select(RMSE) %>%
     pull()
+  saveRDS(
+    RMSE_rf_boot,
+    here::here("data", "intermediate", "bootstrap", "RMSE_rf_boot_A.rds"))
   
   R2_rf_boot <- boot_metrics_rf %>%
     select(`R²`) %>%
     pull()
+
+saveRDS(
+    R2_rf_boot,
+    here::here("data", "intermediate", "bootstrap", "R2_rf_boot_A.rds"))
   
   MAE_rf_boot <- boot_metrics_rf %>%
     select(MAE) %>%
     pull()
+  
+  saveRDS(
+    MAE_rf_boot,
+    here::here("data", "intermediate", "bootstrap", "MAE_rf_boot_A.rds"))
   
   ## Calculate Bootstrapped CIs of the metrics
   
@@ -436,14 +447,25 @@ if(bootstrap_metrics) {
   RMSE_xgb_boot <- boot_metrics_xgb %>%
     select(RMSE) %>%
     pull()
+  saveRDS(
+    RMSE_xgb_boot,
+    here::here("data", "intermediate", "bootstrap", "RMSE_xgb_boot_A.rds"))
   
   R2_xgb_boot <- boot_metrics_xgb %>%
     select(`R²`) %>%
     pull()
   
+  saveRDS(
+    R2_xgb_boot,
+    here::here("data", "intermediate", "bootstrap", "R2_xgb_boot_A.rds"))
+  
   MAE_xgb_boot <- boot_metrics_xgb %>%
     select(MAE) %>%
     pull()
+  
+  saveRDS(
+    MAE_xgb_boot,
+    here::here("data", "intermediate", "bootstrap", "MAE_xgb_boot_A.rds"))
   
   ## Calculate Bootstrapped CIs of the metrics
   
@@ -546,14 +568,25 @@ if(bootstrap_metrics) {
   RMSE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
     select(RMSE) %>%
     pull()
+  saveRDS(
+    RMSE_stacked_lm_boot,
+    here::here("data", "intermediate", "bootstrap", "RMSE_stacked_lm_boot_A.rds"))
   
   R2_stacked_lm_boot <- boot_metrics_stacked_lm %>%
     select(`R²`) %>%
     pull()
   
+  saveRDS(
+    R2_stacked_lm_boot,
+    here::here("data", "intermediate", "bootstrap", "R2_stacked_lm_boot_A.rds"))
+  
   MAE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
     select(MAE) %>%
     pull()
+  
+  saveRDS(
+    MAE_stacked_lm_boot,
+    here::here("data", "intermediate", "bootstrap", "MAE_stacked_lm_boot_A.rds"))
   
   ## Calculate Bootstrapped CIs of the metrics
   
@@ -677,6 +710,121 @@ if(bootstrap_metrics) {
 ## First train the models on server (alternative: run 2 test runs on SNELLIUS,
 ## check how much budget it consumed)
 
+
+
+## boot.ci objects for all saved dfs
+
+##-----------------------------------------------------------------------------
+
+## CONTINUE HERE!! See if this works!
+
+## rf
+
+## RMSE
+RMSE_rf_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "RMSE_rf_boot_A.rds"))
+
+boot_obj_rmse_rf <- boot(
+  data = RMSE_rf_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_rmse_rf, type = "perc")
+
+  ## R²
+RMSE_rf_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "R2_rf_boot_A.rds"))
+boot_obj_R2_rf <- boot(
+  data = R2_rf_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_R2_rf, type = "perc")
+
+  ## MAE
+RMSE_rf_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "MAE_rf_boot_A.rds"))
+boot_obj_MAE_rf <- boot(
+  data = MAE_rf_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_MAE_rf, type = "perc")
+
+  ##-----------------------------------------------------------------------------
+
+## xgb
+
+## RMSE
+RMSE_xgb_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "RMSE_xgb_boot_A.rds"))
+
+boot_obj_rmse_xgb <- boot(
+  data = RMSE_xgb_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_rmse_xgb, type = "perc")
+
+  ## R²
+RMSE_xgb_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "R2_xgb_boot_A.rds"))
+boot_obj_R2_xgb <- boot(
+  data = R2_xgb_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_R2_xgb, type = "perc")
+
+## MAE
+RMSE_xgb_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "MAE_xgb_boot_A.rds"))
+boot_obj_MAE_xgb <- boot(
+  data = MAE_xgb_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_MAE_xgb, type = "perc")
+  
+  ##-----------------------------------------------------------------------------
+  
+  ## stacked_lm
+  
+  ## RMSE
+  RMSE_stacked_lm_boot <- readRDS(
+    here::here("data", "intermediate", "bootstrap", "RMSE_stacked_lm_boot_A.rds"))
+  
+  boot_obj_rmse_stacked_lm <- boot(
+    data = RMSE_stacked_lm_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_rmse_stacked_lm, type = "perc")
+  
+  ## R²
+  RMSE_stacked_lm_boot <- readRDS(
+    here::here("data", "intermediate", "bootstrap", "R2_stacked_lm_boot_A.rds"))
+  boot_obj_R2_stacked_lm <- boot(
+    data = R2_stacked_lm_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_R2_stacked_lm, type = "perc")
+  
+  ## MAE
+  RMSE_stacked_lm_boot <- readRDS(
+    here::here("data", "intermediate", "bootstrap", "MAE_stacked_lm_boot_A.rds"))
+  boot_obj_MAE_stacked_lm <- boot(
+    data = MAE_stacked_lm_boot,
+    statistic = function(d, i)
+      mean(d[i]),
+    R = 1000
+  )
+  boot.ci(boot_obj_MAE_stacked_lm, type = "perc")
 
 ##-----------------------------------------------------------------------------
 

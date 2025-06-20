@@ -39,6 +39,12 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 ## setting working directory
 setwd(here::here())
 
+  ## creating the directory "cprobabilities" within current directory 
+  ## if it does not yet exist
+  if(!dir.exists(here::here("mplus_files", "cprobabilities"))){
+    dir.create(here::here("mplus_files", "cprobabilities"))
+  }
+
 ## loading in necessary dataset and vectors / tables of variables
 
 ## loading in training set
