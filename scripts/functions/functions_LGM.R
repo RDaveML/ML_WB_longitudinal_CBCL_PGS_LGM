@@ -559,8 +559,22 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
       (length(mix_out_console) - length(classes)):length(mix_out_console)]
   mix_sum_table
   ## turn this into dataframe (first line should be column names)
-  ## CONTINUE HERE!! 
-  ## before continuing, change working directory!
+
+  ## mix_sum_table is now 5 lines of characters. It should be a dataframe
+  ## where the first line is the column names and the rest are the values
+  df_mix_sum_table <- read.table(text = mix_sum_table[2:5], header = FALSE, 
+                                 stringsAsFactors = FALSE)
+  
+  colnames(df_mix_sum_table) <- c("Open", "Nr", "Title", "Classes",
+                                  "AIC", "BIC", "aBIC", "Entropy",
+                                  "min_N", "max_N", "min_prob", "max_prob")
+  df_mix_sum_table
+  
+  ## still set this right, not enough column names, title does not contain number
+  ## of classes, data files should also be part of the df! 
+  
+  ## CONTINUE HERE!!!
+  setwd(dir_CBCL_question)
   
   ## alternative might be mixtureSummaryTable() function?
   

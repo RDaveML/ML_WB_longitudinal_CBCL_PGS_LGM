@@ -68,7 +68,7 @@ system.time({all_predictors_model_A <- list_files %>%
 ## preparatory objects
 
 ncores_ntr <- 48
-nsim_shap <- 50
+nsim_shap <- 10
 # Create a custom prediction function for ranger model
 pfun_rf <- function(object, newdata) {
   predict(object, data = newdata)$predictions
@@ -144,7 +144,7 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
   shap_df_rf <- cbind(shap_values_rf, shap_values_0)
   
   ## combining aggregated (mean) shap values with the zero dataframe
-  shap_values_rf_run <- cbind(as.data.frame(t(colMeans(shap_values_rf))), 
+  shap_values_rf_run <- cbind(as.data.frame(t(colMeans(abs(shap_values_rf)))), 
                                shap_values_0)
 
   shap_values_rf_run$run <- run
@@ -172,7 +172,7 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
   shap_df_xgb <- cbind(shap_values_xgb, shap_values_0)
   
   ## combining aggregated (mean) shap values with the zero dataframe
-  shap_values_xgb_run <- cbind(as.data.frame(t(colMeans(shap_values_xgb))), 
+  shap_values_xgb_run <- cbind(as.data.frame(t(colMeans(abs(shap_values_xgb)))), 
                                 shap_values_0)
   shap_values_xgb_run$run <- run
   
@@ -380,20 +380,7 @@ system.time({all_predictors_model_A <- list_files %>%
   unique()
 })
 
-## looping over all bootstrapped models: if a predictor that is contained in the 
-## compare the vectors "all_predictors_model_A and the element 
-## "predictors_level_1 from each element in the list_files list
-## all predictors that are not contained in predictors_level_1 should be 
-## assigned zero. Thus, a dataframe with one row and as many columns as there
-## are predictors in that are not contained in the list of predictors should be 
-## created and all values should be set to zero
-## afterwards, the shap values for a random forest model and and xgboost model
-## should be calculated as coded above. The table of shap values should then be 
-## combined with the dataframe of zero predictors so in the end, there is one 
-## dataframe where every predictor that is contained in all_predictors_model_A
-## has a value, either the actual SHAP value, or zero if this predictor was not in the 
-## model
-## SHAP_list <- lapply(1:length(list_files), function(run){
+
 }
 
 

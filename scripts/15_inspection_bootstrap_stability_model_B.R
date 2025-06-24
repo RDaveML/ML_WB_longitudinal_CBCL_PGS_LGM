@@ -116,8 +116,10 @@ if(outcome_saved == FALSE){
   
   ## reading in full data, selecting output column and filter for ids that 
   ## have PGS
-  data_full_raw <- readRDS(
-    here::here("data", "intermediate", "data_model_A.rds"))
+  full_prepared_data_B <- readRDS(
+    here::here(
+      "data", "intermediate", "prep_data_B", "full_prepared_data_B_1.rds"))
+  data_full_raw <- rbind(full_prepared_data_B$x_train, full_prepared_data_B$x_test)
   data_true_y <- data_full_raw %>%
     select(FISNumber, QoL_simple) %>%
     filter(FISNumber %in% ids_full)
@@ -125,6 +127,7 @@ if(outcome_saved == FALSE){
   ## saving outcome data to load them in simpler later
   saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome_B.RDS"))
   rm(data_full_raw)
+  rm(full_prepared_data_B)
 }
 
 ## loading in data with true y scores
@@ -320,7 +323,9 @@ png(filename = file.path(plot_path, "B_mape_inst_xgb.png"), width = 800, height 
 replayPlot(all_plots_models$xgb$plot_mape_inst_model)
 dev.off()
 
-
+save.image(
+  here::here("data", "intermediate", "workspace_stability_model_B.RData")
+  )
 ## eoS
 
 
