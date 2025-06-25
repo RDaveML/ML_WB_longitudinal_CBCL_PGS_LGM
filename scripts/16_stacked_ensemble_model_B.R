@@ -4,7 +4,7 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-06-06
+# Date: 2025-06-25
 #
 # Script Name: 16_stacked_ensemble_model_B.R
 #
@@ -183,8 +183,7 @@ metrics_df <- data.frame()
 
 list_models <- list("lm_stack" = model_lm_stack,
                     "rf" = model_rf,
-                    "xgb" = model_xgb,
-                    "xgb_stack" = run_xgb_stack$run_xgb_stack)
+                    "xgb" = model_xgb)
 
 for(mod in 1:length(list_models)) {
   if (mod == 1) {
@@ -511,18 +510,135 @@ if(bootstrap_metrics) {
   
 }
 
-## First train the models on server (alternative: run 2 test runs on SNELLIUS,
-## check how much budget it consumed)
-
-
-##-----------------------------------------------------------------------------
-
-
 ## saving and loading in workspace
 ## CONTINUE HERE (next: turn part above into function, also including xgboost model, 
 ## so that data do not have to be loaded in several times)
 save.image(here::here("data", "intermediate", "workspace_stacking_B_server.RData"))
 load(here::here("data", "intermediate", "workspace_stacking_B_server.RData"))
+
+
+metrics_analysis <- FALSE
+if(metrics_analysis == FALSE){
+  stop("Stop! Only calculation, analysis on machine!")
+}
+
+
+## rf
+
+## RMSE
+RMSE_rf_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "RMSE_rf_boot_B.rds"))
+
+boot_obj_rmse_rf <- boot(
+  data = RMSE_rf_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_rmse_rf, type = "perc")
+
+## R²
+R2_rf_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "R2_rf_boot_B.rds"))
+boot_obj_R2_rf <- boot(
+  data = R2_rf_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_R2_rf, type = "perc")
+
+## MAE
+MAE_rf_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "MAE_rf_boot_B.rds"))
+boot_obj_MAE_rf <- boot(
+  data = MAE_rf_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_MAE_rf, type = "perc")
+
+##-----------------------------------------------------------------------------
+
+## xgb
+
+## RMSE
+RMSE_xgb_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "RMSE_xgb_boot_B.rds"))
+
+boot_obj_rmse_xgb <- boot(
+  data = RMSE_xgb_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_rmse_xgb, type = "perc")
+
+## R²
+R2_xgb_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "R2_xgb_boot_B.rds"))
+boot_obj_R2_xgb <- boot(
+  data = R2_xgb_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_R2_xgb, type = "perc")
+
+## MAE
+MAE_xgb_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "MAE_xgb_boot_B.rds"))
+boot_obj_MAE_xgb <- boot(
+  data = MAE_xgb_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_MAE_xgb, type = "perc")
+
+##-----------------------------------------------------------------------------
+
+## stacked_lm
+
+## RMSE
+RMSE_stacked_lm_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "RMSE_stacked_lm_boot_B.rds"))
+
+boot_obj_rmse_stacked_lm <- boot(
+  data = RMSE_stacked_lm_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_rmse_stacked_lm, type = "perc")
+
+## R²
+R2_stacked_lm_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "R2_stacked_lm_boot_B.rds"))
+boot_obj_R2_stacked_lm <- boot(
+  data = R2_stacked_lm_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_R2_stacked_lm, type = "perc")
+
+## MAE
+MAE_stacked_lm_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "MAE_stacked_lm_boot_B.rds"))
+boot_obj_MAE_stacked_lm <- boot(
+  data = MAE_stacked_lm_boot,
+  statistic = function(d, i)
+    mean(d[i]),
+  R = 1000
+)
+boot.ci(boot_obj_MAE_stacked_lm, type = "perc")
+
+##-----------------------------------------------------------------------------
+
+## STILL ADD THE SAVERDS for the boot objects before reading them
+## CONTINUE HERE!!! 
+
+
+##-----------------------------------------------------------------------------
+
 
 
 ##-----------------------------------------------------------------------------

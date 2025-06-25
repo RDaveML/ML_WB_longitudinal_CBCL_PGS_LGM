@@ -4,9 +4,9 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-06-06
+# Date: 2025-06-25
 #
-# Script Name: 15_inspection_bootstrap_stability_model_B.R
+# Script Name: 19_inspection_bootstrap_stability_model_C.R
 #
 # Script Description: 
 # This script does the bootstraping stability check of ML predictions (Riley et.
@@ -41,7 +41,7 @@ source(here::here("scripts", "functions", "functions_plotting_ML.R"))
 ## creating list of workspaces
 #filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
 filepath <- here::here("data", "intermediate", "bootstrap")
-list_files <- grep("model_B", list.files(filepath), value = TRUE)
+list_files <- grep("model_C", list.files(filepath), value = TRUE)
 
 
 
@@ -105,7 +105,7 @@ names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
 
 ## loading in data with true y scores
 ## outcome_saved <- TRUE
-outcome_saved <- TRUE
+outcome_saved <- FALSE
 if(outcome_saved == FALSE){
   
   train_ids <- readRDS(
@@ -116,22 +116,22 @@ if(outcome_saved == FALSE){
   
   ## reading in full data, selecting output column and filter for ids that 
   ## have PGS
-  full_prepared_data_B <- readRDS(
+  full_prepared_data_C <- readRDS(
     here::here(
-      "data", "intermediate", "prep_data_B", "full_prepared_data_B_1.rds"))
-  data_full_raw <- rbind(full_prepared_data_B$x_train, full_prepared_data_B$x_test)
+      "data", "intermediate", "prep_data_C", "full_prepared_data_C_1.rds"))
+  data_full_raw <- rbind(full_prepared_data_C$x_train, full_prepared_data_C$x_test)
   data_true_y <- data_full_raw %>%
     select(FISNumber, QoL_simple) %>%
     filter(FISNumber %in% ids_full)
   
   ## saving outcome data to load them in simpler later
-  saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome_B.RDS"))
+  saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome_C.RDS"))
   rm(data_full_raw)
-  rm(full_prepared_data_B)
+  rm(full_prepared_data_C)
 }
 
 ## loading in data with true y scores
-data_true_y <- readRDS(here::here("data", "intermediate", "data_outcome_B.RDS")) %>%
+data_true_y <- readRDS(here::here("data", "intermediate", "data_outcome_C.RDS")) %>%
   rename(true_y = QoL_simple)
 
 ## Make one dataframe for all random forest predictions from the workspaces
@@ -285,26 +285,26 @@ for (model_name in names(model_info)) {
 ## saving plots
 
 ## prediction instability
-ggsave(filename = "B_pred_inst_rf.png",
+ggsave(filename = "C_pred_inst_rf.png",
        plot = all_plots_models$rf$plot_pred_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "B_pred_inst_xgb.png",
+ggsave(filename = "C_pred_inst_xgb.png",
        plot = all_plots_models$xgb$plot_pred_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
 ## calibration instability
-ggsave(filename = "B_cal_inst_smooth_rf.png",
+ggsave(filename = "C_cal_inst_smooth_rf.png",
        plot = all_plots_models$rf$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "B_cal_inst_smooth_xgb.png",
+ggsave(filename = "C_cal_inst_smooth_xgb.png",
        plot = all_plots_models$xgb$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
@@ -315,18 +315,18 @@ ggsave(filename = "B_cal_inst_smooth_xgb.png",
 plot_path <- here::here("data", "intermediate", "bootstrap", "plots")
 
 # Save the plot
-png(filename = file.path(plot_path, "B_mape_inst_rf.png"), width = 800, height = 600)
+png(filename = file.path(plot_path, "C_mape_inst_rf.png"), width = 800, height = 600)
 replayPlot(all_plots_models$rf$plot_mape_inst_model)
 dev.off()
 
-png(filename = file.path(plot_path, "B_mape_inst_xgb.png"), width = 800, height = 600)
+png(filename = file.path(plot_path, "C_mape_inst_xgb.png"), width = 800, height = 600)
 replayPlot(all_plots_models$xgb$plot_mape_inst_model)
 dev.off()
 
 ## saving image to re-use
 save.image(
-  here::here("data", "intermediate", "workspace_stability_model_B.RData")
-  )
+  here::here("data", "intermediate", "workspace_stability_model_C.RData")
+)
 ## eoS
 
 

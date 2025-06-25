@@ -536,16 +536,19 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   ## move all .dat files in current directory that contain
   ## CBCL_question and a number in their filename connected by an 
   ## underscore and move them to the directory "cprobabilities"
-  list_dat_files <- grep(list.files(), 
+  dat_files <- grep(list.files(), 
                pattern = paste0(CBCL_question, "_\\d+\\.dat$"),
                value = TRUE)
   
-  list_inp_files <- grep(list.files(), 
-                         pattern = paste0(CBCL_question, "_\\d+\\.inp$"),
+  inp_files <- grep(list.files(), 
+                         pattern = paste0(CBCL_question, "_\\d+\\_class.inp$"),
                          value = TRUE)
   
-  list_out_files <- grep(list.files(), 
-                         pattern = paste0(CBCL_question, "_\\d+\\.out$"),
+  ## .out files somehow always make the CBCL question lowercase, 
+  ## take this into account here
+  out_files <- grep(list.files(), 
+                         pattern = paste0(tolower(CBCL_question),
+                                          "_\\d+\\_class.out$"),
                          value = TRUE)
   
   
@@ -562,29 +565,35 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
 
   ## mix_sum_table is now 5 lines of characters. It should be a dataframe
   ## where the first line is the column names and the rest are the values
-  df_mix_sum_table <- read.table(text = mix_sum_table[2:5], header = FALSE, 
+  df_mix_sum_table <- read.table(text = mix_sum_table[2:5], header = FALSE,
                                  stringsAsFactors = FALSE)
+
+  ## merge second and third column together
+
   
   colnames(df_mix_sum_table) <- c("Open", "Nr", "Title", "Classes",
                                   "AIC", "BIC", "aBIC", "Entropy",
                                   "min_N", "max_N", "min_prob", "max_prob")
+    df_mix_sum_table <- df_mix_sum_table %>%
+    mutate(Title = paste(df_mix_sum_table$Nr, df_mix_sum_table$Title,
+                         sep = " ")) %>%
+    select(-Nr, -Title, -Open)
+  
   df_mix_sum_table
   
-  ## still set this right, not enough column names, title does not contain number
-  ## of classes, data files should also be part of the df! 
+  ## expand the dataframe with the filenames
+  df_mix_sum_table$dat_file <- dat_files
+  df_mix_sum_table$inp_file <- inp_files
+  df_mix_sum_table$out_file <- out_files
+  
+  View(df_mix_sum_table)
   
   ## CONTINUE HERE!!!
   setwd(dir_CBCL_question)
   
   ## alternative might be mixtureSummaryTable() function?
-  
-  ## for now: Only use minimal group size and BIC as filters for choosing the 
-  ## model!
-  
-  ## expand the dataframe with the filenames
-  mix_sum_table$dat_file <- list_dat_files
-  mix_sum_table$inp_file <- list_inp_files
-  mix_sum_table$out_file <- list_out_files
+  ## in combination with readModels function?
+  readModels(target = getwd(), what = "summaries")
   
   ## for now: Only use minimal group size and BIC as filters for choosing the 
   ## model!

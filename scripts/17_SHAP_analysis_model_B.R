@@ -69,9 +69,9 @@ system.time({all_predictors_model_B <- list_files %>%
 
 ## for run of all bootstrapped workspaces, adjust this and run on cluster
 
-### CONTINUE HERE!!!
-ncores_ntr <- 4
-# ncores_ntr <- 48
+
+# ncores_ntr <- 4
+ncores_ntr <- 48
 nsim_shap <- 10
 # nsim_shap <- 50
 # Create a custom prediction function for ranger model
@@ -150,7 +150,7 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
   shap_df_rf <- cbind(shap_values_rf, shap_values_0)
   
   ## combining aggregated (mean) shap values with the zero dataframe
-  shap_values_rf_run <- cbind(as.data.frame(t(colMeans(shap_values_rf))), 
+  shap_values_rf_run <- cbind(as.data.frame(t(colMeans(abs(shap_values_rf)))), 
                               shap_values_0)
   
   shap_values_rf_run$run <- run
@@ -178,7 +178,7 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
   shap_df_xgb <- cbind(shap_values_xgb, shap_values_0)
   
   ## combining aggregated (mean) shap values with the zero dataframe
-  shap_values_xgb_run <- cbind(as.data.frame(t(colMeans(shap_values_xgb))), 
+  shap_values_xgb_run <- cbind(as.data.frame(t(colMeans(abs(shap_values_xgb)))), 
                                shap_values_0)
   shap_values_xgb_run$run <- run
   
@@ -208,7 +208,7 @@ t01 <- Sys.time()
 cat("duration entire script (model B, Bootstrapping SHAP values): ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
-plot(FALSE)
+plot <- FALSE
 if(plot == FALSE){
   stop("only calculating the SHAP values, no plotting")
 }
@@ -253,5 +253,21 @@ SHAP_analysis_plots[[1]]$plot
 ## plot for xgb
 SHAP_analysis_plots[[2]]$plot
 
+## saving plots
+plot_path <- here::here("data", "plots")
 
+ggsave(filename = "SHAP_20_B_rf.png",
+       plot = SHAP_analysis_plots[[1]]$plot,
+       device = "png",
+       width = 8,
+       path = plot_path,
+       create.dir = TRUE)
+
+ggsave(filename = "SHAP_20_B_xgb.png",
+       plot = SHAP_analysis_plots[[2]]$plot,
+       device = "png",
+       width = 8,
+       path = plot_path,
+       create.dir = TRUE)
+dev.off()
 ## eoS

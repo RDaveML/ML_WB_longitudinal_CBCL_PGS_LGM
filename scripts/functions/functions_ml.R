@@ -1431,7 +1431,6 @@ shap_calc <- function(x_shap, model, pfun, ncores, nsim = 10){
 df_sig_quantile <- function(df, alpha = 0.05){
   lower_alpha <- (0 + alpha) / 2
   upper_alpha <- 1 - lower_alpha
-  ## CONTINUE HERE!!
   CI_bounds_df <- t(apply(
     df, 2, quantile, probs = c(lower_alpha, upper_alpha))) %>%
     as.data.frame() %>%
@@ -1473,7 +1472,7 @@ SHAP_viz_top_x <- function(shap_df, shap_df_name,
       var_name %in% covariates, "covariate", "feature"),
       ## column to detect the features with the highest absolute mean SHAP values
       abs_mean_SHAP = abs(mean_SHAP),
-      significant = ifelse(upper_bound_CI < 0 | lower_bound_CI > 0,
+      significant = ifelse(lower_bound_CI > 0,
                            "significant",
                            "non-significant")) %>%
     arrange(desc(abs_mean_SHAP))
@@ -1489,12 +1488,11 @@ SHAP_viz_top_x <- function(shap_df, shap_df_name,
          aes(x = var_name, y = mean_SHAP, fill = covariate)) + 
     geom_col() +
     geom_errorbar(aes(ymin = lower_bound_CI, ymax = upper_bound_CI)) +
-    geom_hline(yintercept = 0, size = 1.5) + 
     labs(title = paste0("Top ", show_features, " features with highest mean absolut feature importance for model ",
                         model_name),
          subtitle = paste0("Significance level: ", alpha),
          x = "Feature",
-         y = "Mean SHAP value",
+         y = "Mean absolute SHAP value",
          fill = "Feature type") +
     theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
   
@@ -1506,7 +1504,7 @@ SHAP_viz_top_x <- function(shap_df, shap_df_name,
 
 df_name <- function(shap_df){
   
-  ## Assiging the name of the object that was given to the argument "shap_df"
+  ## Assigning the name of the object that was given to the argument "shap_df"
   df_name_name <- deparse(substitute(shap_df))
   print(df_name_name)
   ## assigning model name
