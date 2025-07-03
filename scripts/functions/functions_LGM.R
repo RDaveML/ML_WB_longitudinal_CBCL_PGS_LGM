@@ -588,12 +588,37 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   
   View(df_mix_sum_table)
   
-  ## CONTINUE HERE!!!
-  setwd(dir_CBCL_question)
   
   ## alternative might be mixtureSummaryTable() function?
   ## in combination with readModels function?
-  readModels(target = getwd(), what = "summaries")
+  
+  ## so far, no output does not contain minimal latent class size,
+  ## still figure out how to include this metric
+  
+  ## Continue HERE!!
+  setwd(dir_CBCL_question)
+  
+  read_obj <- readModels(target = getwd(), what = "all")
+  df_mix_sum_table2 <- data.frame()
+  for(mod in 1:length(read_obj)){
+    model_summary <- read_obj[[mod]]$summaries
+    model_parameters <- read_obj[[mod]]$parameters
+    if(mod == 1){
+      model_summary$Entropy <- NA
+      print(dim(model_summary))
+      ## setting column names to the right place to enable rbind
+    } else {
+      model_summary <- cbind(select(model_summary, -Entropy),
+                             select(model_summary, Entropy))
+      print(dim(model_summary))
+      }
+    df_mix_sum_table2 <- rbind(df_mix_sum_table2, model_summary)
+    print(dim(df_mix_sum_table2))
+  }
+  
+  View(df_mix_sum_table2)
+  
+
   
   ## for now: Only use minimal group size and BIC as filters for choosing the 
   ## model!

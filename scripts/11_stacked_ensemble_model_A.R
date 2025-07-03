@@ -289,20 +289,73 @@ names(metrics_df) <- c("RMSE", "R²", "MAE")
 
 metrics_df <- cbind(data.frame(model_name = names(list_models)), metrics_df)
 
+## Calculate Bootstrapped CIs of the metrics
+  
+ metric_function <- function(data, indices) {
+  d <- data[indices, ]
+  metrics <- postResample(pred = d$pred, obs = d$obs)
+  return(metrics)
+}
+
+# Set number of bootstrap samples
+n_boot <- 1000
+
+# Placeholder for results
+boot_results <- list()
+
+# Loop through each model
+for (i in 1:length(list_models)) {
+  # Prepare predictions and observed values
+  if (i == 1) {
+    preds <- predict(list_models[[i]], data_test)
+  } else if (i == 2) {
+    preds <- workspace_orig$run_rf$preds_df_rf %>%
+      filter(FISNumber %in% test_ids) %>%
+      pull(predictions_rf)
+  } else if (i == 3) {
+    preds <- workspace_orig$run_xgb$preds_df_xgb %>%
+      filter(FISNumber %in% test_ids) %>%
+      pull(predictions_xgb)
+  } else {
+    preds <- run_xgb_stack$pred_xgb_stack
+  }
+  
+  df_model <- data.frame(obs = data_test$QoL_simple, pred = preds)
+  
+  # Run bootstrap
+  set.seed(123)  # For reproducibility
+  boot_out <- boot(data = df_model, statistic = metric_function, R = n_boot)
+  
+  # Confidence intervals
+  ci_rmse <- boot.ci(boot_out, type = "perc", index = 1)$percent[4:5]
+  ci_r2   <- boot.ci(boot_out, type = "perc", index = 2)$percent[4:5]
+  ci_mae  <- boot.ci(boot_out, type = "perc", index = 3)$percent[4:5]
+  
+  boot_results[[i]] <- list(
+    model_name = names(list_models)[i],
+    rmse_ci = ci_rmse,
+    r2_ci = ci_r2,
+    mae_ci = ci_mae
+  )
+}
+
+saveRDS(boot_results, 
+        here::here(
+          "data", "intermediate", "bootstrap", "boot_results_performace_A.rds"))
 
 ##-----------------------------------------------------------------------------
 
 
 
 
-## B) bootstrapped confidence intervals of model performance
+## B) stability of model performance
 
 ## iterate over all bootstrapped workspace items (might need to switch order
 ## and place this part more at the beginning of the script)
 
 ## creating list of workspaces
-bootstrap_metrics <- TRUE
-if(bootstrap_metrics) {
+stability_metrics <- TRUE
+if(stability) {
   filepath <- here::here("data", "intermediate", "bootstrap")
   list_files <- grep("workspace_model_A", list.files(filepath), value = TRUE)
   
@@ -346,7 +399,8 @@ if(bootstrap_metrics) {
   }
   
   colnames(boot_metrics_rf) <- c("run", "RMSE", "R²", "MAE")
-  ## potentially later to create entire dataframe with the metrics of all models:
+  ## potentially later to create entire dataframe with the metrics of all
+  ##  models:
   ## colnames(boot_metrics_rf) <- c("run", "RMSE_rf", "R²_rf", "MAE_rf")
   
   RMSE_rf_boot <- boot_metrics_rf %>%
@@ -354,7 +408,8 @@ if(bootstrap_metrics) {
     pull()
   saveRDS(
     RMSE_rf_boot,
-    here::here("data", "intermediate", "bootstrap", "RMSE_rf_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap", "stability_RMSE_rf_A.rds"))
   
   R2_rf_boot <- boot_metrics_rf %>%
     select(`R²`) %>%
@@ -362,7 +417,8 @@ if(bootstrap_metrics) {
 
 saveRDS(
     R2_rf_boot,
-    here::here("data", "intermediate", "bootstrap", "R2_rf_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap", "stability_R2_rf_boot_A.rds"))
   
   MAE_rf_boot <- boot_metrics_rf %>%
     select(MAE) %>%
@@ -370,7 +426,8 @@ saveRDS(
   
   saveRDS(
     MAE_rf_boot,
-    here::here("data", "intermediate", "bootstrap", "MAE_rf_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap", "stability_MAE_rf_boot_A.rds"))
   
   ## Calculate Bootstrapped CIs of the metrics
   
@@ -449,7 +506,8 @@ saveRDS(
     pull()
   saveRDS(
     RMSE_xgb_boot,
-    here::here("data", "intermediate", "bootstrap", "RMSE_xgb_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap", "stability_RMSE_xgb_boot_A.rds"))
   
   R2_xgb_boot <- boot_metrics_xgb %>%
     select(`R²`) %>%
@@ -457,7 +515,8 @@ saveRDS(
   
   saveRDS(
     R2_xgb_boot,
-    here::here("data", "intermediate", "bootstrap", "R2_xgb_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap", "stability_R2_xgb_boot_A.rds"))
   
   MAE_xgb_boot <- boot_metrics_xgb %>%
     select(MAE) %>%
@@ -465,7 +524,8 @@ saveRDS(
   
   saveRDS(
     MAE_xgb_boot,
-    here::here("data", "intermediate", "bootstrap", "MAE_xgb_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap", "stability_MAE_xgb_boot_A.rds"))
   
   ## Calculate Bootstrapped CIs of the metrics
   
@@ -525,7 +585,8 @@ saveRDS(
       full_join(pred_rf, by = "FISNumber") %>%
       full_join(pred_xgb, by = "FISNumber") %>%
       full_join(df_FIS_fam, by = "FISNumber") %>%
-      mutate(QoL_simple =  as.numeric(QoL_simple)) ## recoding outcome to numeric
+      mutate(QoL_simple =  as.numeric(QoL_simple))
+       ## recoding outcome to numeric
     
     data_train_run <- data_full %>%
       filter(FISNumber %in% train_ids_run)
@@ -560,7 +621,8 @@ saveRDS(
   }
   
   colnames(boot_metrics_stacked_lm) <- c("run", "RMSE", "R²", "MAE")
-  ## potentially later to create entire dataframe with the metrics of all models:
+  ## potentially later to create entire dataframe with the metrics of all
+  ##  models:
   ## colnames(boot_metrics_rf) <- c(
   ## "run", "RMSE_stack_lm", "R²_stack_lm", "MAE_stack_lm")
   
@@ -570,7 +632,9 @@ saveRDS(
     pull()
   saveRDS(
     RMSE_stacked_lm_boot,
-    here::here("data", "intermediate", "bootstrap", "RMSE_stacked_lm_boot_A.rds"))
+    here::here(
+      "data", "intermediate",
+      "bootstrap", "stability_RMSE_stacked_lm_boot_A.rds"))
   
   R2_stacked_lm_boot <- boot_metrics_stacked_lm %>%
     select(`R²`) %>%
@@ -578,7 +642,9 @@ saveRDS(
   
   saveRDS(
     R2_stacked_lm_boot,
-    here::here("data", "intermediate", "bootstrap", "R2_stacked_lm_boot_A.rds"))
+    here::here(
+      "data", "intermediate",
+      "bootstrap", "stability_R2_stacked_lm_boot_A.rds"))
   
   MAE_stacked_lm_boot <- boot_metrics_stacked_lm %>%
     select(MAE) %>%
@@ -586,7 +652,9 @@ saveRDS(
   
   saveRDS(
     MAE_stacked_lm_boot,
-    here::here("data", "intermediate", "bootstrap", "MAE_stacked_lm_boot_A.rds"))
+    here::here(
+      "data", "intermediate",
+      "bootstrap", "stability_MAE_stacked_lm_boot_A.rds"))
   
   ## Calculate Bootstrapped CIs of the metrics
   
@@ -707,17 +775,22 @@ saveRDS(
 
 }
 
+## First train the models on server (alternative: run 2 test runs on SNELLIUS,
+## check how much budget it consumed)
+
 
 
 ## boot.ci objects for all saved dfs
 
 ##-----------------------------------------------------------------------------
 
+
 ## rf
 
 ## RMSE
 RMSE_rf_boot <- readRDS(
-  here::here("data", "intermediate", "bootstrap", "RMSE_rf_boot_A.rds"))
+  here::here(
+    "data", "intermediate", "bootstrap", "stability_RMSE_rf_boot_A.rds"))
 
 boot_obj_rmse_rf <- boot(
   data = RMSE_rf_boot,
@@ -728,7 +801,8 @@ boot_obj_rmse_rf <- boot(
 boot.ci(boot_obj_rmse_rf, type = "perc")
 
   ## R²
-R2_rf_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "R2_rf_boot_A.rds"))
+RMSE_rf_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap", "stability_R2_rf_boot_A.rds"))
 boot_obj_R2_rf <- boot(
   data = R2_rf_boot,
   statistic = function(d, i)
@@ -738,7 +812,9 @@ boot_obj_R2_rf <- boot(
 boot.ci(boot_obj_R2_rf, type = "perc")
 
   ## MAE
-MAE_rf_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "MAE_rf_boot_A.rds"))
+RMSE_rf_boot <- readRDS(
+  here::here("data", "intermediate", "bootstrap",
+             "stability_MAE_rf_boot_A.rds"))
 boot_obj_MAE_rf <- boot(
   data = MAE_rf_boot,
   statistic = function(d, i)
@@ -753,7 +829,8 @@ boot.ci(boot_obj_MAE_rf, type = "perc")
 
 ## RMSE
 RMSE_xgb_boot <- readRDS(
-  here::here("data", "intermediate", "bootstrap", "RMSE_xgb_boot_A.rds"))
+  here::here(
+    "data", "intermediate", "bootstrap", "stability_RMSE_xgb_boot_A.rds"))
 
 boot_obj_rmse_xgb <- boot(
   data = RMSE_xgb_boot,
@@ -764,7 +841,8 @@ boot_obj_rmse_xgb <- boot(
 boot.ci(boot_obj_rmse_xgb, type = "perc")
 
   ## R²
-R2_xgb_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "R2_xgb_boot_A.rds"))
+RMSE_xgb_boot <- readRDS(here::here(
+  "data", "intermediate", "bootstrap", "stability_R2_xgb_boot_A.rds"))
 boot_obj_R2_xgb <- boot(
   data = R2_xgb_boot,
   statistic = function(d, i)
@@ -774,7 +852,8 @@ boot_obj_R2_xgb <- boot(
 boot.ci(boot_obj_R2_xgb, type = "perc")
 
 ## MAE
-MAE_xgb_boot <- readRDS(here::here("data", "intermediate", "bootstrap", "MAE_xgb_boot_A.rds"))
+RMSE_xgb_boot <- readRDS(here::here(
+  "data", "intermediate", "bootstrap", "stability_MAE_xgb_boot_A.rds"))
 boot_obj_MAE_xgb <- boot(
   data = MAE_xgb_boot,
   statistic = function(d, i)
@@ -789,7 +868,9 @@ boot.ci(boot_obj_MAE_xgb, type = "perc")
   
   ## RMSE
   RMSE_stacked_lm_boot <- readRDS(
-    here::here("data", "intermediate", "bootstrap", "RMSE_stacked_lm_boot_A.rds"))
+    here::here(
+      "data", "intermediate", "bootstrap",
+      "stability_RMSE_stacked_lm_boot_A.rds"))
   
   boot_obj_rmse_stacked_lm <- boot(
     data = RMSE_stacked_lm_boot,
@@ -800,8 +881,10 @@ boot.ci(boot_obj_MAE_xgb, type = "perc")
   boot.ci(boot_obj_rmse_stacked_lm, type = "perc")
   
   ## R²
-  R2_stacked_lm_boot <- readRDS(
-    here::here("data", "intermediate", "bootstrap", "R2_stacked_lm_boot_A.rds"))
+  RMSE_stacked_lm_boot <- readRDS(
+    here::here(
+      "data", "intermediate", "bootstrap",
+      "stability_R2_stacked_lm_boot_A.rds"))
   boot_obj_R2_stacked_lm <- boot(
     data = R2_stacked_lm_boot,
     statistic = function(d, i)
@@ -811,8 +894,10 @@ boot.ci(boot_obj_MAE_xgb, type = "perc")
   boot.ci(boot_obj_R2_stacked_lm, type = "perc")
   
   ## MAE
-  MAE_stacked_lm_boot <- readRDS(
-    here::here("data", "intermediate", "bootstrap", "MAE_stacked_lm_boot_A.rds"))
+  RMSE_stacked_lm_boot <- readRDS(
+    here::here(
+      "data", "intermediate", "bootstrap",
+      "stability_MAE_stacked_lm_boot_A.rds"))
   boot_obj_MAE_stacked_lm <- boot(
     data = MAE_stacked_lm_boot,
     statistic = function(d, i)
@@ -825,9 +910,11 @@ boot.ci(boot_obj_MAE_xgb, type = "perc")
 
 
 ## saving and loading in workspace
-## CONTINUE HERE (next: turn part above into function, also including xgboost model, 
+## CONTINUE HERE (next: turn part above into function,
+## also including xgboost model, 
 ## so that data do not have to be loaded in several times)
-save.image(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
+save.image(here::here(
+  "data", "intermediate", "workspace_stacking_A_server.RData"))
 load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
 
 
