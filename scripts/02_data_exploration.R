@@ -807,6 +807,22 @@ cor_matrix_CBCL <- data_CBCL_filter2 %>%
 ## Reading in CBCL items overview table
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
+
+
+## creating df with CBCL variables and age variables
+CBCL_age_df <- c("agem3", "ageq5", "agem7", "agem10", "agem12",
+                 "ages14", "ages16", NA)
+
+CBCL_items <- CBCL_items_table %>%
+  select(starts_with("age"), question_number)
+
+names(CBCL_age_df) <- colnames(CBCL_items)
+
+CBCL_age_df <- rbind(CBCL_items, CBCL_age_df)
+
+saveRDS(CBCL_age_df,
+        file = here::here("data", "intermediate", "CBCL_age_df.RDS"))
+
 ## Attaching question labels to summary df
 
 ## creating dataframe with itemcode and question

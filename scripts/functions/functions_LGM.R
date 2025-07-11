@@ -68,23 +68,54 @@ return(data_LGM)
   
 }
 
-LGM_preprocess <- function(CBCL_question, df, questions_list, items_table){
+## function to select the correct age variables for a specific CBCL question
+## returns character vector of correct 
+## CBCL_age_df is loaded into Script 07 before executing
+age_var_select <- function(CBCL_age_df, CBCL_question){
+  age_vars <- CBCL_age_df %>%
+    select(all_of(c(CBCL_question, "age_var"))) %>%
+    filter(!is.na(!!sym(CBCL_question))) %>%
+    select(age_var) %>%
+    pull()
+  return(age_vars)
+}
+
+## Data preprocessing function: variables that belong to specific
+## CBCL question are selected plus relevant age variables and data is being
+## proprocessed for Mplus modeling
+LGM_preprocess <- function(CBCL_age_df, 
+                           CBCL_question, df, questions_list, items_table){
   
   ## setting name of the question 
   question <- na.omit(as.character(filter(items_table, question_number == CBCL_question)))
   q_name <- question[length(question)]
   var_names_LGM <- unlist(unname(questions_list[q_name]))
+  age_vars_LGM <- age_var_select(CBCL_age_df = CBCL_age_df,
+                                 CBCL_question = CBCL_question)
 
   data_LGM <- df %>%
   select(FISNumber, FamilyNumber, twzyg, any_of(question),
-         matches(paste0(question, "\\b"))) %>%
+         matches(paste0(question, "\\b")), all_of(age_vars_LGM)) %>%
   rename("FISNr" = FISNumber, "FamNr" = FamilyNumber,
   ## renaming the variable that contains the string "n_measures" to "n_t"
          "n_t" = paste0("n_measures_", q_name))
-## renaming so that variable names are max 8 characters long
 
-colnames(data_LGM)[colnames(data_LGM) %in% var_names_LGM] <- 
-  paste0("t", 1:length(var_names_LGM))
+  ## Here, it also needs to be added which of the age variables need to be 
+  ## kept!
+  
+  ## check here which variables are the correct ones and if I need to 
+  ## calculate age via the birthdate and the invulate
+    
+  ## renaming so that variable names are max 8 characters long
+
+  ## Ordinal items (to t)  
+  colnames(data_LGM)[colnames(data_LGM) %in% var_names_LGM] <- 
+    paste0("t", 1:length(var_names_LGM))
+
+  ## age variables (to ts, TimeScores)
+  ## age variables will be used as time score variables
+  colnames(data_LGM)[colnames(data_LGM) %in% age_vars_LGM] <- 
+    paste0("ts", 1:length(age_vars_LGM))
 
 
 ## Add number of family members for each participant
@@ -99,11 +130,11 @@ data_LGM <- f_conv(df = data_LGM,
                   covariates = c("FamNr", "FISNr", "twzyg",
                                  paste0("t", 1:length(var_names_LGM))))
 
-return(data_LGM)
+data_LGM <- data_LGM %>%
+  mutate(across(starts_with("ts"), ~ .x / 3))
 
-## still one more thing: the name of the question should be kept in the loop
-## over all CBCL questions because it needs to appear in the model title 
-## and also in the features that will be created from the modeling!
+
+return(data_LGM)
 
 ## next up: testing this with various CBCL questions (run a few tests below)
 
@@ -116,8 +147,7 @@ return(data_LGM)
 ## if it should be saved
 
 ## I might not need this, only if I want to clean up the mplus_files directory
-file_clean_mplus <- function(files_before, files_after, class_nr = NULL,
-                             question_name){
+file_clean_mplus <- function(files_before, files_after, question_name){
   ## removing the datafile that was newly created 
   data_files_after <- setdiff(files_after, data_files_before)
   
@@ -143,306 +173,97 @@ file_clean_mplus <- function(files_before, files_after, class_nr = NULL,
   return(invisible(NULL))
 }
   
-LGM_1_CBCL <- function(df, CBCL_question){
+
+
+## Function that extracts parameters from an LCGA model and 
+## creates model syntax with those parameters fixed 
+generate_fixed_syntax_with_classes <- function(params) {
+  fixed_lines <- list()
   
-  var_names_LGM <- unlist(unname(CBCL_questions_list[CBCL_question]))
-  title_string <- paste0("1-class model CBCL_question ", CBCL_question)
-  
-  ## CONTINUE HERE!!!
-  variable_string <- paste0(
-      "usevar = t1","-", paste0("t", length(var_names_LGM))," FamNr;\n",
-      "categorical = t1", "-", paste0("t", length(var_names_LGM),";\n"),
-      "cluster = FamNr;" ##classes = c(2);
-    )
-  
-  analysis_string <- paste0(
-    "type = complex;\n",
-    "estimator = mlr;\n",
-    "link = probit;\n",
-    "algorithm = integration;"
-  )
-  
-  if(length(var_names_test) == 4){ 
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4@1;\n",
-      "s by t1@0 t2* t3* t4@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
-  } else if(length(var_names_test) == 5){ 
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5@1;\n",
-      "s by t1@0 t2* t3* t4* t5@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "[t5$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "[t5$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
-  } else if(length(var_names_test) == 6){ 
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5* t6@1;\n",
-      "s by t1@0 t2* t3* t4* t5* t6@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "[t5$2] (th2);\n",
-      "[t6$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "[t5$1];\n",
-      "[t6$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
+  # Separate out shared parameters (OVERALL block) vs class-specific
+  if ("LatentClass" %in% names(params)) {
+    params_overall <- params[is.na(params$LatentClass), ]
+    params_class <- params[!is.na(params$LatentClass), ]
   } else {
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5* t6* t7@1;\n",
-      "s by t1@0 t2* t3* t4* t5* t6* t7@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "[t5$2] (th2);\n",
-      "[t6$2] (th2);\n",
-      "[t7$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "[t5$1];\n",
-      "[t6$1];\n",
-      "[t7$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
+    params_overall <- params
+    params_class <- NULL
   }
   
-  output_string <- "standardized tech1 tech4 tech10;"
-  ## adapt if other output features needed
-  
-  model_1_class <- mplusObject(
-    TITLE = title_string,
-    VARIABLE = variable_string,
-    ANALYSIS = analysis_string,
-    MODEL = model_string,
-    OUTPUT = output_string,
-    ## here still add which outputs are actually relevant
-    usevariables = colnames(var_names_LGM), # alternative tech1 tech8;
-    rdata = df
-  )
-  
-  fit_model_1_class <- mplusModeler(
-    model_1_class,
-    dataout = here(
-      "mplus_files",
-      paste0("model_1_class_", CBCL_question, ".dat")
-    ),
-    # note: data needs to be given to model!
-    # only solution seems to be to directly delete it
-    # afterwards!
-    modelout = here(
-      "mplus_files",
-      paste0("model_1_class_", CBCL_question, ".inp")
-    ),
-    check = TRUE,
-    run = TRUE,
-    hashfilename = FALSE,
-    Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
-  )
-  
-  
-}
-## Great! This function works!
-
-## Next: Code LCGA function 2-4 classes after you saw the 2-3 class model being
-## replicated correctly, then go further in workflow of looped function in the 
-## 07 script
-## The functions I need are `createMixtures` and `runModels`
-
-GMM_2_4_CBCL <- function(df, CBCL_question){
-  
-  var_names_LGM <- unlist(unname(CBCL_questions_list[CBCL_question]))
-  #title_string <- paste0(class_nr, "-class model CBCL_question ", CBCL_question)
-  
-  ## CONTINUE HERE!!!
-  variable_string <- paste0(
-    "usevar = t1","-", paste0("t", length(var_names_LGM))," FamNr;\n",
-    "categorical = t1", "-", paste0("t", length(var_names_LGM),";\n"),
-    "cluster = FamNr;"
-  )
-  
-  ## Here still find out how this behaves when the model is run by
-  ## createMixtures and runModels
-  savedata_string <- paste0("
-          SAVE = CPROBABILITIES;\n", 
-          "FILE = probs_", CBCL_question, ".dat;")
-  
-  analysis_string <- paste0(
-    "type = complex;\n",
-    "estimator = mlr;\n",
-    "link = probit;\n",
-    "algorithm = integration;\n"
-  )
-  
-  if(length(var_names_test) == 4){ 
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4@1;\n",
-      "s by t1@0 t2* t3* t4@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
-  } else if(length(var_names_test) == 5){ 
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5@1;\n",
-      "s by t1@0 t2* t3* t4* t5@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "[t5$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "[t5$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
-  } else if(length(var_names_test) == 6){ 
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5* t6@1;\n",
-      "s by t1@0 t2* t3* t4* t5* t6@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "[t5$2] (th2);\n",
-      "[t6$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "[t5$1];\n",
-      "[t6$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
-  } else {
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5* t6* t7@1;\n",
-      "s by t1@0 t2* t3* t4* t5* t6* t7@1;\n", 
-      "! Fix one threshold to identify location (this is the anchor);\n",
-      "[t1$1@-1];\n",
-      "! Constrain second thresholds equal across time (partial invariance);\n",
-      "[t1$2] (th2);\n",
-      "[t2$2] (th2);\n",
-      "[t3$2] (th2);\n",
-      "[t4$2] (th2);\n",
-      "[t5$2] (th2);\n",
-      "[t6$2] (th2);\n",
-      "[t7$2] (th2);\n",
-      "! Let remaining first thresholds be freely estimated;\n",
-      "[t2$1];\n",
-      "[t3$1];\n",
-      "[t4$1];\n",
-      "[t5$1];\n",
-      "[t6$1];\n",
-      "[t7$1];\n",
-      "! Freely estimate latent means;\n",
-      "[i];\n",
-      "[s];\n",
-      "i WITH s@0;"
-    )
+  ### Helper to create fixed syntax from a subset of parameters
+  create_lines <- function(param_subset) {
+    lines <- c()
+    
+    for (i in seq_len(nrow(param_subset))) {
+      row <- param_subset[i, ]
+      header <- row$paramHeader
+      param <- row$param
+      est <- round(row$est, 5)
+      
+      # Skip latent class probabilities (e.g., Means for C1#1, etc.)
+      if (header == "Means" && grepl("^C\\d+#\\d+", param)) next
+      
+      if (header == "Thresholds") {
+        lines <- c(lines, paste0("[", param, "@", est, "]",";"))
+      } else if (header %in% c("I.BY", "S.BY")) {
+        factor_name <- sub("\\.BY", "", header)
+        lines <- c(lines, paste0(factor_name, " BY ", param, " @", est, ";"))
+      } else if (header %in% c("Means", "Intercepts")) {
+        lines <- c(lines, paste0("[", param, "@",  est, "]",";"))
+      } else if (header == "Variances") {
+        lines <- c(lines, paste0(param, " @", est, ";"))
+      } else if (header == "Regressions") {
+        lines <- c(lines, paste0(param, " ON ", row$param2, " @", est, ";"))
+      } else if (header == "Residual.Variances") {
+        lines <- c(lines, paste0(param, " @", est, ";"))
+      } else if (header == "Loadings") {
+        lines <- c(lines, paste0(row$paramHeader, " BY ", param, " @", est, ";"))
+      }
+    }
+    
+    return(lines)
   }
   
-  output_string <- "standardized tech1 tech4 tech10;"
-  ## adapt if other output features needed
+  # OVERALL block (parameters shared across classes)
+  overall_lines <- create_lines(params_overall)
+  if (length(overall_lines) > 0) {
+      fixed_lines[["%OVERALL%"]] <- overall_lines
+  }
   
-  createMixtures(classes = 2:4, filename_stem = CBCL_question,                                    
-                 rdata = df,
-                 ANALYSIS = analysis_string,   
-                 VARIABLE = variable_string)  
+  # Class-specific blocks
+  if (!is.null(params_class)) {
+    class_labels <- sort(unique(params_class$LatentClass))
+    
+    for (class_label in class_labels) {
+      class_data <- params_class[params_class$LatentClass == class_label, ]
+      class_lines <- create_lines(class_data)
+      block_name <- paste0("%C#", class_label, "%")
+      fixed_lines[[block_name]] <- class_lines
+    }
+  }
   
-  
-  ## Continue here, first only check if create mixtures runs successfully
-  
-  ## title string still needs to be adjusted
-  
-  ## you can very well do 1-4 classes
-  
-  ## tech output options (use function help)
-  
-  ## also include the file_clean_mplus function in this function! Can be coded 
-  ## inside, define list_before and list_after inside this function
+  # Collapse all blocks into one Mplus-compatible string
+  syntax_out <- unlist(
+    lapply(names(fixed_lines), function(block) {
+      c(block, fixed_lines[[block]], "")  # add empty line for spacing
+    })
+  )
 
+  ## remove the line that read "%OVERALL%" from syntax_out
+  ## if "LatentClass" is not in params
+  if (!"LatentClass" %in% names(params)) {
+    syntax_out <- syntax_out[!grepl("^%OVERALL%", syntax_out)]
+  } 
   
-  
+  return(paste(syntax_out, collapse = "\n"))
 }
 
 
-LCGA_1_4_CBCL <- function(df, CBCL_question){
+LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
+  
+  
+  ## the name of the question should be kept in the loop
+  ## over all CBCL questions because it needs to appear in the model title 
+  ## and also in the features that will be created from the modeling!
   
   ## create subdirectory for this specific CBCL question where is 
   ## being worked in 
@@ -462,8 +283,10 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   title_string <- paste0("class model CBCL_question_", CBCL_question)
   
   variable_string <- paste0(
-    "usevar = t1","-", paste0("t", length(var_names_LGM))," FamNr;\n",
+    "usevar = t1","-", paste0("t", length(var_names_LGM)),
+    " ts1","-", paste0("ts", length(var_names_LGM)), " FamNr;\n",
     "categorical = t1", "-", paste0("t", length(var_names_LGM),";\n"),
+    "TSCORES = ts1", "-", paste0("ts", length(var_names_LGM), ";\n"),
     "cluster = FamNr;\n"
   )
   
@@ -471,37 +294,52 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   ## createMixtures and runModels
   savedata_string <- paste0("
           SAVE = CPROBABILITIES;\n", 
-                            "FILE = probs_", CBCL_question, ".dat;")
+          "FILE = probs_", CBCL_question, ".dat;")
   
-  analysis_string <-   analysis_string <- paste0(
-    "type = mixture complex;\n",
+  analysis_string <- paste0(
+    "type = mixture random complex;\n",
     "estimator = mlr;\n",
     "link = probit;\n",
-    "!algorithm = integration;\n"
+    "algorithm = integration;\n"
   )
   
   
-  if(length(var_names_test) == 4){ 
+  
+  if(length(var_names_LGM) == 4){ 
     model_string <- paste0(
-      "i by t1@0 t2* t3* t4@1;\n",
-      "s by t1@0 t2* t3* t4@1;\n")
+      "i s | t1-t4 AT ts1-ts4;\n",
+      "i@0;\n",
+      "s@0;\n",
+      "i WITH s@0;\n")
     ## adjust this depending on output of time varying analysis
-  } else if(length(var_names_test) == 5){ 
+  } else if(length(var_names_LGM) == 5){ 
     model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5@1;\n",
-      "s by t1@0 t2* t3* t4* t5@1;\n")
-  } else if(length(var_names_test) == 6){ 
+      "i s | t1-t5 AT ts1-ts5;\n",
+      "i@0;\n",
+      "s@0;\n",
+      "i WITH s@0;\n")
+  } else if(length(var_names_LGM) == 6){ 
     model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5* t6@1;\n",
-      "s by t1@0 t2* t3* t4* t5* t6@1;\n")
+      "i s | t1-t6 AT ts1-ts6;\n",
+      "i@0;\n",
+      "s@0;\n",
+      "i WITH s@0;\n")
+  } else if(length(var_names_LGM) == 7){
+    model_string <- paste0(
+      "i s | t1-t7 AT ts1-ts7;\n",
+      "i@0;\n",
+      "s@0;\n",
+      "i WITH s@0;\n")
   } else {
-    model_string <- paste0(
-      "i by t1@0 t2* t3* t4* t5* t6* t7@1;\n",
-      "s by t1@0 t2* t3* t4* t5* t6* t7@1;\n")
+    cat(paste0("CBCL question ",
+               CBCL_question,
+               " skipped, incorrect number of measures"))
+    return(list(df_CBCL_out <- NULL,
+                n_class = NULL))
   }
   
   output_string <- paste0(
-    "tech1 tech4 tech7 tech8 tech14;\n")
+    "tech1 tech7 tech8;\n")
   ## adapt if other output features needed
   
   ## likely not needed anymore since I work in dedicated directory
@@ -512,14 +350,17 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   classes <- 1:4
   mix_out_console <- capture.output(
   createMixtures(classes = classes, filename_stem = CBCL_question,                                    
-                 rdata = data_test_LGM_1, ## df
+                 rdata = df_train,
                  VARIABLE = variable_string,
                  ANALYSIS = analysis_string,
                  model_overall =  model_string,   
                  OUTPUT = output_string,
                  SAVEDATA = paste0(
-                   "FILE = {filename_stem}_{C}.dat;\n",
+                   "FILE = {filename_stem}_{C}_train_cprobs.dat;\n",
                    "SAVE = CPROBABILITIES;"),
+                #SAVEDATA = paste0(
+                #   "FILE = {filename_stem}_{C}.dat;\n",
+                #   "SAVE = CPROBABILITIES;"),
                  quiet = FALSE) 
   )
   ## run results in error:
@@ -537,7 +378,7 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   ## CBCL_question and a number in their filename connected by an 
   ## underscore and move them to the directory "cprobabilities"
   dat_files <- grep(list.files(), 
-               pattern = paste0(CBCL_question, "_\\d+\\.dat$"),
+               pattern = paste0(CBCL_question, "_\\d+\\_train_cprobs.dat$"),
                value = TRUE)
   
   inp_files <- grep(list.files(), 
@@ -560,12 +401,13 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
   mix_sum_table <- 
     mix_out_console[
       (length(mix_out_console) - length(classes)):length(mix_out_console)]
-  mix_sum_table
+  # mix_sum_table
   ## turn this into dataframe (first line should be column names)
 
   ## mix_sum_table is now 5 lines of characters. It should be a dataframe
   ## where the first line is the column names and the rest are the values
-  df_mix_sum_table <- read.table(text = mix_sum_table[2:5], header = FALSE,
+  df_mix_sum_table <- read.table(text = mix_sum_table[2:length(mix_sum_table)],
+                                 header = FALSE,
                                  stringsAsFactors = FALSE)
 
   ## merge second and third column together
@@ -579,95 +421,419 @@ LCGA_1_4_CBCL <- function(df, CBCL_question){
                          sep = " ")) %>%
     select(-Nr, -Title, -Open)
   
-  df_mix_sum_table
+  #df_mix_sum_table
   
   ## expand the dataframe with the filenames
   df_mix_sum_table$dat_file <- dat_files
   df_mix_sum_table$inp_file <- inp_files
   df_mix_sum_table$out_file <- out_files
   
-  View(df_mix_sum_table)
+  #View(df_mix_sum_table)
+  
+  ## Entropy later after searching for indicators,
+  ## should be higher than .60 however (middle ground, Bleidorn et al., 2009)
+  model_opt <- df_mix_sum_table %>%
+    filter(min_N >= 0.1 * nrow(df_train)) %>%
+    filter(is.na(Entropy) | Entropy >= 0.6)
+  ## discarding models with entropy < .6
+    
+  model_opt <- model_opt %>%
+    filter(BIC == min(model_opt$BIC)) ## selecting model with lowest BIC
+  
+  opt_n_class <- model_opt$Classes
+  
+  ## optional: If optimal level is 1-class LCGA keep files (to be coded here
+  ## if necessary)
   
   
-  ## alternative might be mixtureSummaryTable() function?
-  ## in combination with readModels function?
-  
-  ## so far, no output does not contain minimal latent class size,
-  ## still figure out how to include this metric
-  
-  ## Continue HERE!!
-  setwd(dir_CBCL_question)
-  
-  read_obj <- readModels(target = getwd(), what = "all")
-  df_mix_sum_table2 <- data.frame()
-  for(mod in 1:length(read_obj)){
-    model_summary <- read_obj[[mod]]$summaries
-    model_parameters <- read_obj[[mod]]$parameters
-    if(mod == 1){
-      model_summary$Entropy <- NA
-      print(dim(model_summary))
-      ## setting column names to the right place to enable rbind
+  ## insert here: block that codes multilevel model
+  ## LGM with individual variation allowed on both training and test set?!
+  if(opt_n_class == 1){
+    
+    ## delete files of previous modelling
+    file.remove(from = paste0(getwd(), "/", list.files()))
+    
+        title_string_LGM <- paste0("Multilevel LGM model CBCL_question_",
+                                   CBCL_question)
+    
+    ## adapt model and analysis string to create Multilevel LGM
+    ## (every individual has own slope and intercept, no mixture)
+    analysis_string_LGM <- paste0(
+      "type = random complex;\n",
+      "estimator = mlr;\n",
+      "link = probit;\n",
+      "algorithm = integration;\n"
+    )
+    
+    if(length(var_names_LGM) == 4){ 
+      model_string_LGM <- paste0(
+        "i s | t1-t4 AT ts1-ts4;\n")
+      ## adjust this depending on output of time varying analysis
+    } else if(length(var_names_LGM) == 5){ 
+      model_string_LGM <- paste0(
+        "i s | t1-t5 AT ts1-ts5;\n")
+    } else if(length(var_names_LGM) == 6){ 
+      model_string_LGM <- paste0(
+        "i s | t1-t6 AT ts1-ts6;\n")
+    } else if(length(var_names_LGM) == 7){
+      model_string_LGM <- paste0(
+        "i s | t1-t7 AT ts1-ts7;\n")
     } else {
-      model_summary <- cbind(select(model_summary, -Entropy),
-                             select(model_summary, Entropy))
-      print(dim(model_summary))
+      cat(paste0("CBCL question ",
+                 CBCL_question,
+                 " skipped, incorrect number of measures, returning NULL"))
+      return(list(df_CBCL_out = NULL,
+                  n_class = NULL))
+    }
+    
+    ## code model training set
+    model_LGM_train <- mplusObject(
+      TITLE = paste0(title_string_LGM, " (training set)"),
+      VARIABLE = variable_string,
+      ANALYSIS = analysis_string_LGM,
+      MODEL = model_string_LGM,
+      OUTPUT = output_string,
+      SAVEDATA = paste0(
+        "FILE = ", CBCL_question, "_", "I_S_scores_train.dat;\n",
+        "SAVE = FSCORES;"),
+      usevariables = colnames(var_names_LGM),
+      rdata = df_train
+    )
+    
+    fit_LGM_train <- mplusModeler(
+      model_LGM_train,
+      dataout = paste0("model_train_LGM_", CBCL_question, ".dat"),
+      # note: data needs to be given to model!
+      # only solution seems to be to directly delete it
+      # afterwards!
+      modelout = paste0("model_train_LGM_", CBCL_question, ".inp"),
+      check = TRUE,
+      run = TRUE,
+      hashfilename = FALSE,
+      Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
+    )
+
+    
+    ## extract model parameters to fix them in test set
+    model_LGM_train_info <- readModels(target = getwd(), what = "all")
+    
+    par_fixed_LGM_test <- paste0(model_string_LGM, "\n",
+                                 generate_fixed_syntax_with_classes(
+                                 model_LGM_train_info$parameters$unstandardized)
+                                )
+
+    ## special case: It can occur that the value 2 does not occur in a specific
+    ## variable in the test set!
+    
+    ## in this case:
+    ## check all variables in df_test where the column name
+    ## begins with "t" followed by a number
+    ## if not, save them to a vector
+    ## In the next step, remove the lines from par_fixed_LGM_test that 
+    ## refer to the threshold to the value 2 (e.g. [T1$2@4.284]; should be 
+    ## removed if T1$2 does not occur in the test set)
+    var_names_test <- grep("^t\\d+$", colnames(df_test), value = TRUE)
+    
+    ## check if the value 2 occurs in the test set
+    values_2_test <- sapply(var_names_test, function(x) {
+      any(df_test[[x]] == 2)
+    })
+    ## set the first letter of the names of values_2_test to uppercase
+    names(values_2_test) <- toupper(var_names_test)
+
+    ## disassembling par_fixed_LGM_test
+    par_fixed_LGM_test <- unlist(strsplit(par_fixed_LGM_test, "\n"))
+    
+    ## remove the lines that refer to the threshold to the value 2
+    ## if the variable does not occur in the test set
+    ## the lines in par_fixed_LGM_test where these two conditions are both TRUE:
+    ## A) a variable is contained where values_2_test is NA
+    ## and
+    ## B) a dollar sign is followed by a "2"
+    ## should be removed from par_fixed_LGM_test
+    par_fixed_LGM_test <- par_fixed_LGM_test[!grepl(
+      paste0("(", paste(names(values_2_test[is.na(values_2_test)]), collapse = "|"), 
+             ")\\$2"), par_fixed_LGM_test)]
+
+
+    ## this removes all lines that refer to the threshold to the value 2 if that 
+    ## value does not occur in the test set
+    
+    ## now re-join the lines to a single string
+    par_fixed_LGM_test <- paste(par_fixed_LGM_test, collapse = "\n")
+    cat(par_fixed_LGM_test)
+
+
+    ## code model test set
+    model_LGM_test <- mplusObject(
+      TITLE = paste0(title_string_LGM, " (test set)"),
+      VARIABLE = variable_string,
+      ANALYSIS = analysis_string_LGM,
+      MODEL = par_fixed_LGM_test,
+      OUTPUT = output_string,
+      SAVEDATA = paste0(
+        "FILE = ", CBCL_question, "_", "I_S_scores_test.dat;\n",
+        "SAVE = FSCORES;"),
+      usevariables = colnames(var_names_LGM),
+      rdata = df_test
+    )
+    
+    fit_LGM_test <- mplusModeler(
+      model_LGM_test,
+      dataout = paste0("model_test_LGM_", CBCL_question, ".dat"),
+      # note: data needs to be given to model!
+      # only solution seems to be to directly delete it
+      # afterwards!
+      modelout = paste0("model_test_LGM_", CBCL_question, ".inp"),
+      check = TRUE,
+      run = TRUE,
+      hashfilename = FALSE,
+      Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
+    )
+    
+    ## reading in model output model test set
+    model_test_output_file <- grep(".out",
+                                   grep("test", list.files(), value = TRUE),
+                                   value = TRUE)
+    
+    model_LGM_test_info <- readModels(target = model_test_output_file,
+                                      what = "all")
+    
+    ## assembling output dfs
+    ## training data
+    df_out_CBCL_train <- cbind(select(df_train, FISNr),
+                               model_LGM_train_info$savedata) %>%
+      select(FISNr, I, I_SE, S, S_SE)
+    
+    
+    df_out_CBCL_test <- cbind(select(df_test, FISNr),
+                               model_LGM_test_info$savedata) %>%
+      select(FISNr, I, I_SE, S, S_SE)
+    
+    ## merging training and test dataframes
+    df_out_CBCL <- rbind(df_out_CBCL_train,
+                         df_out_CBCL_test) %>%
+      ## all column names except for "FISNr" should be extended with the value
+      ## of CBCL_question
+      rename_with(~ paste0(., "_", CBCL_question), -FISNr) %>%
+      rename("FISNumber" = FISNr)
+    
+    
+    ## saving dataframe with information about Intercept and slope in  
+    ## directory of the respective CBCL question
+    saveRDS(df_out_CBCL, file = paste0("outcome_df_LGM_", CBCL_question, ".rds"))
+    
+    return(list(df_out_CBCL = df_out_CBCL,
+                n_class = opt_n_class))
+    
+###############################################################################    
+    
+    ## Alternative case: Best model is actually multiclass model
+  } else {
+  
+      ## here delete all files not needed anymore
+      #dat_files
+      #inp_files
+      #out_files
+      
+      files_opt_model <- c(model_opt$dat_file, 
+                          model_opt$inp_file,
+                          model_opt$out_file)
+      
+      ## adapt the list so that the correct file is chosen (setdiff)
+      ## this comes only after the model selection!
+      
+      ## delete all files in the directory except the ones associated with the
+      ## optimal model
+      files_delete <- setdiff(list.files(), files_opt_model)
+      file.remove(from = paste0(getwd(), "/", files_delete)) 
+      
+      
+      file.copy(from = paste0(getwd(), "/", model_opt$dat_file),
+                to = paste0(here::here("mplus_files", "cprobabilities"), "/",
+                            model_opt$dat_file) 
+      )
+      ## note: The .dat file cannot be deleted if the the readModels function
+      ## is supposed to be used!
+      
+      model_opt_info <- readModels(target = getwd(), what = "all")
+      cat("savedata file present: ", "savedata" %in% names(model_opt_info), "\n")
+  
+      par_fixed_test <- paste0("%OVERALL%\n",
+                               model_string,
+                               "\n",
+                               generate_fixed_syntax_with_classes(
+                                 model_opt_info$parameters$unstandardized)
+                               )
+      
+      
+      ## Now: estimate the exact same model with all important 
+      ## parameters fixed to the values from the model estimated on the training set
+      variable_string_test <- paste0(variable_string,
+                                     "classes = c(", opt_n_class, ");\n")
+      
+      data_filename <- paste0("model_test_set_", CBCL_question, ".dat")
+      
+      model_test_set <- mplusObject(
+        TITLE = paste0(title_string, " (test set)"),
+        VARIABLE = variable_string_test,
+        ANALYSIS = analysis_string,
+        MODEL = par_fixed_test,
+        OUTPUT = output_string,
+        SAVEDATA = paste0(
+          "FILE = ", CBCL_question, "_", opt_n_class, "_test_cprobs.dat;\n",
+          "SAVE = CPROBABILITIES;"),
+        usevariables = colnames(var_names_LGM), # alternative tech1 tech8;
+        rdata = df_test
+      )
+      
+      
+      fit_model_test_set <- mplusModeler(
+        model_test_set,
+        dataout = paste0("model_test_set_", CBCL_question, ".dat"),
+        # note: data needs to be given to model!
+        # only solution seems to be to directly delete it
+        # afterwards!
+        modelout = paste0("model_test_set_", CBCL_question, ".inp"),
+        check = TRUE,
+        run = TRUE,
+        hashfilename = FALSE,
+        Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
+      )
+      
+      
+      ## appending the information of the latent classes (slope, intercept)
+      parameters_model <- model_opt_info$parameters$unstandardized %>%
+        filter(paramHeader == "Means" & param %in% c("I", "S")) %>%
+        as.data.frame()
+      
+      ## creating latentClass indicator depending on model
+      l_class_ind <- unique(parameters_model$LatentClass)
+      
+      ## re-appending FISNumbers to probabilities dataframe and creating output 
+      ## df of the modeling to save for this CBCL question, 
+      
+      ## here is where it goes wrong, the savedata file is not read in properly
+      df_out_CBCL_train <- cbind(select(df_train, FISNr),
+                                 model_opt_info$savedata) %>%
+        select(FISNr, starts_with("CPROB"), C1) %>%
+        mutate(I_C1 = NA, S_C1 = NA)
+      
+      for(cl in l_class_ind){
+        df_out_CBCL_train <- df_out_CBCL_train %>%
+          mutate(I_C1 = ifelse(C1 == cl,
+                               as.numeric(
+                                 select(
+                                   filter(parameters_model,
+                                          LatentClass == cl & param == "I"),
+                                   est)
+                                 ),
+                               I_C1),
+                 S_C1 = ifelse(C1 == cl,
+                               as.numeric(
+                                 select(
+                                   filter(parameters_model,
+                                          LatentClass == cl & param == "S"),
+                                   est)
+                                 ),
+                               S_C1)
+          )
       }
-    df_mix_sum_table2 <- rbind(df_mix_sum_table2, model_summary)
-    print(dim(df_mix_sum_table2))
-  }
-  
-  View(df_mix_sum_table2)
-  
+      
+      ## next up: Code this as well into test set, merge, change column
+      ## names so they also contain the CBCL_question string
+      
+      ## reading in model output model test set
+      model_test_output_file <- grep(".out",
+                                     grep("test", list.files(), value = TRUE),
+                                     value = TRUE)
+      
+      model_opt_test_info <- readModels(target = model_test_output_file,
+                                        what = "all")
+      
+      parameters_model_test <- model_opt_test_info$parameters$unstandardized %>%
+        filter(paramHeader == "Means" & param %in% c("I", "S"))
+      
+      df_out_CBCL_test <- cbind(select(df_test, FISNr),
+                                model_opt_test_info$savedata) %>%
+        select(FISNr, starts_with("CPROB"), C) %>%
+        ## note: here, latent class assignment variable ("C") is labelled
+        ## differently than in the training model df ("C1")
+        mutate(I_C1 = NA, S_C1 = NA) %>%
+        rename("C1" = C)
+      
+      for(cl in l_class_ind){
+        df_out_CBCL_test <- df_out_CBCL_test %>%
+          mutate(I_C1 = ifelse(C1 == cl,
+                               as.numeric(
+                                 select(
+                                   filter(parameters_model_test,
+                                          LatentClass == cl & param == "I"),
+                                   est)
+                               ),
+                               I_C1),
+                 S_C1 = ifelse(C1 == cl,
+                               as.numeric(
+                                 select(
+                                   filter(parameters_model_test,
+                                          LatentClass == cl & param == "S"),
+                                   est)
+                               ),
+                               S_C1)
+          )
+      }
+      # View(df_out_CBCL_test)
+      
+      ## merging training and test dataframes
+      df_out_CBCL <- rbind(df_out_CBCL_train,
+                           df_out_CBCL_test) %>%
+        ## all column names except for "FISNr" should be extended with the value
+        ## of CBCL_question
+        rename_with(~ paste0(., "_", CBCL_question), -FISNr) %>%
+        rename("FISNumber" = FISNr)
+      
+      ## since the correlation between the model information features is 
+      ## almost perfect, they will be removed in the ML preprocessing
+      ## therefore, dataframe with this information will be saved in the 
+      ## directory of the respective CBCL question
+      saveRDS(df_out_CBCL, file = paste0("outcome_df_LGM_", CBCL_question, ".rds"))
+      cprob_cols <- grep("CPROB", colnames(df_out_CBCL), value = TRUE)
+      
+      ## select minimum value of the column means of the the columns that 
+      ## contain "CPROB" in their name and save the column name of this column
+      min_prob_col <- cprob_cols[which.min(
+        apply(df_out_CBCL[, c(cprob_cols)], 2, min))]  
+      
+      ## de-selecting group probability column with lowest average and 
+      ## intercept and slope columns since they perfectly correlate
+      df_out_CBCL <- df_out_CBCL %>%
+        select(-all_of(min_prob_col), -contains("C1"))
+      
 
-  
-  ## for now: Only use minimal group size and BIC as filters for choosing the 
-  ## model!
-  
-  
-  ## adapt the list so that the correct file is chosen (setdiff)
-  ## this comes only after the model selection!
-  file.copy(from = paste0(getwd(), "/", list_dat_files),
-               to = paste0(here::here("mplus_files", "cprobabilities"), "/",
-                           list_dat_files) 
-              )
-  
-  file.remove(from = paste0(getwd(), "/", list_dat_files)) 
+      # setwd(dir_CBCL_question)
+      
+      }
+  return(list(df_out_CBCL = df_out_CBCL,
+              n_class = opt_n_class))
 
-  
-  ## Next steps (track those in Obsidian!): 
-  
-  ## make function so that for every CBCL question, an own directory is created
-  ## move all output files that were created there
-  
-  ## - file moving and cleaning works with 1 example?
-  
-  ## access createModels output that was written to file:
-  ## get df with model info, extract AIC / BIC, entropy, minimal group size
-  
-  ## choose model with optimal fit, delete .inp, .out and probabilities.dat for
-  ## all other models
-  
-  ## read the output of the model that was best
-  
-  ## save all parameters
-  
-  ## code new model: exactly the same as the .inp for the optimal model, 
-  ## but on test data instead of training data and all parameter values are
-  ## fixed to the ones from the optimal model
-  
-  ## make sure that all those operations are happening inside the specific 
-  ## subdirectory
-  
-  ## combine model output and probabilities file to new dataframe that contains 
-  ## FISNumbers 
-  ## append to large overall dataframe (reduce function)
-  
-  ## cleaning function: several files are not needed anymore, remove them
-  
-  
-  
 }
 
+## Next steps (track those in Obsidian!): 
+
+## make function so that for every CBCL question, an own directory is created
+## move all output files that were created there
+
+## - file moving and cleaning works with 1 example?
+
+## make sure that all those operations are happening inside the specific 
+## subdirectory
+
+## combine model output and probabilities file to new dataframe that contains 
+## FISNumbers 
+## append to large overall dataframe (reduce function, this does not happen 
+## inside this function!)
+
+## cleaning function: several files are not needed anymore, remove them
 
 LGM_DV_calculation <- function(df, CBCL_question){
   
@@ -684,23 +850,79 @@ LGM_estimation_grid <- function(df, configuration_grid){
 ## ----------------------------------------------------------------------------
 
 ## testing area (leave this in!)
-data_test_LGM_80 <- LGM_preprocess(
+data_train_LGM_1 <- LGM_preprocess(
+  CBCL_age_df = CBCL_age_df,
+  CBCL_question = names(CBCL_questions_list)[[1]],
+  df = train_data,
+  questions_list = CBCL_questions_list,
+  items_table = CBCL_items_table_reduced)
+
+data_test_LGM_1 <- LGM_preprocess(
+  CBCL_age_df = CBCL_age_df,
+  CBCL_question = names(CBCL_questions_list)[[1]],
+  df = test_data,
+  questions_list = CBCL_questions_list,
+  items_table = CBCL_items_table_reduced)
+
+View(data_train_LGM_1)
+
+data_train_LGM_97 <- LGM_preprocess(
+  CBCL_age_df = CBCL_age_df,
   CBCL_question = names(CBCL_questions_list)[[80]],
   df = train_data,
   questions_list = CBCL_questions_list,
   items_table = CBCL_items_table_reduced)
 
-View(data_test_LGM_80)
+data_test_LGM_97 <- LGM_preprocess(
+  CBCL_age_df = CBCL_age_df,
+  CBCL_question = names(CBCL_questions_list)[[80]],
+  df = test_data,
+  questions_list = CBCL_questions_list,
+  items_table = CBCL_items_table_reduced)
+
+system.time({LCGA_test_1 <-
+  LGM_1_4_CBCL(df_train = data_train_LGM_1,
+                df_test = data_test_LGM_1,
+                CBCL_question = names(CBCL_questions_list)[[1]])
+})
+## function works!!!
 
 
-class_1_test_1 <- LGM_1_CBCL(data_test_LGM_1, names(CBCL_questions_list)[[1]])
-## works! means and variances of intercepts are estimated!
-class_1_test_80 <- LGM_1_CBCL(data_test_LGM_80, names(CBCL_questions_list)[[80]])
+system.time({LCGA_test_2 <- lapply(names(CBCL_questions_list)[c(2, 80)], function(x){
+  ## data prep for training and test set
+  train_data_question <- 
+  LGM_preprocess(CBCL_age_df = CBCL_age_df,
+                 CBCL_question = x,
+                 df = train_data,
+                 questions_list = CBCL_questions_list,
+                 items_table = CBCL_items_table_reduced)
 
-LCGA_test_1 <- LCGA_2_4_CBCL(data_test_LGM_1, names(CBCL_questions_list)[[1]])
+  test_data_question <- 
+  LGM_preprocess(CBCL_age_df = CBCL_age_df,
+                 CBCL_question = x,
+                 df = test_data,
+                 questions_list = CBCL_questions_list,
+                 items_table = CBCL_items_table_reduced)
+  
+  LGM_df_question <-
+  LGM_1_4_CBCL(df_train = train_data_question,
+                df_test = test_data_question,
+                CBCL_question = x)
+  
+  return(LGM_df_question)
+  })
+})
 
-## question: Can you suppress the printing output of the mPlusmodeler function?
+## CONTINUE HERE!!!
+## does this work? And how long?
+## outcome not saved, flaw in code, took 71 minutes
 
+## reduce df to 1 big df
+LGM_preprocess()
+
+## question: Can you suppress the console printing output of the 
+## mPlusmodeler function?
+## CONTINUE HERE!!!
 
 
 
