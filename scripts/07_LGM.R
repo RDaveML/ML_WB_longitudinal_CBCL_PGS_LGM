@@ -27,14 +27,23 @@
 cat("SETTING OPTIONS... /n/n", sep = "")
 options(scipen = 999)
 
+t00 <- Sys.time()
+
 # Install and load packages (list can be enriched if needed)
 # install.packages("pacman")
-pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-               "stringr", "readxl", "data.table", "MplusAutomation", "glue")
+packages_load <- c("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
+                   "stringr", "readxl", "data.table", "MplusAutomation", "glue",
+                   "purrr", "parallel", "doParallel", "foreach")
 
+#pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
+#               "stringr", "readxl", "data.table", "MplusAutomation", "glue",
+#               "purrr", "parallel", "doParallel", "foreach")
+
+pacman::p_load(char = packages_load)
 
 ## custom preparation functions
 source(here::here("scripts", "functions", "functions_ml.R"))
+source(here::here("scripts", "functions", "functions_LGM.R"))
 
 ## setting working directory
 setwd(here::here())
@@ -56,13 +65,16 @@ train_data <- readRDS(here::here("data", "intermediate", "train_data.rds"))
 test_data <- readRDS(here::here("data", "intermediate", "test_data.rds"))
 
 ## loading in refined variable table (with labels and description of CBCL items)
-CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx")) %>%
-  as.data.frame()
+CBCL_items_table <- read_excel(
+  here::here("doc", "CBCL_table_t_per_item.xlsx")) %>%
+    as.data.frame()
 
 ## loading in dataframe where CBCL items are connected to age variables and
 ## combining it properly with age vars and CBCL question to use during variable
 ## selection later
-CBCL_age_df <- as.data.frame(t(readRDS(here::here("data", "intermediate", "CBCL_age_df.RDS"))))
+CBCL_age_df <- as.data.frame(
+  t(readRDS(here::here("data", "intermediate", "CBCL_age_df.RDS")))
+  )
 colnames(CBCL_age_df) <- CBCL_age_df["question_number", ]
 CBCL_age_df <- CBCL_age_df[-nrow(CBCL_age_df), ]
 colnames(CBCL_age_df)[ncol(CBCL_age_df)] <- "age_var"
@@ -136,7 +148,8 @@ YSR_items_LGM <- intersect(CBCL_items_keep, YSR_items_vec)
 CBCL_items_table <- CBCL_items_table %>%
   rowwise() %>%
   mutate(n_items_available = sum(
-    sapply(across(everything()), function(x) as.character(x) %in% CBCL_items_keep)
+    sapply(
+      across(everything()), function(x) as.character(x) %in% CBCL_items_keep)
   )) %>%
   ungroup() %>%
   filter(n_items_available >= 4)
@@ -152,7 +165,8 @@ CBCL_items_table_reduced <- CBCL_items_table %>%
 ## that can be used for longitudinal modeling)
 CBCL_items_valid <- unique(CBCL_items_table_reduced$question_number)
 
-## selecting only the elements of the list that are contained in CBCL_items_valid
+## selecting only the elements of the list
+## that are contained in CBCL_items_valid
 CBCL_questions_list <- CBCL_questions_list[CBCL_items_valid]
 
 
@@ -224,8 +238,19 @@ for(question in unique(CBCL_items_table_reduced$question_number)){
   
 }
 
+labelled_count <- 0
+for(col in 1:ncol(train_data)){
+  if("haven_labelled" %in% class(train_data[, col])){
+    labelled_count <- labelled_count + 1
+  }
+}
+cat(labelled_count, " columns haven_labelled, those need to be converted")
+## 497 multiple class columns with haven_labelled
 
-## Next: Binding this to data
+## converting have_labelled columns to numeric
+train_data <- mult_to_numeric(df = train_data)
+
+test_data <- mult_to_numeric(df = test_data)
 
 
 ##----------------------------------------------------------------------------
@@ -236,7 +261,87 @@ for(question in unique(CBCL_items_table_reduced$question_number)){
 ncore_ntr <- 48
 
 ## integrating parallelization
-cl <- makeCluster(ncores)
+cl <- makeCluster(ncore_ntr)
+## cluster of 48 on ntr-compute1
+registerDoParallel(cl)
+clusterExport(cl, c("CBCL_age_df", 
+                    "CBCL_questions_list", 
+                    "CBCL_items_table_reduced",
+                    "train_data", 
+                    "test_data",
+                    "age_var_select",
+                    "LGM_preprocess",
+                    "generate_fixed_syntax_with_classes",
+                    "LGM_1_4_CBCL",
+                    "f_conv"), ## custom function from ml functions
+              envir = environment())
+
+invisible(clusterEvalQ(cl,expr= {
+  library(MplusAutomation)
+  library(here)
+  library(dplyr)
+  library(tidyverse)
+  library(stringr)
+  library(data.table)
+  library(parallel)
+  library(doParallel)
+  # source(here::here("scripts", "functions", "functions_LGM.R"))
+  ## export entire set of functions
+}))
+#invisible(clusterEvalQ(cl, ls()))
+
+## do this in two blocks, 48 cores available on ntr-compute1
+LGM_full_CBCL_1 <- parLapply(
+  cl, names(CBCL_questions_list)[1:48], function(x) {
+
+    ## data prep for training and test set
+    train_data_question <-
+      LGM_preprocess(
+        CBCL_age_df = CBCL_age_df,
+        CBCL_question = x,
+        df = train_data,
+        questions_list = CBCL_questions_list,
+        items_table = CBCL_items_table_reduced
+      )
+    
+    test_data_question <-
+      LGM_preprocess(
+        CBCL_age_df = CBCL_age_df,
+        CBCL_question = x,
+        df = test_data,
+        questions_list = CBCL_questions_list,
+        items_table = CBCL_items_table_reduced
+      )
+    
+    ## calculating and selecting 1-4 class models for each question,
+    ## creating output dataframe
+    LGM_df_question <-
+      LGM_1_4_CBCL(df_train = train_data_question,
+                   df_test = test_data_question,
+                   CBCL_question = x)
+    ## test: Does this work for two CBCL questions?
+    
+    return(LGM_df_question)
+  })
+stopCluster(cl)
+
+
+names(LGM_full_CBCL_1) <- names(CBCL_questions_list)[1:48]
+
+
+## again something went wrong in the parallelization, 
+## cprobabilities are not saved as well
+
+
+## set working directory back to parent directory (was affected by the LGM
+## function)
+setwd(here::here())
+
+## second part of the LGM, remaining CBCL questions
+ncore_ntr <- length(CBCL_questions_list) - 48
+
+## integrating parallelization
+cl <- makeCluster(ncore_ntr)
 ## cluster of 64 on ntrcompute-2
 registerDoParallel(cl)
 clusterExport(cl, c("CBCL_age_df", 
@@ -255,12 +360,18 @@ invisible(clusterEvalQ(cl,expr= {
   library(tidyverse)
   library(stringr)
   library(data.table)
-  
+  library(foreign)
+  library(readr)
+  library(readxl)
+  library(glue)
+  library(purrr)
+  # source(here::here("scripts", "functions", "functions_LGM.R")) 
 }))
 invisible(clusterEvalQ(cl, ls()))
 
-LGM_full_CBCL <- parLapply(
-  cl, names(CBCL_questions_list), function(x) {
+## do this in two blocks, 48 cores available on ntr-compute1
+LGM_full_CBCL_2 <- parLapply(
+  cl, names(CBCL_questions_list)[49:length(CBCL_questions_list)], function(x) {
     ## data prep for training and test set
     train_data_question <-
       LGM_preprocess(
@@ -291,33 +402,46 @@ LGM_full_CBCL <- parLapply(
   })
 stopCluster(cl)
 
+names(LGM_full_CBCL_2) <- names(
+  CBCL_questions_list)[49:length(CBCL_questions_list)]
+
 ## set working directory back to parent directory (was affected by the LGM
 ## function)
 setwd(here::here())
 
 
-## make one dataframe out of all df_out_CBCL dfs from the list
-## LGM_full_CBCL
+## appending lists
+LGM_full_CBCL <- c(LGM_full_CBCL_1, LGM_full_CBCL_2)
 
-## Important: To be able to separate from the non-LGM longitudinal
-## features later, give all variables (except for FISNumber)
-## the prefix (or suffix) LGM_ (_LGM)
+## make one dataframe out of all df_out_CBCL dfs that are contained in the 
+## sub elements of the list LGM_full_CBCL
+## all dfs should be joined together by the indicator variable "FISNumber"
+LGM_df <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
+                 lapply(LGM_full_CBCL, function(df) {
+                  df$df_out_CBCL
+                  })) %>% 
+  ## renaming: To be able to separate from the non-LGM longitudinal
+  ## features later, give all variables (except for FISNumber)
+  ## the prefix (or suffix) LGM_ (_LGM)
+  rename_with(~ paste0("LGM_", .), -FISNumber) %>%
+  mutate(FISNumber = as.numeric(FISNumber)) ## numeric to align with FISNumber
+  ## in other data parts
+
+## saving LGM df
+saveRDS(LGM_df, file = here::here("data", "intermediate", "LGM_df.rds"))
+
+t01 <- Sys.time()
+
+cat("duration entire script (running LGM on all CBCL_question, merging dfs): ",
+    difftime(t01, t00, unit = "mins"), " minutes")
+
+## eoS
+
+###############################################################################
 
 
-## load in non-LGM features dataframe created in script 06
-
-## give all variables (except for FISNumber)
-## the prefix (or suffix) non_LGM_ (_non_LGM)
-
-## merge non_LGM longitudinal df with LGM longitudinal df 
 
 
-saveRDS(df_full_longitudinal,
-        file = here::here("data", "intermediate", "df_full_longitudinal"))
-
-## saving data model D will follow in the ML modelling script (also add
-## covariates, raw item scores, etc., basically merge data_model_A with 
-## df_full_longitudinal)
 
 
 

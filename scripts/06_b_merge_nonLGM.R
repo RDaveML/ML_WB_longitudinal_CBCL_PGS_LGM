@@ -97,22 +97,34 @@ for(i in 1:length(CBCL_questions_list)){
 
 ## longitudinal mean & SD
 # load(here::here("data", "intermediate", "df_mean_SD_long.Rdata"))
-mean_long_df <- readRDS(here::here("data", "intermediate", "df_mean_SD_long.rds"))
+mean_long_df <- readRDS(
+  here::here("data", "intermediate", "df_mean_SD_long.rds")) %>%
+    rename_with(~ paste0("non_LGM_", .), -FISNumber)
+## adding prefix "non_LGM" to all column names for later comparison of 
+## feature sets
+
 
 
 ## RMSSD
 # load(here::here("data", "intermediate", "df_RMSSD.Rdata"))
-rmssd_df1 <- readRDS(here::here("data", "intermediate", "df_RMSSD.rds"))
+## note: this df you might need to check again because of NaNs
+rmssd_df1 <- readRDS(here::here("data", "intermediate", "df_RMSSD.rds")) %>%
+  rename_with(~ paste0("non_LGM_", .), -FISNumber)
+
 
 
 ## autocorrelation and autoregression features
 # load(here::here("data", "intermediate", "data_acf_imp.Rdata"))
-full_acf_df <- readRDS(here::here("data", "intermediate", "data_acf_imp.rds"))
+full_acf_df <- readRDS(
+  here::here("data", "intermediate", "data_acf_imp.rds")) %>%
+    rename_with(~ paste0("non_LGM_", .), -FISNumber)
+
 
 
 ## rater means and sds for every participant
 # load(here::here("data", "intermediate", "df_rater_covariates.Rdata"))
-data_rater <- readRDS(here::here("data", "intermediate", "df_rater_covariates.rds"))
+data_rater <- readRDS(
+  here::here("data", "intermediate", "df_rater_covariates.rds"))
 
 
 
@@ -125,7 +137,8 @@ data_covariates <- readRDS(
 
 ## vector of covariate names
 # load(here::here("data", "intermediate", "names_covariates.RData"))
-covariates_names <- readRDS(here::here("data", "intermediate", "names_covariates.rds"))
+covariates_names <- readRDS(
+  here::here("data", "intermediate", "names_covariates.rds"))
 
 
 ## filtering covariate data so that same participants remain as in 
@@ -143,7 +156,7 @@ data_full_raw <- data_full %>%
   left_join(data_rater, by = "FISNumber")
 
 ## saving dataframe with only raw CBCL scores and covariates
-filename <- "data_model_A.Rdata"
+filename <- "data_model_A.rds"
 # save(data_full_raw, file = here("data", "intermediate", "data_model_0.Rdata"))
 saveRDS(data_full_raw, here::here("data", "intermediate", "data_model_A.rds"))
 cat("data were saved in file: ", filename)
@@ -152,21 +165,19 @@ cat("data were saved in file: ", filename)
 
 ## Binding together all dfs (note; this is then dataframe for model D! Only there 
 ## longitudinal features are first included)
-data_model_D <- data_full_raw %>% # raw CBCL vars & outcome
+data_model_D_1 <- data_full_raw %>% # raw CBCL vars & outcome
   left_join(mean_long_df, by = "FISNumber") %>% ## longitudinal mean & SD
   left_join(rmssd_df1, by = "FISNumber") %>% # RMSSD
-  left_join(full_acf_df, by = "FISNumber") %>% ## autocorrelation & autoregression
-  left_join(data_rater, by = "FISNumber")
+  left_join(full_acf_df, by = "FISNumber") ## autocorrelation & autoregression
 
 
-
-dim(data_model_D)
+dim(data_model_D_1)
 ## 5087 individuals, 2373 features (pre-preprocessing)
 
 ## saving dataframe
-filename <- "data_model_D.Rdata"
+filename <- "data_model_D_1.rds"
 # save(data_model_A, file = here("data", "intermediate", "data_model_A.Rdata"))
-saveRDS(data_model_D, here::here("data", "intermediate", "data_model_D.rds"))
+saveRDS(data_model_D_1, here::here("data", "intermediate", "data_model_D_1.rds"))
 cat("data were saved in file: ", filename)
 
 cat("end of script")

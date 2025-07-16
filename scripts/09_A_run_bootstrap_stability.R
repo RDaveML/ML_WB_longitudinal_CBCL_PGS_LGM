@@ -169,6 +169,9 @@ dummy_vars <- setdiff(colnames(data_dummies_A), colnames(data_full_raw))
 
 covariates_full <- c(num_covariates, dummy_vars)
 
+saveRDS(covariates_full,
+        here::here("data", "intermediate", "covariates_full_A.rds"))
+
 
 ## preprocessing for machine learning
 ## (this is done in the function f_preprocess)

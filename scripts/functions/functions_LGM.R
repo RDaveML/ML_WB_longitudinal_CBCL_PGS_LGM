@@ -27,6 +27,8 @@ options(scipen = 999)
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "MplusAutomation", "glue")
 
+source(here::here("scripts", "functions", "functions_ml.R"))
+
 
 ## this function takes a dataframe and a CBCL question from a list 
 ## as input, filters the dataframe for only the relevant items 
@@ -361,77 +363,151 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
                 #SAVEDATA = paste0(
                 #   "FILE = {filename_stem}_{C}.dat;\n",
                 #   "SAVE = CPROBABILITIES;"),
-                 quiet = FALSE) 
-  )
-  ## run results in error:
-  ## Error in check_mixtures(modelList) : 
-    ## mixtureSummaryTable requires a list of mixture models as its first argument.
-  ## also the .dat files for the class assignments and probabilities 
-  ## are not created
+                 quiet = FALSE), 
+  file = paste0(getwd(), "/", "output_LCGA.txt"))
+  
   
   ## removing the newly created data file, it is not needed anymore
-  file.remove(grep(list.files(), 
-                   pattern = paste0("data_", CBCL_question),
+  file.remove(grep(pattern = paste0("data_", CBCL_question),
+                   list.files(),
                    value = TRUE))
   
   ## move all .dat files in current directory that contain
   ## CBCL_question and a number in their filename connected by an 
   ## underscore and move them to the directory "cprobabilities"
-  dat_files <- grep(list.files(), 
-               pattern = paste0(CBCL_question, "_\\d+\\_train_cprobs.dat$"),
-               value = TRUE)
+  dat_files <- grep(pattern = "train_cprobs.dat$",
+                    list.files(),
+                    value = TRUE)
   
-  inp_files <- grep(list.files(), 
-                         pattern = paste0(CBCL_question, "_\\d+\\_class.inp$"),
-                         value = TRUE)
+  inp_files <- grep(pattern = "class.inp$",
+                    list.files(),
+                    value = TRUE)
   
   ## .out files somehow always make the CBCL question lowercase, 
   ## take this into account here
-  out_files <- grep(list.files(), 
-                         pattern = paste0(tolower(CBCL_question),
-                                          "_\\d+\\_class.out$"),
-                         value = TRUE)
+  out_files <- grep(pattern = "class.out$",
+                    list.files(),
+                    value = TRUE)
   
   
   ## here insert the model selection part!
   
   ## reading output from the mixture modeling
   ## it is always the last classes + 1 lines
-  length_mix_out_console <- length(mix_out_console)
-  mix_sum_table <- 
-    mix_out_console[
-      (length(mix_out_console) - length(classes)):length(mix_out_console)]
+  #length_mix_out_console <- length(mix_out_console)
+  #mix_sum_table <- 
+  #  mix_out_console[
+  #    (length(mix_out_console) - length(classes)):length(mix_out_console)]
   # mix_sum_table
   ## turn this into dataframe (first line should be column names)
 
   ## mix_sum_table is now 5 lines of characters. It should be a dataframe
   ## where the first line is the column names and the rest are the values
-  df_mix_sum_table <- read.table(text = mix_sum_table[2:length(mix_sum_table)],
-                                 header = FALSE,
-                                 stringsAsFactors = FALSE)
-
-  ## merge second and third column together
-
+  #df_mix_sum_table <- read.table(text = mix_sum_table[2:length(mix_sum_table)],
+  #                               header = FALSE,
+  #                               stringsAsFactors = FALSE)
   
-  colnames(df_mix_sum_table) <- c("Open", "Nr", "Title", "Classes",
-                                  "AIC", "BIC", "aBIC", "Entropy",
-                                  "min_N", "max_N", "min_prob", "max_prob")
-    df_mix_sum_table <- df_mix_sum_table %>%
-    mutate(Title = paste(df_mix_sum_table$Nr, df_mix_sum_table$Title,
-                         sep = " ")) %>%
-    select(-Nr, -Title, -Open)
+  ## CONTINUE HERE!!! find out how to turn this into proper table
+  ## then this should work because the parallel worker always reads within
+  ## a specific directory an actually existing file, the console output
+  ## is then irrelevant!
+  #df_mix_sum_table <- data.frame()
   
+  ## reading in summary output from file where it was saved, 
+  ## only read in lines that refer to the models
+  lines_mix_sum <- readLines("output_LCGA.txt")
+  #length(lines_mix_sum)
+  ## save line number of the line that contains both 
+  ## "Title" and "Classes"
+  lines_mix_sum <- lines_mix_sum[
+    grep("Title.*Classes", lines_mix_sum):length(lines_mix_sum)]
+  
+  ## Re-appending truncated column back to table like output
+  ## function written by Chat-GPT
+  reconstruct_table <- function(lines) {
+    # Step 1: Identify the header and data rows
+    header_line <- lines[1]
+    
+    # Step 2: Identify where the split column starts
+    split_col_header_index <- which(grepl("^\\s*max_prob\\s*$", lines))
+    if (length(split_col_header_index) == 0) stop("No split column header found.")
+    
+    # Step 3: Extract main data and split column values
+    main_data_lines <- lines[2:(split_col_header_index - 1)]
+    split_col_lines <- lines[(split_col_header_index + 1):length(lines)]
+    
+    # Step 4: Extract only the value part from split_col_lines
+    split_values <- sapply(strsplit(split_col_lines, "\\s+"), function(x) tail(x, 1))
+    
+    # Step 5: Combine values with each main data line
+    combined_lines <- mapply(function(main, val) paste(main, val), main_data_lines, split_values)
+    
+    # Step 6: Add a placeholder column name for the row index
+    full_header <- paste("Row", header_line, "max_prob")
+    
+    # Step 7: Combine header and data
+    final_lines <- c(full_header, combined_lines)
+    return(final_lines)
+  }
+  
+  
+  
+  # Usage
+  fixed_lines <- reconstruct_table(lines_mix_sum)
+  
+  # Print to confirm structure
+  #cat(paste(fixed_lines, collapse = "\n"))
+  
+  # Normalize and parse to data.frame
+  #fixed_lines_clean <- gsub("^\\s+|\\s+$", "", fixed_lines)
+  #fixed_lines_clean <- gsub("\\s{2,}", " ", fixed_lines_clean)
+  #df_mix_sum_table <- read.table(
+  #  text = fixed_lines_clean, header = TRUE, stringsAsFactors = FALSE)
+  
+  df_mix_sum_table <- read.table(
+    text = fixed_lines, header = TRUE, stringsAsFactors = FALSE)
+  
+  # Show result
+  #View(df_mix_sum_table)
+  
+  
+  #lines_mix_sum <- 
+  #  lines_mix_sum[(length(lines_mix_sum) - 
+   #                     length(classes) + 1):length(lines_mix_sum)]
   #df_mix_sum_table
+  #for(line in 1:length(lines_mix_sum)){
+      ## steps to do with each line of lines_mix_sum:
+  ## 1) separate all elements that are separated by space into distinct elements of a vector
+  ## 2) add each vector as new line of the data frame
+  #  line_split <- strsplit(lines_mix_sum[line], " ")[[1]]
+    ## remove empty elements from line_split
+  #  line_split <- line_split[line_split != ""]
+    
+    ## drop unnecessary first element
+  #  line_split <- line_split[-1]
+    
+    ## add the line to the dataframe
+  #  df_mix_sum_table <- rbind(df_mix_sum_table, line_split)
+  #}
+  
+  
+  df_mix_sum_table <- df_mix_sum_table %>%
+    mutate(Title = paste(df_mix_sum_table$Row, df_mix_sum_table$Title,
+                         sep = " ")) %>%
+    select(-Row)
   
   ## expand the dataframe with the filenames
   df_mix_sum_table$dat_file <- dat_files
   df_mix_sum_table$inp_file <- inp_files
   df_mix_sum_table$out_file <- out_files
+  ## save the model summary table in directory!
+  ## CONTINUE HERE!!!
+  saveRDS(df_mix_sum_table, file = paste0("summary_LCGA_mixture_", 
+                                          CBCL_question, ".rds"))
+
   
-  #View(df_mix_sum_table)
-  
-  ## Entropy later after searching for indicators,
-  ## should be higher than .60 however (middle ground, Bleidorn et al., 2009)
+  ## Entropy should be higher than .60 
+  ## (middle ground, Bleidorn et al., 2009)
   model_opt <- df_mix_sum_table %>%
     filter(min_N >= 0.1 * nrow(df_train)) %>%
     filter(is.na(Entropy) | Entropy >= 0.6)
@@ -450,8 +526,17 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
   ## LGM with individual variation allowed on both training and test set?!
   if(opt_n_class == 1){
     
-    ## delete files of previous modelling
-    file.remove(from = paste0(getwd(), "/", list.files()))
+    ## delete files of previous modelling, keeping console output file
+    ## and summary table of mixture modelling and 1-class modelling Mplus files
+    files_opt_model <- c(model_opt$inp_file,
+                         model_opt$out_file)
+    
+    file.remove(from = paste0(getwd(), "/", 
+                              setdiff(list.files(),
+                                      c(files_opt_model,
+                                        "output_LCGA.txt",
+                                        paste0("summary_LCGA_mixture_",
+                                               CBCL_question, ".rds")))))
     
         title_string_LGM <- paste0("Multilevel LGM model CBCL_question_",
                                    CBCL_question)
@@ -510,7 +595,7 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
       check = TRUE,
       run = TRUE,
       hashfilename = FALSE,
-      Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
+      Mplus_command = detectMplus() #"C:/Program Files/Mplus/Mplus.exe"
     )
 
     
@@ -588,7 +673,7 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
       check = TRUE,
       run = TRUE,
       hashfilename = FALSE,
-      Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
+      Mplus_command = detectMplus() #"C:/Program Files/Mplus/Mplus.exe"
     )
     
     ## reading in model output model test set
@@ -637,21 +722,27 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
       #out_files
       
       files_opt_model <- c(model_opt$dat_file, 
-                          model_opt$inp_file,
-                          model_opt$out_file)
+                           model_opt$inp_file,
+                           model_opt$out_file)
       
       ## adapt the list so that the correct file is chosen (setdiff)
       ## this comes only after the model selection!
       
       ## delete all files in the directory except the ones associated with the
-      ## optimal model
-      files_delete <- setdiff(list.files(), files_opt_model)
+      ## optimal model, the output of the LCGA and the 
+      ## summary table of the LCGA models
+      files_delete <- setdiff(list.files(), c(files_opt_model,
+                                              "output_LCGA.txt",
+                                              paste0("summary_LCGA_mixture_", 
+                                                     CBCL_question, ".rds")))
+                              
       file.remove(from = paste0(getwd(), "/", files_delete)) 
       
       
       file.copy(from = paste0(getwd(), "/", model_opt$dat_file),
                 to = paste0(here::here("mplus_files", "cprobabilities"), "/",
-                            model_opt$dat_file) 
+                            model_opt$dat_file),
+                overwrite = TRUE
       )
       ## note: The .dat file cannot be deleted if the the readModels function
       ## is supposed to be used!
@@ -698,7 +789,7 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
         check = TRUE,
         run = TRUE,
         hashfilename = FALSE,
-        Mplus_command = "C:/Program Files/Mplus/Mplus.exe"
+        Mplus_command = detectMplus() #"C:/Program Files/Mplus/Mplus.exe"
       )
       
       
@@ -809,7 +900,14 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
       df_out_CBCL <- df_out_CBCL %>%
         select(-all_of(min_prob_col), -contains("C1"))
       
-
+      
+      ## saving cprobs file of the test set to additional folder as well
+      out_cprobs_file <- grep("test_cprobs", list.files(), value = TRUE)
+      file.copy(from = paste0(getwd(), "/", out_cprobs_file),
+                to = paste0(here::here("mplus_files", "cprobabilities"), "/",
+                            out_cprobs_file),
+                overwrite = TRUE
+      )
       # setwd(dir_CBCL_question)
       
       }
@@ -850,75 +948,77 @@ LGM_estimation_grid <- function(df, configuration_grid){
 ## ----------------------------------------------------------------------------
 
 ## testing area (leave this in!)
-data_train_LGM_1 <- LGM_preprocess(
-  CBCL_age_df = CBCL_age_df,
-  CBCL_question = names(CBCL_questions_list)[[1]],
-  df = train_data,
-  questions_list = CBCL_questions_list,
-  items_table = CBCL_items_table_reduced)
-
-data_test_LGM_1 <- LGM_preprocess(
-  CBCL_age_df = CBCL_age_df,
-  CBCL_question = names(CBCL_questions_list)[[1]],
-  df = test_data,
-  questions_list = CBCL_questions_list,
-  items_table = CBCL_items_table_reduced)
-
-View(data_train_LGM_1)
-
-data_train_LGM_97 <- LGM_preprocess(
-  CBCL_age_df = CBCL_age_df,
-  CBCL_question = names(CBCL_questions_list)[[80]],
-  df = train_data,
-  questions_list = CBCL_questions_list,
-  items_table = CBCL_items_table_reduced)
-
-data_test_LGM_97 <- LGM_preprocess(
-  CBCL_age_df = CBCL_age_df,
-  CBCL_question = names(CBCL_questions_list)[[80]],
-  df = test_data,
-  questions_list = CBCL_questions_list,
-  items_table = CBCL_items_table_reduced)
-
-system.time({LCGA_test_1 <-
-  LGM_1_4_CBCL(df_train = data_train_LGM_1,
-                df_test = data_test_LGM_1,
-                CBCL_question = names(CBCL_questions_list)[[1]])
-})
-## function works!!!
-
-
-system.time({LCGA_test_2 <- lapply(names(CBCL_questions_list)[c(2, 80)], function(x){
-  ## data prep for training and test set
-  train_data_question <- 
-  LGM_preprocess(CBCL_age_df = CBCL_age_df,
-                 CBCL_question = x,
-                 df = train_data,
-                 questions_list = CBCL_questions_list,
-                 items_table = CBCL_items_table_reduced)
-
-  test_data_question <- 
-  LGM_preprocess(CBCL_age_df = CBCL_age_df,
-                 CBCL_question = x,
-                 df = test_data,
-                 questions_list = CBCL_questions_list,
-                 items_table = CBCL_items_table_reduced)
+source_tests <- FALSE ## important to not accidently also source those objects
+if(source_tests){
+  data_train_LGM_1 <- LGM_preprocess(
+    CBCL_age_df = CBCL_age_df,
+    CBCL_question = names(CBCL_questions_list)[[1]],
+    df = train_data,
+    questions_list = CBCL_questions_list,
+    items_table = CBCL_items_table_reduced)
   
-  LGM_df_question <-
-  LGM_1_4_CBCL(df_train = train_data_question,
-                df_test = test_data_question,
-                CBCL_question = x)
+  data_test_LGM_1 <- LGM_preprocess(
+    CBCL_age_df = CBCL_age_df,
+    CBCL_question = names(CBCL_questions_list)[[1]],
+    df = test_data,
+    questions_list = CBCL_questions_list,
+    items_table = CBCL_items_table_reduced)
   
-  return(LGM_df_question)
+  View(data_train_LGM_1)
+  
+  data_train_LGM_97 <- LGM_preprocess(
+    CBCL_age_df = CBCL_age_df,
+    CBCL_question = names(CBCL_questions_list)[[80]],
+    df = train_data,
+    questions_list = CBCL_questions_list,
+    items_table = CBCL_items_table_reduced)
+  
+  data_test_LGM_97 <- LGM_preprocess(
+    CBCL_age_df = CBCL_age_df,
+    CBCL_question = names(CBCL_questions_list)[[80]],
+    df = test_data,
+    questions_list = CBCL_questions_list,
+    items_table = CBCL_items_table_reduced)
+  
+  system.time({LCGA_test_1 <-
+    LGM_1_4_CBCL(df_train = data_train_LGM_1,
+                  df_test = data_test_LGM_1,
+                  CBCL_question = names(CBCL_questions_list)[[1]])
   })
+  ## function works!!!
+  
+  
+  system.time({LCGA_test_2 <- lapply(names(CBCL_questions_list)[c(2, 80)], function(x){
+    ## data prep for training and test set
+    train_data_question <- 
+    LGM_preprocess(CBCL_age_df = CBCL_age_df,
+                   CBCL_question = x,
+                   df = train_data,
+                   questions_list = CBCL_questions_list,
+                   items_table = CBCL_items_table_reduced)
+  
+    test_data_question <- 
+    LGM_preprocess(CBCL_age_df = CBCL_age_df,
+                   CBCL_question = x,
+                   df = test_data,
+                   questions_list = CBCL_questions_list,
+                   items_table = CBCL_items_table_reduced)
+    
+    LGM_df_question <-
+    LGM_1_4_CBCL(df_train = train_data_question,
+                  df_test = test_data_question,
+                  CBCL_question = x)
+    
+    return(LGM_df_question)
+    })
 })
 
 ## CONTINUE HERE!!!
-## does this work? And how long?
-## outcome not saved, flaw in code, took 71 minutes
+## This now works! Next week: Send to server and paralellize, essentially 
+## run script 07 took 63 - 71 minutes
 
 ## reduce df to 1 big df
-LGM_preprocess()
+}
 
 ## question: Can you suppress the console printing output of the 
 ## mPlusmodeler function?

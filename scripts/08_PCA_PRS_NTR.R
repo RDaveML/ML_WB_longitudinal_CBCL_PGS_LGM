@@ -230,4 +230,6 @@ merged_data <- Reduce(function(x, y) merge(x, y, by = "FISNumber", all = TRUE),
 saveRDS(merged_data,
         file = here::here("data", "intermediate", "PGS", "data_PCA_PGS.rds"))
 
+
+
 # eoS
