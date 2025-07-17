@@ -292,45 +292,45 @@ invisible(clusterEvalQ(cl,expr= {
 
 ## do this in two blocks, 48 cores available on ntr-compute1
 LGM_full_CBCL_1 <- parLapply(
-  cl, names(CBCL_questions_list)[1:48], function(x) {
-
-    ## data prep for training and test set
-    train_data_question <-
-      LGM_preprocess(
-        CBCL_age_df = CBCL_age_df,
-        CBCL_question = x,
-        df = train_data,
-        questions_list = CBCL_questions_list,
-        items_table = CBCL_items_table_reduced
-      )
-    
-    test_data_question <-
-      LGM_preprocess(
-        CBCL_age_df = CBCL_age_df,
-        CBCL_question = x,
-        df = test_data,
-        questions_list = CBCL_questions_list,
-        items_table = CBCL_items_table_reduced
-      )
-    
-    ## calculating and selecting 1-4 class models for each question,
-    ## creating output dataframe
-    LGM_df_question <-
-      LGM_1_4_CBCL(df_train = train_data_question,
-                   df_test = test_data_question,
-                   CBCL_question = x)
-    ## test: Does this work for two CBCL questions?
-    
-    return(LGM_df_question)
+  cl, names(CBCL_questions_list)[1:48], function(x) { 
+    tryCatch({
+      ## data prep for training and test set
+      train_data_question <-
+        LGM_preprocess(
+          CBCL_age_df = CBCL_age_df,
+          CBCL_question = x,
+          df = train_data,
+          questions_list = CBCL_questions_list,
+          items_table = CBCL_items_table_reduced
+        )
+      
+      test_data_question <-
+        LGM_preprocess(
+          CBCL_age_df = CBCL_age_df,
+          CBCL_question = x,
+          df = test_data,
+          questions_list = CBCL_questions_list,
+          items_table = CBCL_items_table_reduced
+        )
+      
+      ## calculating and selecting 1-4 class models for each question,
+      ## creating output dataframe
+      LGM_df_question <-
+        LGM_1_4_CBCL(df_train = train_data_question,
+                    df_test = test_data_question,
+                    CBCL_question = x)
+      
+      return(LGM_df_question)}, error = function(e) {
+        message(sprintf("Error in processing question '%s': %s", x, e$message))
+        return(NULL)
+      })
   })
 stopCluster(cl)
-
 
 names(LGM_full_CBCL_1) <- names(CBCL_questions_list)[1:48]
 
 
-## again something went wrong in the parallelization, 
-## cprobabilities are not saved as well
+cat("\nFirst half of LGM questions done, now second half\n")
 
 
 ## set working directory back to parent directory (was affected by the LGM
@@ -349,8 +349,11 @@ clusterExport(cl, c("CBCL_age_df",
                     "CBCL_items_table_reduced",
                     "train_data", 
                     "test_data",
+                    "age_var_select",
                     "LGM_preprocess",
-                    "LCGA_1_4_CBCL"),
+                    "generate_fixed_syntax_with_classes",
+                    "LGM_1_4_CBCL",
+                    "f_conv"),
               envir = environment())
 
 invisible(clusterEvalQ(cl,expr= {
@@ -372,33 +375,37 @@ invisible(clusterEvalQ(cl, ls()))
 ## do this in two blocks, 48 cores available on ntr-compute1
 LGM_full_CBCL_2 <- parLapply(
   cl, names(CBCL_questions_list)[49:length(CBCL_questions_list)], function(x) {
-    ## data prep for training and test set
-    train_data_question <-
-      LGM_preprocess(
-        CBCL_age_df = CBCL_age_df,
-        CBCL_question = x,
-        df = train_data,
-        questions_list = CBCL_questions_list,
-        items_table = CBCL_items_table_reduced
-      )
-    
-    test_data_question <-
-      LGM_preprocess(
-        CBCL_age_df = CBCL_age_df,
-        CBCL_question = x,
-        df = test_data,
-        questions_list = CBCL_questions_list,
-        items_table = CBCL_items_table_reduced
-      )
-    
-    ## calculating and selecting 1-4 class models for each question,
-    ## creating output dataframe
-    LGM_df_question <-
-      LCGA_1_4_CBCL(df_train = train_data_question,
-                    df_test = test_data_question,
-                    CBCL_question = x)
-    
-    return(LGM_df_question)
+     tryCatch({
+      ## data prep for training and test set
+      train_data_question <-
+        LGM_preprocess(
+          CBCL_age_df = CBCL_age_df,
+          CBCL_question = x,
+          df = train_data,
+          questions_list = CBCL_questions_list,
+          items_table = CBCL_items_table_reduced
+        )
+      
+      test_data_question <-
+        LGM_preprocess(
+          CBCL_age_df = CBCL_age_df,
+          CBCL_question = x,
+          df = test_data,
+          questions_list = CBCL_questions_list,
+          items_table = CBCL_items_table_reduced
+        )
+      
+      ## calculating and selecting 1-4 class models for each question,
+      ## creating output dataframe
+      LGM_df_question <-
+        LGM_1_4_CBCL(df_train = train_data_question,
+                      df_test = test_data_question,
+                      CBCL_question = x)
+      
+      return(LGM_df_question)}, error = function(e) {
+        message(sprintf("Error in processing question '%s': %s", x, e$message))
+        return(NULL)
+      })
   })
 stopCluster(cl)
 
@@ -412,6 +419,21 @@ setwd(here::here())
 
 ## appending lists
 LGM_full_CBCL <- c(LGM_full_CBCL_1, LGM_full_CBCL_2)
+
+## saving LGM df
+saveRDS(
+  LGM_full_CBCL, file = here::here("data", "intermediate", "LGM_full_CBCL.rds"))
+
+cat("LGM df saved\n")
+
+## removing all sub-elements of the list where $df_out_CBCL is NULL
+LGM_full_CBCL <- LGM_full_CBCL[!sapply(LGM_full_CBCL, function(x) {
+  is.null(x) || is.null(x$df_out_CBCL)
+})]
+
+## saving CBCL_questions where outcome dataframe was NULL
+CBCL_questions_null <- setdiff(names(CBCL_questions_list), 
+                               names(LGM_full_CBCL))
 
 ## make one dataframe out of all df_out_CBCL dfs that are contained in the 
 ## sub elements of the list LGM_full_CBCL
@@ -429,6 +451,11 @@ LGM_df <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
 
 ## saving LGM df
 saveRDS(LGM_df, file = here::here("data", "intermediate", "LGM_df.rds"))
+
+## saving CBCL_questions where outcome dataframe was NULL
+saveRDS(CBCL_questions_null, file = here::here(
+  "data", "intermediate", "CBCL_questions_null.rds"))
+
 
 t01 <- Sys.time()
 

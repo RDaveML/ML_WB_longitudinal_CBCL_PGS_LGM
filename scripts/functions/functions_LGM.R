@@ -282,6 +282,31 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
   ## the file decluttering)
   
   var_names_LGM <- unlist(unname(CBCL_questions_list[CBCL_question]))
+  
+  ## constant variable stop; 
+  ## if there is a variable in training or test set that has var 0 
+  ## (only one value occurs), skip this entire CBCL longitudinal question
+  ## and return NULL
+  var_names_t <- grep("^t\\d+$", colnames(df_train), value = TRUE)
+  
+  ## check if any of the variables in var_names_t 
+  ## is constant (only one value occurring) in either df_train or df_test
+  constant_vars_train <- sapply(var_names_t, function(x) {
+    length(unique(na.omit(df_train[[x]]))) == 1
+  })
+  
+  constant_vars_test <- sapply(var_names_t, function(x) {
+    length(unique(na.omit(df_test[[x]]))) == 1
+  })
+  
+  ## if there is a constant variable in either training or test set, 
+  ## skip the modellling for this entire question
+  if(sum(constant_vars_train) > 0 | sum(constant_vars_test) > 0){
+  
+    return(list(df_CBCL_out = NULL,
+                n_class = NULL))
+  }
+  
   title_string <- paste0("class model CBCL_question_", CBCL_question)
   
   variable_string <- paste0(
@@ -600,7 +625,17 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
 
     
     ## extract model parameters to fix them in test set
-    model_LGM_train_info <- readModels(target = getwd(), what = "all")
+    ## reading in model output model test set
+    
+    ## specify correct file (.out file of LCGA was also saved!)
+    model_LGM_train_output_file <- grep(".out",
+                                        grep("model_train_LGM_",
+                                             list.files(),
+                                             value = TRUE),
+                                        value = TRUE)
+    
+    model_LGM_train_info <- readModels(
+      target = model_LGM_train_output_file, what = "all")
     
     par_fixed_LGM_test <- paste0(model_string_LGM, "\n",
                                  generate_fixed_syntax_with_classes(
@@ -625,28 +660,35 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
     })
     ## set the first letter of the names of values_2_test to uppercase
     names(values_2_test) <- toupper(var_names_test)
-
-    ## disassembling par_fixed_LGM_test
-    par_fixed_LGM_test <- unlist(strsplit(par_fixed_LGM_test, "\n"))
     
-    ## remove the lines that refer to the threshold to the value 2
-    ## if the variable does not occur in the test set
-    ## the lines in par_fixed_LGM_test where these two conditions are both TRUE:
-    ## A) a variable is contained where values_2_test is NA
-    ## and
-    ## B) a dollar sign is followed by a "2"
-    ## should be removed from par_fixed_LGM_test
-    par_fixed_LGM_test <- par_fixed_LGM_test[!grepl(
-      paste0("(", paste(names(values_2_test[is.na(values_2_test)]), collapse = "|"), 
-             ")\\$2"), par_fixed_LGM_test)]
-
-
-    ## this removes all lines that refer to the threshold to the value 2 if that 
-    ## value does not occur in the test set
+    ## only execute the fixed parameter correction if there are any 
+    ## variables where value two does not occur (value NA under the variable
+    ## in values_2_test)
     
-    ## now re-join the lines to a single string
-    par_fixed_LGM_test <- paste(par_fixed_LGM_test, collapse = "\n")
-    cat(par_fixed_LGM_test)
+    if(sum(is.na(values_2_test)) > 0){
+  
+      ## disassembling par_fixed_LGM_test
+      par_fixed_LGM_test <- unlist(strsplit(par_fixed_LGM_test, "\n"))
+      
+      ## remove the lines that refer to the threshold to the value 2
+      ## if the variable does not occur in the test set
+      ## the lines in par_fixed_LGM_test where these two conditions are both TRUE:
+      ## A) a variable is contained where values_2_test is NA
+      ## and
+      ## B) a dollar sign is followed by a "2"
+      ## should be removed from par_fixed_LGM_test
+      par_fixed_LGM_test <- par_fixed_LGM_test[!grepl(
+        paste0("(", paste(names(values_2_test[is.na(values_2_test)]), collapse = "|"), 
+               ")\\$2"), par_fixed_LGM_test)]
+  
+  
+      ## this removes all lines that refer to the threshold to the value 2 if that 
+      ## value does not occur in the test set
+      
+      ## now re-join the lines to a single string
+      par_fixed_LGM_test <- paste(par_fixed_LGM_test, collapse = "\n")
+      cat(par_fixed_LGM_test)
+    }
 
 
     ## code model test set
@@ -757,6 +799,49 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
                                  model_opt_info$parameters$unstandardized)
                                )
       
+      ## special case: It can occur that the value 2 does not occur in a specific
+      ## variable in the test set!
+      
+      ## in this case:
+      ## check all variables in df_test where the column name
+      ## begins with "t" followed by a number
+      ## if not, save them to a vector
+      ## In the next step, remove the lines from par_fixed_LGM_test that 
+      ## refer to the threshold to the value 2 (e.g. [T1$2@4.284]; should be 
+      ## removed if T1$2 does not occur in the test set)
+      var_names_test <- grep("^t\\d+$", colnames(df_test), value = TRUE)
+      
+      ## check if the value 2 occurs in the test set
+      values_2_test <- sapply(var_names_test, function(x) {
+        any(df_test[[x]] == 2)
+      })
+      ## set the first letter of the names of values_2_test to uppercase
+      names(values_2_test) <- toupper(var_names_test)
+      
+      if(sum(is.na(values_2_test)) > 0){
+        ## disassembling par_fixed_LGM_test
+        par_fixed_test <- unlist(strsplit(par_fixed_test, "\n"))
+        
+        ## remove the lines that refer to the threshold to the value 2
+        ## if the variable does not occur in the test set
+        ## the lines in par_fixed_LGM_test where these two conditions are both
+        ## TRUE:
+        ## A) a variable is contained where values_2_test is NA
+        ## and
+        ## B) a dollar sign is followed by a "2"
+        ## should be removed from par_fixed_LGM_test
+        par_fixed_test <- par_fixed_test[!grepl(
+          paste0("(", paste(names(values_2_test[is.na(values_2_test)]), collapse = "|"), 
+                 ")\\$2"), par_fixed_test)]
+        
+        
+        ## this removes all lines that refer to the threshold to the value 2 if that 
+        ## value does not occur in the test set
+        
+        ## now re-join the lines to a single string
+        par_fixed_test <- paste(par_fixed_test, collapse = "\n")
+        cat(par_fixed_test)
+      }
       
       ## Now: estimate the exact same model with all important 
       ## parameters fixed to the values from the model estimated on the training set
@@ -908,7 +993,6 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
                             out_cprobs_file),
                 overwrite = TRUE
       )
-      # setwd(dir_CBCL_question)
       
       }
   return(list(df_out_CBCL = df_out_CBCL,
@@ -986,6 +1070,20 @@ if(source_tests){
                   CBCL_question = names(CBCL_questions_list)[[1]])
   })
   ## function works!!!
+  
+  data_train_LGM_105 <- LGM_preprocess(
+    CBCL_age_df = CBCL_age_df,
+    CBCL_question = "CBCL_105",
+    df = train_data,
+    questions_list = CBCL_questions_list,
+    items_table = CBCL_items_table_reduced)
+  
+  data_test_LGM_105 <- LGM_preprocess(
+    CBCL_age_df = CBCL_age_df,
+    CBCL_question = "CBCL_105",
+    df = test_data,
+    questions_list = CBCL_questions_list,
+    items_table = CBCL_items_table_reduced)
   
   
   system.time({LCGA_test_2 <- lapply(names(CBCL_questions_list)[c(2, 80)], function(x){

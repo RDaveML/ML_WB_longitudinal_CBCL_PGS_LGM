@@ -37,7 +37,11 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "purrr")
 
 ## reading in RDSdata (once not working on server anymore)
-LGM_df <- readRDS(here::here("data", "intermediate", "LGM_df.rds"))
+LGM_df <- readRDS(here::here("data", "intermediate", "LGM_df_0.rds")) %>%
+  ## Remove all columns that refer to standard errors of estimates
+  ## (not-informative, still contained in data file for later inspection,
+  ## additional analysis)
+  select(-contains("_SE_"))
 
 ###############################################################################
 
