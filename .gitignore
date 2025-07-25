@@ -35,3 +35,4 @@ scripts/07_old_LGM.R
 scripts/18_1_model_C_run_bootstrap_stability.R
 scripts/model_metrics_ABC.R
 /mplus_server
+scripts/analysis_LGM_pt1.R

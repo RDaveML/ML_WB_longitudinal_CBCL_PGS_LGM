@@ -90,6 +90,21 @@ pred_xgb <- pred_xgb %>%
   select(-train, -original_prediction)
 
 ## true Y
+## loading in full data model D and creating outcome df for this model
+if(!file.exists(
+  here::here("data", "intermediate", "data_outcome_D.rds"))) {
+  
+  data_model_D_base <- readRDS(
+    here::here("data", "intermediate", "data_full_model_D.rds"))
+  
+  data_outcome <- data_model_D_base %>%
+    select(FISNumber, QoL_simple) %>%
+    mult_to_numeric()
+  
+  saveRDS(data_outcome, 
+          here::here("data", "intermediate", "data_outcome_D.rds"))
+}
+
 data_outcome <- readRDS(
   here::here("data", "intermediate", "data_outcome_D.RDS"))
 

@@ -325,6 +325,7 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
   
   analysis_string <- paste0(
     "type = mixture random complex;\n",
+    "starts = 100 10;\n",
     "estimator = mlr;\n",
     "link = probit;\n",
     "algorithm = integration;\n"
@@ -455,24 +456,33 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
     
     # Step 2: Identify where the split column starts
     split_col_header_index <- which(grepl("^\\s*max_prob\\s*$", lines))
-    if (length(split_col_header_index) == 0) stop("No split column header found.")
-    
-    # Step 3: Extract main data and split column values
-    main_data_lines <- lines[2:(split_col_header_index - 1)]
-    split_col_lines <- lines[(split_col_header_index + 1):length(lines)]
-    
-    # Step 4: Extract only the value part from split_col_lines
-    split_values <- sapply(strsplit(split_col_lines, "\\s+"), function(x) tail(x, 1))
-    
-    # Step 5: Combine values with each main data line
-    combined_lines <- mapply(function(main, val) paste(main, val), main_data_lines, split_values)
-    
-    # Step 6: Add a placeholder column name for the row index
-    full_header <- paste("Row", header_line, "max_prob")
-    
-    # Step 7: Combine header and data
-    final_lines <- c(full_header, combined_lines)
-    return(final_lines)
+    ## if columns where not broken, return simply the parts of the output file that 
+    ## refer to the model information
+    if (length(split_col_header_index) == 0) {
+      full_header <- paste("Row", header_line)
+      ## CONTINUE HERE!!! include rest of the code that produces proper lines
+      final_lines <- c(full_header, lines[-1])
+      return(final_lines)
+      
+    } else {
+      
+        # Step 3: Extract main data and split column values
+        main_data_lines <- lines[2:(split_col_header_index - 1)]
+        split_col_lines <- lines[(split_col_header_index + 1):length(lines)]
+        
+        # Step 4: Extract only the value part from split_col_lines
+        split_values <- sapply(strsplit(split_col_lines, "\\s+"), function(x) tail(x, 1))
+        
+        # Step 5: Combine values with each main data line
+        combined_lines <- mapply(function(main, val) paste(main, val), main_data_lines, split_values)
+        
+        # Step 6: Add a placeholder column name for the row index
+        full_header <- paste("Row", header_line, "max_prob")
+        
+        # Step 7: Combine header and data
+        final_lines <- c(full_header, combined_lines)
+        return(final_lines)
+    }
   }
   
   
@@ -570,6 +580,7 @@ LGM_1_4_CBCL <- function(df_train, df_test, CBCL_question){
     ## (every individual has own slope and intercept, no mixture)
     analysis_string_LGM <- paste0(
       "type = random complex;\n",
+      "starts = 100 10;\n",
       "estimator = mlr;\n",
       "link = probit;\n",
       "algorithm = integration;\n"
@@ -1070,6 +1081,8 @@ if(source_tests){
                   CBCL_question = names(CBCL_questions_list)[[1]])
   })
   ## function works!!!
+  ## also for larger number of random starts (100 10)?
+  ##
   
   data_train_LGM_105 <- LGM_preprocess(
     CBCL_age_df = CBCL_age_df,

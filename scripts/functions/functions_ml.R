@@ -597,11 +597,11 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
     , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
   y_train_vector <- df_train$QoL_simple
 
-  cat("column names df_train without exclude vars: ", "\n")
-  print(colnames(df_train %>% select(-all_of(exclude_vars))))
+  #cat("column names df_train without exclude vars: ", "\n")
+  #print(colnames(df_train %>% select(-all_of(exclude_vars))))
 
-  cat("column names x_train_matrix", "\n")
-  print(colnames(x_train_matrix))
+  #cat("column names x_train_matrix", "\n")
+  #print(colnames(x_train_matrix))
 
   cat("difference colnames between both datasets: ", "\n")
   setdiff(colnames(df_train %>% select(-all_of(exclude_vars))),

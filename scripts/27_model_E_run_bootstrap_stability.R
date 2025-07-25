@@ -4,9 +4,9 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-07-14
+# Date: 2025-07-24
 #
-# Script Name: 23_model_D_run_bootstrap_stability.R
+# Script Name: 27_model_E_run_bootstrap_stability.R
 #
 # Script Description: This script is supposed to run the original and the B = 100
 # bootstrapped versions of the ML script to inspect model stability
@@ -17,10 +17,13 @@
 # the stability check takes place
 #
 #
-# Notes: script 23_model_D_run_bootstrap_stability.R runs model D
-# (raw CBCL scores + non-LGM features + LGM features, + covariates)
+# Notes: script 27_model_E_run_bootstrap_stability.R runs model E
+# (Raw CBCL variables + non-LGM longitudinal features + LGM-longitudinal 
+# features + PGS + covariates)
 #
 #
+
+
 
 # !/usr/bin/env Rscript
 
@@ -68,10 +71,12 @@ rater_covariates <- readRDS(
   here::here("data", "intermediate", "names_rater_covariates.rds")
 )
 
-
+## loading in vector with names genetic covariates
+gen_covariates <- readRDS(
+  here::here("data", "intermediate", "names_genetic_covariates.rds"))
 
 ## one vector with all covariates names
-covariates_names <- c(covariates_names, rater_covariates)
+covariates_names <- c(covariates_names, gen_covariates)
 
 ## part 1 (not run on server): preprocess the datasets for the original run
 ## and all 100 bootstrapped runs, save them as .rds files that
@@ -97,7 +102,7 @@ if(data_prepared) {
   
   test <- FALSE
   if (test) {
-    filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
+    filename <- paste0("workspace_model_E_iteration_", iter, ".rds")
     saveRDS(iter, file = paste0(here::here(
       "data", "intermediate", "bootstrap", filename
     )))
@@ -112,11 +117,13 @@ if(data_prepared) {
 if(data_prepared == FALSE){
   iterations <- c(1:101)
   
-  ## loading in dataset model D (was created in script 22)
+  ## loading in dataset 
   
-  data_model_D_base <- readRDS(
-    here::here("data", "intermediate", "data_full_model_D.rds"))
+  ## full model E dataset
+  data_model_E_base <- readRDS(
+    here::here("data", "intermediate", "data_full_model_E.rds"))
   
+
   
   ## initiating for loop to prepare the entire set
   
@@ -129,12 +136,11 @@ if(data_prepared == FALSE){
     } else {
       b_iter <- 0
     }
-    b_iter <- as.numeric(b_iter)
-    cat("Iteration / Index for Bootstrapped dataset: ", b_iter, "\n")
+    cat("Iteration / Index for Bootstrapped dataset: ", b_iter)
     
     test <- FALSE
     if (test) {
-      filename <- paste0("workspace_model_D_iteration_", iter, ".rds")
+      filename <- paste0("workspace_model_B_iteration_", iter, ".rds")
       saveRDS(iter, file = paste0(here::here(
         "data", "intermediate", "bootstrap", filename
       )))
@@ -143,25 +149,26 @@ if(data_prepared == FALSE){
       )
     }
     
-    ## same train / test split as in model A (was created in script 05)
-    ## ids training set
+    ## the new train and test split was created in script 13
+    
+    ## readRDS solves the problem!
     if (b_iter == 0) {
       train_ids <- readRDS(
-        here::here("data", "intermediate", "indices_train.rds"))
+        here::here("data", "intermediate", "indices_train_PGS.rds"))
     } else {
       train_ids <- readRDS(
         here::here(
-          "data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[1]]
+          "data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
     }
     
-    ## ids test set
+    
     if (b_iter == 0) {
       test_ids <- readRDS(
-        here::here("data", "intermediate", "indices_test.rds"))
+        here::here("data", "intermediate", "indices_test_PGS.rds"))
     } else {
       test_ids <- readRDS(
         here::here(
-          "data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[2]]
+          "data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
     }
     
     
@@ -177,41 +184,57 @@ if(data_prepared == FALSE){
     ## contained in dataset
     ## (Not necessary, already adressed in begin)
     #covariate_data <- readRDS(here::here("data", "intermediate", "data_covariates.rds")) %>%
-    #  filter(FISNumber %in% c(train_ids, test_ids)
+    #  filter(FISNumber %in% c(train_ids, test_ids))
     
     
     ## further distinction: numeric and factor covariates
-    num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
-                        grep("age_qol", covariates_names, value = TRUE),
-                        rater_covariates)
+    num_covariates <- c(
+      grep("time_lag", covariates_names, value = TRUE),
+      grep("age_qol", covariates_names, value = TRUE),
+      grep("[0-9]+_1KG", colnames(data_model_E_base), value = TRUE),
+      rater_covariates
+    )
     
-    factor_covariates <- setdiff(covariates_names, num_covariates)
+    factor_covariates <- c(setdiff(covariates_names, num_covariates),
+                           "EUR_1KG_Outlier",
+                           "NL_Strict_Outlier")
+    
+    #factor_covariates <- c(
+    #  "PLD_AXIOM",
+    #  "PLD_GSA",
+    #  "EUR_1KG_Outlier",
+    #  "NL_Strict_Outlier",
+    #  "sex",
+    #  "twzyg",
+    #  "ea4fa_agg",
+    #  "ea4mo_agg",
+    #  "QoL_indicator"
+    #)
     
     ## here check values of the factor covariates
-    if(iter == 1){
-      for (f_col in factor_covariates) {
-       cat("distribution of values for variable ", f_col, "\n")
-        print(table(data_model_D_base[[f_col]]))
-        cat("\n", "\n")
-      }
-    }
-    ## leave this in for descriptive statistics!
+    #for (f_col in factor_covariates) {
+    #  cat("distribution of values for variable ", f_col, "\n")
+    #  print(table(data_model_B[[f_col]]))
+    #  cat("\n", "\n")
+    #}
     
     ## converting covariates to factors
     ## (this is done in the function f_conv)
     
-    data_model_D <- f_conv(df = data_model_D_base,
+    ## check here if function also works with data model B!
+    ## sandbox with functions and model B data!
+    data_model_E <- f_conv(df = data_model_E_base,
                            covariates = factor_covariates)
     
     
     ## converting columns with multiple
     ## class types to numeric
-    data_model_D <- mult_to_numeric(df = data_model_D)
+    data_model_E <- mult_to_numeric(df = data_model_E)
     
     
     ## dummy coding categorical covariates
-    data_dummies_D <- dummy_cols(
-      data_model_D,
+    data_dummies_E <- dummy_cols(
+      data_model_E,
       select_columns = factor_covariates,
       remove_first_dummy = TRUE,
       remove_selected_columns = TRUE,
@@ -219,49 +242,46 @@ if(data_prepared == FALSE){
     ) ## not own column, but missing
     ## information here will be imputed as well
     
-    dummy_vars <- setdiff(colnames(data_dummies_D), colnames(data_model_D))
+    dummy_vars <- setdiff(colnames(data_dummies_E), colnames(data_model_E))
     
     ## check if the covariates are still correct
     covariates_full <- c(num_covariates, dummy_vars)
     
     if (iter == 1) {
       saveRDS(covariates_full,
-              here::here("data", "intermediate", "covariates_full_D.rds"))
+              here::here("data", "intermediate", "covariates_full_E.rds"))
     }
     
     covariates_full <- readRDS(
-      here::here("data", "intermediate", "covariates_full_D.rds"))
+      here::here("data", "intermediate", "covariates_full_E.rds"))
     ## preprocessing for machine learning
     ## (this is done in the function f_preprocess)
     ## nzv removal, high cor removal, linear combination removal, imputation
-    system.time({
-    preprocessed_D <- ml_preprocess(
-      df = data_dummies_D,
+    preprocessed_E <- ml_preprocess(
+      df = data_dummies_E,
       train_ids = train_ids,
       test_ids = test_ids,
       covariates = covariates_full
     )
-    })
-    ## with full LGM and longitudinal df, this takes 8.37 min
     
     ## checking if family is still included in traning variables
-    "FamilyNumber" %in% colnames(preprocessed_D$x_train_comb)
+    "FamilyNumber" %in% colnames(preprocessed_E$x_train_comb)
     
-    x_train <- preprocessed_D$x_train_comb
+    x_train <- preprocessed_E$x_train_comb
     
-    x_test <- preprocessed_D$x_test_comb
+    x_test <- preprocessed_E$x_test_comb
     
     ## saving data
-    filename_dataset_processed <- paste0("full_prepared_data_D_", iter, ".rds")
+    filename_dataset_processed <- paste0("full_prepared_data_E_", iter, ".rds")
     
-    ## creating directory for prepared datasets for model D (if not already
+    ## creating directory for prepared datasets for model E (if not already
     ## created)
     if(!dir.exists(here::here("data",
                               "intermediate",
-                              "prep_data_D"))){
+                              "prep_data_E"))){
       dir.create(here::here("data",
                             "intermediate",
-                            "prep_data_D"))
+                            "prep_data_E"))
     }
     
     saveRDS(
@@ -274,7 +294,7 @@ if(data_prepared == FALSE){
       here::here(
         "data",
         "intermediate",
-        "prep_data_D",
+        "prep_data_E",
         filename_dataset_processed
       )
     )
@@ -282,10 +302,10 @@ if(data_prepared == FALSE){
   }
   
   t0a <- Sys.time()
-  cat("duration data preparation model D all bootstrap: ",
+  cat("duration data preparation model E all bootstrap: ",
       difftime(t0a, t00, unit = "mins"), " minutes")
   
-  stop(paste0("data preparation finished for all runs"))
+  stop(paste0("data preparation finished for alls runs"))
 }
 
 
@@ -297,7 +317,7 @@ if(data_prepared == FALSE){
 
 
 ## listing files with the full prepared data
-filepath_prep_data <- here::here("data", "intermediate", "prep_data_D")
+filepath_prep_data <- here::here("data", "intermediate", "prep_data_E")
 list_files_prep_data <- grep(".rds", list.files(filepath_prep_data),
                              value = TRUE)
 
@@ -314,28 +334,30 @@ x_test <- readRDS(filename)[["x_test"]]
 
 
 covariates_full <- readRDS(
-  here::here("data", "intermediate", "covariates_full_D.rds"))
+  here::here("data", "intermediate", "covariates_full_E.rds"))
+
+## Continue HERE!! Align covariates correctly
 
 ## loading in train and test ids for saving
 load_ids <- TRUE
 if(load_ids){ 
   if (b_iter == 0) {
     train_ids <- readRDS(
-      here::here("data", "intermediate", "indices_train.rds"))
+      here::here("data", "intermediate", "indices_train_PGS.rds"))
   } else {
     train_ids <- readRDS(
       here::here(
-        "data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[1]]
+        "data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[1]]
   }
   
   
   if (b_iter == 0) {
     test_ids <- readRDS(
-      here::here("data", "intermediate", "indices_test.rds"))
+      here::here("data", "intermediate", "indices_test_PGS.rds"))
   } else {
     test_ids <- readRDS(
       here::here(
-        "data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[2]]
+        "data", "intermediate", "indices_bootstrap_PGS.rds"))[[b_iter]][[2]]
   }
 }
 ## specifying number of cores to be used for parallelization
@@ -396,13 +418,13 @@ predictors_level_1 <- c(setdiff(covariates_full, test_enet$non_zero_predictors),
 predictors_level_1 <- setdiff(predictors_level_1, "(Intercept)")                        
 
 ## are all covariates in predictors_level_1?
-cat("are all covariates in predictors_level_1?", "\n")
+cat("are all covariates in predictors_level_1?")
+cat("\n")
 sum(covariates_full %in% predictors_level_1) - length(covariates_full) == 0
 cat("\n")
 
 ## Check if intercept is still in predictor space
-cat("Intercept still in predictor space: ",
-    "(Intercept)" %in% predictors_level_1, "\n")
+cat("Intercept still in predictor space: ", "(Intercept)" %in% predictors_level_1, "\n")
 
 ## vector for relevant variables in the actual round of machine learning
 vars_ML_1 <- c("FISNumber", "FamilyNumber", "QoL_simple", predictors_level_1)
@@ -413,16 +435,14 @@ x_train_ML <- x_train %>%
   select(all_of(vars_ML_1))
 
 ## check if intercept is still in predictor space
-cat("Intercept still in training predictor space: ",
-    "(Intercept)" %in% colnames(x_train_ML), "\n")
+cat("Intercept still in training predictor space: ", "(Intercept)" %in% colnames(x_train_ML), "\n")
 
 ## creating definitive test set for the level 1 models
 x_test_ML <- x_test %>%
   select(all_of(vars_ML_1))
 
 ## check if intercept is still in predictor space
-cat("Intercept still in testing predictor space: ",
-    "(Intercept)" %in% colnames(x_test_ML), "\n")
+cat("Intercept still in testing predictor space: ", "(Intercept)" %in% colnames(x_test_ML), "\n")
 
 ## checking if same columns are contained in training and test set
 cat("Column names the same between training and test set: ",
@@ -593,7 +613,7 @@ workspace_objects <- mget(c("covariates_full", "iter", "ncore_cl",
 
 
 # Save the list to an RDS file
-filename <- paste0("workspace_model_D_iteration_", iter, ".rds")
+filename <- paste0("workspace_model_E_iteration_", iter, ".rds")
 saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate",
                                                     "bootstrap", filename)))
 
@@ -603,7 +623,7 @@ saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate",
 ## time tracking
 t01 <- Sys.time()
 
-cat("duration entire script model D iteration ", iter, ": ",
+cat("duration entire script model E iteration ", iter, ": ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
 

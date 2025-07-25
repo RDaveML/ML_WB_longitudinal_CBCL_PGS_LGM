@@ -37,7 +37,7 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                "purrr")
 
 ## reading in RDSdata (once not working on server anymore)
-LGM_df <- readRDS(here::here("data", "intermediate", "LGM_df_0.rds")) %>%
+LGM_df <- readRDS(here::here("data", "intermediate", "LGM_df.rds")) %>%
   ## Remove all columns that refer to standard errors of estimates
   ## (not-informative, still contained in data file for later inspection,
   ## additional analysis)
@@ -59,8 +59,6 @@ data_full_model_D <- data_non_LGM %>%
 
 dim(data_full_model_D)
 
-## CONTINUE HERE!!! (after server run)
-## execute only once all LGM features are created
 
 ## checking again if all covariates for model A are contained in the 
 ## df (vector saved in script 09)
@@ -149,11 +147,7 @@ setdiff(c(gen_covariates, outlier_cols), colnames(data_full_model_E))
 
 ## saving df
 saveRDS(data_full_model_E,
-        file = here::here("data", "intermediate", "data_full_model_E"))
-
-## CONTINUE HERE!! Check again when more awake, run entire script once 
-## complete LGM is run and all features are created!
-## note also the limited space in folder, might need to free some space!
+        file = here::here("data", "intermediate", "data_full_model_E.rds"))
 
 ## eoS
 
