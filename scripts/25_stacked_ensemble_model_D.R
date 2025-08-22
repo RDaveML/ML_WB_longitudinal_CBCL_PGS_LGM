@@ -128,6 +128,9 @@ data_test <- data_full %>%
 
 ## a) Linear regression model 
 
+## note: no stacked xgb model trained as it performed worse than other models 
+## in feature set A, therefore dropped to save computational resources
+
 ## creating folds so that families stay together during training
 set.seed(7)
 folds <- groupKFold(group = data_train$FamilyNumber, k = 10)
@@ -264,16 +267,35 @@ for (i in 1:length(list_models)) {
   set.seed(123)  # For reproducibility
   boot_out <- boot(data = df_model, statistic = metric_function, R = n_boot)
   
+  ## saving the squared error for significance testing
+  df_error <- df_model %>%
+    mutate(feature_set = "D",
+           algorithm = names(list_models)[i],
+           error = (preds - obs),
+           sq_error = (preds - obs)^2
+    )
+  ## Note: Still check if this takes the correct values!
+  ## Discuss this code snip with Dirk for safety
+  
+  ## re-appending FISNumber
+  df_error$FISNumber <- data_test$FISNumber
+  
   # Confidence intervals
   ci_rmse <- boot.ci(boot_out, type = "perc", index = 1)$percent[4:5]
   ci_r2   <- boot.ci(boot_out, type = "perc", index = 2)$percent[4:5]
   ci_mae  <- boot.ci(boot_out, type = "perc", index = 3)$percent[4:5]
   
+  ## saving CIs and point estimates (from metrics df)
   boot_results[[i]] <- list(
     model_name = names(list_models)[i],
+    rmse_est = metrics_df[i, "RMSE"],
+    r2_est = metrics_df[i, "R²"],
+    mae_est = metrics_df[i, "MAE"],
     rmse_ci = ci_rmse,
     r2_ci = ci_r2,
-    mae_ci = ci_mae
+    mae_ci = ci_mae,
+    error_df = df_error
+    
   )
 }
 
@@ -284,13 +306,13 @@ saveRDS(boot_results,
 ##-----------------------------------------------------------------------------
 
 
-## B) stability of model performance
+## B) stability of model performance (optional additional analysis)
 
 ## iterate over all bootstrapped workspace items (might need to switch order
 ## and place this part more at the beginning of the script)
 
 ## creating list of workspaces
-bootstrap_stability <- TRUE
+bootstrap_stability <- FALSE
 if(bootstrap_stability) {
   filepath <- here::here("data", "intermediate", "bootstrap")
   list_files <- grep("model_D", list.files(filepath), value = TRUE)
@@ -619,7 +641,8 @@ load(here::here("data", "intermediate", "workspace_stacking_D_server.RData"))
 
 
 
-## Comparison of models: Wilcoxon signed rank tests
+## Comparison of models: Wilcoxon signed rank tests (for the stacked ensemble
+## models, only if they prove significantly better than the other models)
 
 
 

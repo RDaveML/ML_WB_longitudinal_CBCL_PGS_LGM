@@ -33,6 +33,8 @@ scripts/14_1_model_B_run_bootstrap_stability.R
 scripts/14_2_model_B_run_bootstrap_stability.R
 scripts/07_old_LGM.R
 scripts/18_1_model_C_run_bootstrap_stability.R
-scripts/model_metrics_ABC.R
+scripts/model_metrics_ABCD.R
 /mplus_server
 scripts/analysis_LGM_pt1.R
+scripts/23_1_model_D_run_bootstrap_stability.R
+scripts/23_2_model_D_run_bootstrap_stability.R

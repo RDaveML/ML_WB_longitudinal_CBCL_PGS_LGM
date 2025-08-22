@@ -107,8 +107,8 @@ names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
 ## outcome dataset. 
 
 ## loading in data with true y scores
-## outcome_saved <- TRUE
-outcome_saved <- FALSE
+outcome_saved <- TRUE
+# outcome_saved <- FALSE
 if(outcome_saved == FALSE){
   
   train_ids <- readRDS(
