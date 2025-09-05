@@ -277,8 +277,9 @@ for (i in 1:length(list_models)) {
   ## Note: Still check if this takes the correct values!
   ## Discuss this code snip with Dirk for safety
   
-  ## re-appending FISNumber
+  ## re-appending FISNumber and FamilyNumber
   df_error$FISNumber <- data_test$FISNumber
+  df_error$FamilyNumber <- data_test$FamilyNumber
   
   # Confidence intervals
   ci_rmse <- boot.ci(boot_out, type = "perc", index = 1)$percent[4:5]
@@ -299,6 +300,7 @@ for (i in 1:length(list_models)) {
   )
 }
 
+## CONTINUE HERE!! Run this again once full results model D are in
 saveRDS(boot_results, 
         here::here(
           "data", "intermediate", "bootstrap", "boot_results_performace_D.rds"))

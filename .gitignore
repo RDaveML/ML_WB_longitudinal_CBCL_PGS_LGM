@@ -38,3 +38,5 @@ scripts/model_metrics_ABCD.R
 scripts/analysis_LGM_pt1.R
 scripts/23_1_model_D_run_bootstrap_stability.R
 scripts/23_2_model_D_run_bootstrap_stability.R
+scripts/27_1_model_E_run_bootstrap_stability.R
+scripts/27_2_model_E_run_bootstrap_stability.R

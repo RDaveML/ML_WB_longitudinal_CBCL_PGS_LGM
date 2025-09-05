@@ -446,10 +446,10 @@ LGM_df <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
   ## features later, give all variables (except for FISNumber)
   ## the prefix (or suffix) LGM_ (_LGM)
   rename_with(~ paste0("LGM_", .), -FISNumber) %>%
-  mutate(FISNumber = as.numeric(FISNumber)) ## numeric to align with FISNumber
+  mutate(FISNumber = as.numeric(as.character(FISNumber)))
+  ## numeric to align with FISNumber
   ## in other data parts
-
-## saving LGM df
+  ## saving LGM df
 saveRDS(LGM_df, file = here::here("data", "intermediate", "LGM_df.rds"))
 
 ## saving CBCL_questions where outcome dataframe was NULL

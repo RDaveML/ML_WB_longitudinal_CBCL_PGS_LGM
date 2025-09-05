@@ -361,7 +361,7 @@ if(load_ids){
   }
 }
 ## specifying number of cores to be used for parallelization
-ncore_cl <- 96
+ncore_cl <- 48
 set.seed(iter)
 
 ## creating folds so that during training, families stay together

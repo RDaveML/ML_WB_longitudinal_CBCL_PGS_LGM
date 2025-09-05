@@ -4,14 +4,14 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-06-06
+# Date: 2025-08-26
 #
-# Script Name: 16_stacked_ensemble_model_B.R
+# Script Name: 29_stacked_ensemble_model_E.R
 #
 # Script Description: This script codes the stacked ensemble model 
-# for model B based on the predictions from the first level models 
+# for model E based on the predictions from the first level models 
 # and evaluates the stacked ensemble model and the first level models in terms 
-# of performance and feature importance
+# of performance 
 #
 #
 # Notes: Only the random forest model and the xgb model were included because 
@@ -44,8 +44,9 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 ## A) Inspect performances of original models (later: bootstrapped CIs
 ## for performance measures)
 
-## 1) Loading in original train test split
-train_ids <- readRDS(here::here("data", "intermediate", "indices_train_PGS.rds"))
+## 1) Loading in original train test split (model E contains PGS data)
+train_ids <- readRDS(
+  here::here("data", "intermediate", "indices_train_PGS.rds"))
 
 test_ids <- readRDS(here::here("data", "intermediate", "indices_test_PGS.rds"))
 
@@ -60,16 +61,16 @@ df_FIS_fam <- readRDS(here::here("data", "intermediate", "FIS_fam_nr.rds")) %>%
 ## Loading in prediction data from random forest and xbg
 pred_rf <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_B_iteration_1.rds"))$run_rf$preds_df_rf 
+             "workspace_model_E_iteration_1.rds"))$run_rf$preds_df_rf 
 
 pred_xgb <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_B_iteration_1.rds"))$run_xgb$preds_df_xgb 
+             "workspace_model_E_iteration_1.rds"))$run_xgb$preds_df_xgb 
 
 ## loading in full workspace original prediction
 workspace_orig <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_B_iteration_1.rds"))
+             "workspace_model_E_iteration_1.rds"))
 
 original_predictors <- workspace_orig$predictors_level_1
 
@@ -89,7 +90,23 @@ pred_xgb <- pred_xgb %>%
   select(-train, -original_prediction)
 
 ## true Y
-data_outcome <- readRDS(here::here("data", "intermediate", "data_outcome_B.RDS"))
+## loading in full data model E and creating outcome df for this model
+if(!file.exists(
+  here::here("data", "intermediate", "data_outcome_E.rds"))) {
+  
+  data_model_E_base <- readRDS(
+    here::here("data", "intermediate", "data_full_model_E.rds"))
+  
+  data_outcome <- data_model_E_base %>%
+    select(FISNumber, QoL_simple) %>%
+    mult_to_numeric()
+  
+  saveRDS(data_outcome, 
+          here::here("data", "intermediate", "data_outcome_E.rds"))
+}
+
+data_outcome <- readRDS(
+  here::here("data", "intermediate", "data_outcome_E.RDS"))
 
 ## creating full dataframe
 data_full <- data_outcome %>% 
@@ -139,11 +156,11 @@ model_lm_stack <- train(QoL_simple ~ . - FISNumber - FamilyNumber,
 ## Loading in prediction data from random forest and xbg
 model_rf <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_B_iteration_1.rds"))$run_rf$model_bayes_rf 
+             "workspace_model_E_iteration_1.rds"))$run_rf$model_bayes_rf 
 
 model_xgb <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_B_iteration_1.rds"))$run_xgb$model_bayes_xgb
+             "workspace_model_E_iteration_1.rds"))$run_xgb$model_bayes_xgb
 
 list_models <- list("lm_stack" = model_lm_stack,
                     "rf" = model_rf,
@@ -216,8 +233,8 @@ metrics_df <- cbind(data.frame(model_name = names(list_models)), metrics_df)
 ##-----------------------------------------------------------------------------
 
 ## Calculate Bootstrapped CIs of the metrics
-  
- metric_function <- function(data, indices) {
+
+metric_function <- function(data, indices) {
   d <- data[indices, ]
   metrics <- postResample(pred = d$pred, obs = d$obs)
   return(metrics)
@@ -252,11 +269,13 @@ for (i in 1:length(list_models)) {
   
   ## saving the squared error for significance testing
   df_error <- df_model %>%
-    mutate(feature_set = "B",
+    mutate(feature_set = "E",
            algorithm = names(list_models)[i],
            error = (preds - obs),
            sq_error = (preds - obs)^2
     )
+  ## Note: Still check if this takes the correct values!
+  ## Discuss this code snip with Dirk for safety
   
   ## re-appending FISNumber and FamilyNumber
   df_error$FISNumber <- data_test$FISNumber
@@ -277,16 +296,16 @@ for (i in 1:length(list_models)) {
     r2_ci = ci_r2,
     mae_ci = ci_mae,
     error_df = df_error
+    
   )
 }
 
+## CONTINUE HERE!! Run this again once full results model E are in
 saveRDS(boot_results, 
         here::here(
-          "data", "intermediate", "bootstrap", "boot_results_performace_B.rds"))
+          "data", "intermediate", "bootstrap", "boot_results_performace_E.rds"))
 
 ##-----------------------------------------------------------------------------
-
-
 
 
 ## B) stability of model performance (optional additional analysis)
@@ -295,10 +314,10 @@ saveRDS(boot_results,
 ## and place this part more at the beginning of the script)
 
 ## creating list of workspaces
-stability_metrics <- FALSE
-if(stability_metrics) {
+bootstrap_stability <- FALSE
+if(bootstrap_stability) {
   filepath <- here::here("data", "intermediate", "bootstrap")
-  list_files <- grep("model_B", list.files(filepath), value = TRUE)
+  list_files <- grep("model_E", list.files(filepath), value = TRUE)
   
   
   ## rf model level 1
@@ -340,7 +359,8 @@ if(stability_metrics) {
   }
   
   colnames(boot_metrics_rf) <- c("run", "RMSE", "R²", "MAE")
-  ## potentially later to create entire dataframe with the metrics of all models:
+  ## potentially later to create entire dataframe with the metrics of all
+  ## models:
   ## colnames(boot_metrics_rf) <- c("run", "RMSE_rf", "R²_rf", "MAE_rf")
   
   RMSE_rf_boot <- boot_metrics_rf %>%
@@ -425,7 +445,7 @@ if(stability_metrics) {
   
   colnames(boot_metrics_xgb) <- c("run", "RMSE", "R²", "MAE")
   ## potentially later to create entire dataframe with the metrics of all
-  ##  models:
+  ## models:
   ## colnames(boot_metrics_rf) <- c("run", "RMSE_xgb", "R²_xgb", "MAE_xgb")
   
   RMSE_xgb_boot <- boot_metrics_xgb %>%
@@ -498,8 +518,8 @@ if(stability_metrics) {
       full_join(pred_rf, by = "FISNumber") %>%
       full_join(pred_xgb, by = "FISNumber") %>%
       full_join(df_FIS_fam, by = "FISNumber") %>%
-      mutate(QoL_simple =  as.numeric(QoL_simple)) 
-      ## recoding outcome to numeric
+      mutate(QoL_simple =  as.numeric(QoL_simple))
+    ## recoding outcome to numeric
     
     data_train_run <- data_full %>%
       filter(FISNumber %in% train_ids_run)
@@ -589,9 +609,17 @@ if(stability_metrics) {
 
 ## saving and loading in workspace
 ## so that data do not have to be loaded in several times)
+
 save.image(
-  here::here("data", "intermediate", "workspace_stacking_B_server.RData"))
-load(here::here("data", "intermediate", "workspace_stacking_B_server.RData"))
+  here::here("data", "intermediate", "workspace_stacking_E_server.RData"))
+
+
+load(here::here("data", "intermediate", "workspace_stacking_E_server.RData"))
+
+
+
+##-----------------------------------------------------------------------------
+
 
 
 ##-----------------------------------------------------------------------------
@@ -615,7 +643,8 @@ load(here::here("data", "intermediate", "workspace_stacking_B_server.RData"))
 
 
 
-## Comparison of models: Wilcoxon signed rank tests
+## Comparison of models: Wilcoxon signed rank tests (for the stacked ensemble
+## models, only if they prove significantly better than the other models)
 
 
 

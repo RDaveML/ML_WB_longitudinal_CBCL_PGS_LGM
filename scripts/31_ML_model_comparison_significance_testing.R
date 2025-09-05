@@ -30,7 +30,7 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "xgboost", "parallel", "doParallel", "fastDummies", "RANN",
                "kernlab", "ggplot2", "purrr", "tidyr", "rvest", "boot", "iml",
                "fastshap", "shapviz", "PMCMRplus", "tsutils", "lme4",
-               "lmerTest")
+               "lmerTest", "emmeans", "clusrank")
 
 
 ## loading in bootstrapped model performance measures: points estimates and CIs
@@ -65,24 +65,24 @@ boot_performance_D <- lapply(boot_performance_D, function(x) x[-length(x)])
 
 
 ## model E
-# boot_performance_E <- readRDS(here::here(
-  # "data", "intermediate", "bootstrap", "boot_results_performace_E.rds"))
-# error_dfs_E <- lapply(boot_performance_E, function(x) x[[length(x)]])
-# boot_performance_E <- lapply(boot_performance_E, function(x) x[-length(x)])
+boot_performance_E <- readRDS(here::here(
+   "data", "intermediate", "bootstrap", "boot_results_performace_E.rds"))
+error_dfs_E <- lapply(boot_performance_E, function(x) x[[length(x)]])
+boot_performance_E <- lapply(boot_performance_E, function(x) x[-length(x)])
 
 list_performances <- list(A = boot_performance_A,
                           B = boot_performance_B,
                           C = boot_performance_C,
-                          D = boot_performance_D #,
-                          #E = boot_performance_E
+                          D = boot_performance_D, 
+                          E = boot_performance_E
                           )
 
 ## list of error dfs
 list_error_dfs <- list(A = error_dfs_A,
                        B = error_dfs_B,
                        C = error_dfs_C,
-                       D = error_dfs_D #,
-                       #E = error_dfs_E
+                       D = error_dfs_D,
+                       E = error_dfs_E
                        )
 
 ## next step: Create dataframe with the variables feature_set, model_name,
@@ -139,24 +139,24 @@ rownames(full_error_df) <- NULL
 ## A vs. D, testing squared error
 df_A_wide_sq <- full_error_df %>%
   filter(feature_set == "A") %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
-friedman.test(as.matrix(df_A_wide_sq[ , -1]))
+friedman.test(as.matrix(df_A_wide_sq[ , -c(1, 2)]))
 ## no significant differences between the algorithms of feature set A
 
 df_D_wide_sq <- full_error_df %>%
   filter(feature_set == "D") %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
-friedman.test(as.matrix(df_D_wide_sq[ , -1]))
+friedman.test(as.matrix(df_D_wide_sq[ , -c(1, 2)]))
 ## significant differences between the algorithms of feature set D
 
 nemenyi(data = df_D_wide_sq[, -1], sort = TRUE, plottype = "mcb")
@@ -167,16 +167,49 @@ nemenyi(data = df_D_wide_sq[, -1], sort = TRUE, plottype = "vline")
 
 
 df_AD_wide_sq <- inner_join(df_A_wide_sq, df_D_wide_sq,
-                            by = "FISNumber", suffix = c("_A", "_D"))
+                            by = c("FISNumber", "FamilyNumber"),
+                            suffix = c("_A", "_D"))
 
-friedman.test(as.matrix(df_AD_wide_sq[ , -1]))
+friedman.test(as.matrix(df_AD_wide_sq[ , -c(1, 2)]))
 ## significant, check follow up 
-nemenyi(data = df_AD_wide_sq[, -1], sort = TRUE, plottype = "mcb")
+nemenyi(data = df_AD_wide_sq[, -c(1, 2)], sort = TRUE, plottype = "mcb")
 
 ## calculate pair-wise Nemenyi's test
 
+## Wilcoxon signed-rank test: Also including familyNr because errors 
+## within families are correlated
+## note: this only works for algorithms that have the same participants
+
+## example for comparing rf_A against rf_D
+clusWilcox.test(x = df_AD_wide_sq$rf_A,
+                y = df_AD_wide_sq$rf_D,
+                cluster = df_AD_wide_sq$FamilyNumber,
+                paired = TRUE, method = "rgl")
 
 
+## comparing all algorithms pairwise (multiple testing not yet addressed!)
+## A / D
+test_counter <- 0
+for(alg in 3:ncol(df_AD_wide_sq)){
+  for(alg2 in 3:ncol(df_AD_wide_sq)){
+    if(alg == alg2 | alg < alg2){
+      next
+    }
+    cat("Comparison algorithm ", colnames(df_AD_wide_sq)[alg],
+        " against algorithm ", colnames(df_AD_wide_sq)[alg2], "\n")
+    
+    print(
+    clusWilcox.test(x = as.numeric(unlist(df_AD_wide_sq[, alg])),
+                    y = as.numeric(unlist(df_AD_wide_sq[, alg2])),
+                    cluster = df_AD_wide_sq$FamilyNumber,
+                    paired = TRUE, method = "rgl")
+    )
+    
+    cat("\n")
+    test_counter <- test_counter + 1
+    cat("test_counter: ", test_counter, "\n", "\n")
+  }
+}
 
 
 
@@ -186,41 +219,84 @@ nemenyi(data = df_AD_wide_sq[, -1], sort = TRUE, plottype = "mcb")
 ## B vs. C (vs. E), testing squared error
 df_B_wide_sq <- full_error_df %>%
   filter(feature_set == "B") %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
-friedman.test(as.matrix(df_B_wide_sq[ , -1]))
+friedman.test(as.matrix(df_B_wide_sq[ , -c(1, 2)]))
 ## no significant differences between the algorithms of feature set B
 
 df_C_wide_sq <- full_error_df %>%
   filter(feature_set == "C") %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
-friedman.test(as.matrix(df_C_wide_sq[ , -1]))
+friedman.test(as.matrix(df_C_wide_sq[ , -c(1, 2)]))
 ## no significant differences between the algorithms of feature set C
-nemenyi(data = df_C_wide_sq[, -1], sort = TRUE, plottype = "mcb")
+nemenyi(data = df_C_wide_sq[, -c(1, 2)], sort = TRUE, plottype = "mcb")
 
-df_BC_wide_sq <- inner_join(df_B_wide_sq, df_C_wide_sq,
-                            by = "FISNumber", suffix = c("_B", "_C"))
+df_E_wide_sq <- full_error_df %>%
+  filter(feature_set == "E") %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
+  pivot_wider(
+    names_from = algorithm,
+    values_from = sq_error
+  )
 
-friedman.test(as.matrix(df_BC_wide_sq[ , -1]))
+friedman.test(as.matrix(df_E_wide_sq[ , -c(1, 2)]))
+## significant differences between the algorithms of feature set E
+nemenyi(data = df_E_wide_sq[, -c(1, 2)], sort = TRUE, plottype = "mcb")
+
+df_BCE_wide_sq <- inner_join(df_B_wide_sq, df_C_wide_sq,
+                             by = c("FISNumber", "FamilyNumber"),
+                             suffix = c("_B", "_C")) %>%
+  inner_join(df_E_wide_sq, by = c("FISNumber", "FamilyNumber")) %>%
+  rename("lm_stack_E" = lm_stack, "rf_E" = rf, "xgb_E" = xgb)
+
+friedman.test(as.matrix(df_BCE_wide_sq[ , -c(1, 2)]))
 
 ## significant, check follow up
-nemenyi(data = df_BC_wide_sq[, -1], sort = TRUE, plottype = "mcb")
+nemenyi(data = df_BCE_wide_sq[, -c(1, 2)], sort = TRUE, plottype = "mcb")
 ## random forest and stacked lm of feature set C perform significantly better
 ## than all feature set B models
+
+
+## comparing all algorithms pairwise (multiple testing not yet addressed!)
+## B / C / E
+## with the Wilcoxon signed rank test
+test_counter <- 0
+for(alg in 3:ncol(df_BCE_wide_sq)){
+  for(alg2 in 3:ncol(df_BCE_wide_sq)){
+    if(alg == alg2 | alg < alg2){
+      next
+    }
+    cat("Comparison algorithm ", colnames(df_BCE_wide_sq)[alg],
+        " against algorithm ", colnames(df_BCE_wide_sq)[alg2], "\n")
+    
+    print(
+      clusWilcox.test(x = as.numeric(unlist(df_BCE_wide_sq[, alg])),
+                      y = as.numeric(unlist(df_BCE_wide_sq[, alg2])),
+                      cluster = df_BCE_wide_sq$FamilyNumber,
+                      paired = TRUE, method = "rgl")
+    )
+    
+    cat("\n")
+    test_counter <- test_counter + 1
+    cat("test_counter: ", test_counter, "\n", "\n")
+  }
+}
+
+
 
 ## Alternative: Use only errors of individuals who have genetic data 
 ## to also be able to directly compare A, B, C, D against each other
 
-ids_BC <- unique(full_error_df %>%
+ids_BCE <- unique(full_error_df %>%
   filter(feature_set == "B" | feature_set == "B") %>%
   select(FISNumber) %>%
   pull())
@@ -230,53 +306,66 @@ ids_AD <- unique(full_error_df %>%
   select(FISNumber) %>%
   pull())
 
-ids_ABCD <- intersect(ids_AD, ids_BC)
+ids_ABCDE <- intersect(ids_AD, ids_BCE)
 
 
 df_A_wide_sq_2 <- full_error_df %>%
-  filter(feature_set == "A" & FISNumber %in% ids_ABCD) %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  filter(feature_set == "A" & FISNumber %in% ids_ABCDE) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
 df_B_wide_sq_2 <- full_error_df %>%
-  filter(feature_set == "B" & FISNumber %in% ids_ABCD) %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  filter(feature_set == "B" & FISNumber %in% ids_ABCDE) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
 df_C_wide_sq_2 <- full_error_df %>%
-  filter(feature_set == "C" & FISNumber %in% ids_ABCD) %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  filter(feature_set == "C" & FISNumber %in% ids_ABCDE) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
 df_D_wide_sq_2 <- full_error_df %>%
-  filter(feature_set == "D" & FISNumber %in% ids_ABCD) %>%
-  select(FISNumber, algorithm, sq_error) %>%
+  filter(feature_set == "D" & FISNumber %in% ids_ABCDE) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
   pivot_wider(
     names_from = algorithm,
     values_from = sq_error
   )
 
+df_E_wide_sq_2 <- full_error_df %>%
+  filter(feature_set == "E" & FISNumber %in% ids_ABCDE) %>%
+  select(FISNumber, FamilyNumber, algorithm, sq_error) %>%
+  pivot_wider(
+    names_from = algorithm,
+    values_from = sq_error
+  )
+
+
 ## join all 4 previous dfs together by FISNumber and give the columns 
 ## that would otherwise have the same names suffixes with
 ## suffix = c("_A", "_B", "_C", "_D")
-df_ABCD_wide_sq <- df_A_wide_sq_2 %>%
-  inner_join(df_B_wide_sq_2, by = "FISNumber", suffix = c("_A", "_B")) %>%
-  inner_join(df_C_wide_sq_2, by = "FISNumber") %>%
+df_ABCDE_wide_sq <- df_A_wide_sq_2 %>%
+  inner_join(df_B_wide_sq_2, by = c("FISNumber", "FamilyNumber"),
+             suffix = c("_A", "_B")) %>%
+  inner_join(df_C_wide_sq_2, by = c("FISNumber", "FamilyNumber")) %>%
   rename("lm_stack_C" = lm_stack, "rf_C" = rf, "xgb_C" = xgb) %>%
-  inner_join(df_D_wide_sq_2, by = "FISNumber") %>%
+  inner_join(df_D_wide_sq_2, by = c("FISNumber", "FamilyNumber")) %>%
+  rename("lm_stack_D" = lm_stack, "rf_D" = rf, "xgb_D" = xgb) %>%
+  inner_join(df_E_wide_sq_2, by = c("FISNumber", "FamilyNumber")) %>%
   rename("xgb_stack_A" = xgb_stack,
-         "lm_stack_D" = lm_stack, "rf_D" = rf, "xgb_D" = xgb)
+         "lm_stack_E" = lm_stack, "rf_E" = rf, "xgb_E" = xgb)
+  
 
-nemenyi(data = df_ABCD_wide_sq[, -1], sort = TRUE, plottype = "mcb")
+nemenyi(data = df_ABCDE_wide_sq[, -c(1:2)], sort = TRUE, plottype = "mcb")
 
 ## here, no dominance of one method but sample size much smaller thus 
 ## more uncertainty
@@ -287,23 +376,56 @@ nemenyi(data = df_ABCD_wide_sq[, -1], sort = TRUE, plottype = "mcb")
 
 
 ## alternative: linear mixed effects model with lme4::lmer
+## taking out the xgb_stacked model of feature set A to enable pairwise
+## comparisons, including clustering for families (correlated errors) and 
+## individuals (some individuals appear in multiple feature sets)
+
 model_set <- lmerTest::lmer(
-  sq_error ~ feature_set + algorithm + algorithm* feature_set + (1 | FISNumber), 
-  data = full_error_df)
+  sq_error ~ feature_set + 
+             algorithm +
+             algorithm * feature_set +
+             (1 | FamilyNumber/FISNumber), 
+  data = filter(full_error_df, algorithm != "xgb_stack"))
 
 summary(model_set)
 
 anova(model_set)
 
-library(emmeans)
 
 emm_options(pbkrtest.limit = 20000, lmerTest.limit = 20000)
 emm_alg <- emmeans(model_set, ~ algorithm)
-pairs(emm_alg, adjust = "holm")  # pairwise comparisons with p-value correction
+pairs(emm_alg, adjust = "fdr")  # pairwise comparisons with p-value correction
+## alternative: adjust = "bonferroni" or adjust = "hochberg"
+
+## This indicates that in general, the random forest performs best across 
+## all feature sets (Interaction not respected though)
+
 
 emm_set <- emmeans(model_set, ~ feature_set)
-pairs(emm_set, adjust = "holm")  # pairwise comparisons with p-value correction
-## Does not get estimated, uncler why
+pairs(emm_set, adjust = "fdr")  # pairwise comparisons with p-value correction
+## This is likely the comparison I want to report, only still unclear whether 
+## to also condition on algorithm or not
+
+
+
+## Final linear model: Only comparing the random forest models
+model_set_rf <- lmerTest::lmer(
+  sq_error ~ feature_set + 
+    (1 | FamilyNumber/FISNumber), 
+  data = filter(full_error_df, algorithm == "rf"))
+
+summary(model_set_rf)
+
+anova(model_set_rf)
+
+emm_rf_set <- emmeans(model_set_rf, ~ feature_set)
+pairs(emm_rf_set, adjust = "fdr")  # pairwise comparisons with p-value correction
+## This is likely the comparison I want to report, only still unclear whether 
+## to also condition on algorithm or not
+## alternative: adjust = "bonferroni" or adjust = "hochberg"
+
+## Interpretation follows here once true results are in 
 ## CONTINUE HERE!!!
+
 
 
