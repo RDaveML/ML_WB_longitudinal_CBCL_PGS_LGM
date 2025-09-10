@@ -114,6 +114,13 @@ list_model_metric_dfs <- lapply(1:length(list_performances), function(x){
 model_performance_df <- do.call(rbind, list_model_metric_dfs) %>%
   mutate(across(where(is.character), as.factor))
 
+
+## purely descriptively, we see that the point estimats consistently indicate
+## higher performance of the random forest models over the 
+## xgb models
+## since they are the most parsimoneous models, they will be used for the 
+## analysis of the comparisons of the feature set
+
 ##----------------------------------------------------------------------------
 
 ## significance testing: using the error dfs
@@ -123,7 +130,8 @@ full_error_df <- do.call(rbind,
                          lapply(list_error_dfs, function(x) {
                            do.call(rbind, x)
                          })) %>%
-  mutate(across(where(is.character), as.factor))
+  mutate(across(where(is.character), as.factor)) #%>%
+  # filter(algorithm == "rf" | algorithm == "lm_stack")
 
 rownames(full_error_df) <- NULL
 
@@ -384,7 +392,8 @@ model_set <- lmerTest::lmer(
   sq_error ~ feature_set + 
              algorithm +
              algorithm * feature_set +
-             (1 | FamilyNumber/FISNumber), 
+             (1 | FamilyNumber/FISNumber),
+  ## adding (1 | FISNumber) leads to failure of convergence
   data = filter(full_error_df, algorithm != "xgb_stack"))
 
 summary(model_set)

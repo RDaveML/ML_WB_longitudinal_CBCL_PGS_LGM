@@ -40,7 +40,9 @@ source(here::here("scripts", "functions", "functions_plotting_ML.R"))
 
 ## creating list of workspaces
 #filepath <- "A:/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap"
-filepath <- here::here("data", "intermediate", "bootstrap")
+
+# filepath <- here::here("data", "intermediate", "bootstrap")
+filepath <- "//scistor.vu.nl/shares/FGB-BioPsy/DLeitritz/ML_WB_longitudinal_CBCL_PGS_LGM/data/intermediate/bootstrap/E"
 list_files <- grep("model_E", list.files(filepath), value = TRUE)
 
 
@@ -64,7 +66,12 @@ for(workspace in 1:length(workspaces_bootstrap)){
 ## re-write code lines 56 to 61 with vectorized loop instead of 
 ## inefficient for loop 
 
-
+## two workspaces are missing (model did not converge),
+## thus naming the workspaces accordingly
+integers_iterations_E <- as.numeric(sub(".*?([0-9]+).*", "\\1", list_files))
+setdiff(c(1:101), integers_iterations_E)
+names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
+                                      integers_iterations_E)
 names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
                                       1:length(list_files))
 

@@ -40,3 +40,6 @@ scripts/23_1_model_D_run_bootstrap_stability.R
 scripts/23_2_model_D_run_bootstrap_stability.R
 scripts/27_1_model_E_run_bootstrap_stability.R
 scripts/27_2_model_E_run_bootstrap_stability.R
+scripts/27_3_model_E_run_bootstrap_stability.R
+scripts/script_correction_iterations.R
+scripts/output_correction_iteration.txt

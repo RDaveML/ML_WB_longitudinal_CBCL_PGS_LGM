@@ -438,4 +438,97 @@ ggsave(filename = "SHAP_20_A_xgb.png",
        path = plot_path,
        create.dir = TRUE)
 dev.off()
+
+##############################################################################
+
+## The analyses above concern the fluctuation of SHAP values across all 
+## runs. Now, analyzing only the first run (the original run)
+
+shap_run1 <- SHAP_list[[1]]
+
+## shap_df_rf is SHAP values for each participant in the rf model,
+## shap_values_rf_run is the aggregate (mean aboslute SHAP value over all
+## participants), same goes for xgb accordingly
+head(shap_run1$shap_df_rf)
+dim(shap_run1$shap_df_rf)
+
+head(shap_run1$shap_df_xgb)
+dim(shap_run1$shap_df_xgb)
+
+## visualizing individual SHAP values from the rf model only for run 1
+
+## importing predictors
+predictors_1 <- readRDS(list_files[1])[["predictors_level_1"]]
+
+## importing models
+model_rf <- readRDS(list_files[1])$run_rf$model_bayes_rf$finalModel
+model_xgb <- readRDS(list_files[1])$run_xgb$model_bayes_xgb
+
+## importing data
+filename_r1 <- paste0(filepath_full_data, "/", list_files_full_data[1])
+
+X_1_shap <- rbind(readRDS(filename_r1)$x_train, 
+                  readRDS(filename_r1)$x_test) %>%
+  select(all_of(readRDS(list_files[1])[["predictors_level_1"]]))
+
+registerDoParallel(cores = 48)
+set.seed(1)
+
+## calculating aggregated SHAP values for rf model 
+system.time({
+    shp_1_rf <- fastshap::explain(
+    object = model_rf, X = X_1_shap, pred_wrapper = pfun_rf,
+    nsim = 50, parallel = TRUE, adjust = TRUE)
+})
+
+stopImplicitCluster()
+
+baseline_rf <- attr(shp_1_rf, "baseline")
+shv_rf <- shapviz(shp_1_rf, X = X_1_shap, baseline = baseline_rf)
+sv_importance(shv_rf)
+sv_importance(shv_rf, kind = "bee")
+
+
+
+
+
+## calculating aggregated SHAP values for xgb model 
+registerDoParallel(cores = 48)
+set.seed(1)
+
+system.time({  # estimate run time
+  shp_1_xgb <- fastshap::explain(
+    object = model_xgb, X = as.matrix(X_1_shap), pred_wrapper = pfun_xgb,
+    nsim = 50, parallel = TRUE, adjust = TRUE)
+})
+
+stopImplicitCluster()
+
+baseline_xgb <- attr(shp_1_xgb, "baseline")
+shv_xgb <- shapviz(shp_1_xgb, X = X_1_shap, baseline = baseline_xgb)
+sv_importance(shv_xgb)
+
+## beeswarm plot for xgb model
+shp_xgb_a <- shapviz(model_xgb, X_pred = data.matrix(X_1_shap), X = X_1_shap)
+# Three types of variable importance plots
+sv_importance(shp_xgb_a)
+sv_importance(shp_xgb_a, kind = "beeswarm", alpha = 0.2, width = 0.2)
+sv_importance(shp_xgb_a, kind = "both", alpha = 0.2, width = 0.2)
+## sv_importance(shp_xgb_a, kin = "no")
+## This one might be used however to sort the features according to importance
+
+
+
+save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+
+load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_A.RData"))
+
+t02 <- Sys.time()
+
+cat("duration model A, entire script SHAP analysis: ",
+    difftime(t02, t00, unit = "mins"), " minutes")
+
+
+
+
 ## eoS

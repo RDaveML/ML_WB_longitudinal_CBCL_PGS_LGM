@@ -4,9 +4,9 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-06-06
+# Date: 2025-09-09
 #
-# Script Name: 17_SHAP_analysis_model_B.R
+# Script Name: 26_SHAP_analysis_model_D.R
 #
 # Script Description:
 #
@@ -28,7 +28,10 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "ranger", "e1071", "randomForestSRC",
                "xgboost", "parallel", "doParallel", "RANN",
                "kernlab", "ggplot2", "purrr", "tidyr", "rvest",
-               "fastshap", "shapviz")
+               "fastshap", "shapviz", "kernelshap")
+
+# devtools::install_github("mayer79/permshap")
+# devtools::install_github("ModelOriented/kernelshap")
 
 
 ## loading in ML custom ML + Hypertuning functions
@@ -50,16 +53,34 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 
 ## listing files with bootstrapped models
 filepath <- here::here("data", "intermediate", "bootstrap")
-list_files <- paste0(filepath, "/", grep("workspace_model_B", list.files(filepath),
+list_files <- paste0(filepath, "/", grep("workspace_model_D", list.files(filepath),
                                          value = TRUE))
 
+## extracting the integers from all elements of list_files, only the ones after the 
+## last "/" with the sub function
+integers_workspaces <- as.numeric(
+  regmatches(sub(".*/", "", list_files), gregexpr("[0-9]+", 
+                                                  sub(".*/", "", list_files))))
+
+
 ## listing files with the full prepared data
-filepath_full_data <- here::here("data", "intermediate", "prep_data_B")
+filepath_full_data <- here::here("data", "intermediate", "prep_data_D")
 list_files_full_data <- grep(".rds", list.files(filepath_full_data),
                              value = TRUE)
 
+integers_full_data <- as.numeric(
+  regmatches(sub(".*/", "", list_files_full_data), gregexpr("[0-9]+", 
+                                                  sub(".*/", "", list_files_full_data))))
+
+missing_workspace_integer <- setdiff(integers_full_data, integers_workspaces)
+
+## removing the datafile with the missing integer from the list of full data files
+## find the filenames in list_files_full_data, where the missing workspace integer occurs
+list_files_full_data <- list_files_full_data[!integers_full_data %in% 
+                                               missing_workspace_integer]
+
 ## creating vector of all predictors that were in any of the bootstrapped models
-system.time({all_predictors_model_B <- list_files %>%
+system.time({all_predictors_model_D <- list_files %>%
   map(~ readRDS(.x)$predictors_level_1) %>%
   unlist() %>%
   unique()
@@ -68,7 +89,6 @@ system.time({all_predictors_model_B <- list_files %>%
 ## preparatory objects
 
 ## for run of all bootstrapped workspaces, adjust this and run on cluster
-
 
 # ncores_ntr <- 4
 ncores_ntr <- 48
@@ -98,7 +118,7 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
   
   ## creating dataframe with all predictors that are not contained in the 
   ## model
-  predictors_not_in_model <- setdiff(all_predictors_model_B, predictors_run)
+  predictors_not_in_model <- setdiff(all_predictors_model_D, predictors_run)
   
   ## creating dataframe with all predictors that are not contained in the 
   ## model
@@ -194,26 +214,25 @@ system.time({SHAP_list <- lapply(1:length(list_files), function(run){
 })
 
 ## creating dataframe out of all the single row elements in SHAP_list
-# save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData"))
 
 ## combining all sub elements of the SHAP_list list into one data frame, separately 
 ## for rf and xgb. 
 shap_values_bootstrapped_rf <- do.call(rbind, lapply(SHAP_list, function(x) x[["shap_values_rf_run"]]))
 shap_values_bootstrapped_xgb <- do.call(rbind, lapply(SHAP_list, function(x) x[["shap_values_xgb_run"]]))
 
-save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData"))
+save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_D.RData"))
 
 t01 <- Sys.time()
 
-cat("duration entire script (model B, Bootstrapping SHAP values): ",
+cat("duration model D, Bootstrapping SHAP values: ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
-plot <- FALSE
+plot <- TRUE
 if(plot == FALSE){
   stop("only calculating the SHAP values, no plotting")
 }
 
-load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData"))
+load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_D.RData"))
 
 
 
@@ -222,7 +241,7 @@ load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData")
 
 covariates_full <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_B_iteration_1.rds"))[["covariates_full"]]
+             "workspace_model_D_iteration_1.rds"))[["covariates_full"]]
 
 
 
@@ -256,14 +275,14 @@ SHAP_analysis_plots[[2]]$plot
 ## saving plots
 plot_path <- here::here("data", "plots")
 
-ggsave(filename = "SHAP_20_B_rf.png",
+ggsave(filename = "SHAP_20_D_rf.png",
        plot = SHAP_analysis_plots[[1]]$plot,
        device = "png",
        width = 8,
        path = plot_path,
        create.dir = TRUE)
 
-ggsave(filename = "SHAP_20_B_xgb.png",
+ggsave(filename = "SHAP_20_D_xgb.png",
        plot = SHAP_analysis_plots[[2]]$plot,
        device = "png",
        width = 8,
@@ -271,9 +290,8 @@ ggsave(filename = "SHAP_20_B_xgb.png",
        create.dir = TRUE)
 dev.off()
 
-
-
 ##############################################################################
+
 
 ## The analyses above concern the fluctuation of SHAP values across all 
 ## runs. Now, analyzing only the first run (the original run)
@@ -351,16 +369,14 @@ sv_importance(shp_xgb_a, kind = "both", alpha = 0.2, width = 0.2)
 ## sv_importance(shp_xgb_a, kin = "no")
 ## This one might be used however to sort the features according to importance
 
+## eoS
 
 
-save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData"))
+save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_D.RData"))
 
-load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData"))
+load(here::here("data", "intermediate", "workspace_SHAP_analysis_model_D.RData"))
 
 t02 <- Sys.time()
 
-cat("duration model B, entire script SHAP analysis: ",
+cat("duration model D, entire script SHAP analysis: ",
     difftime(t02, t00, unit = "mins"), " minutes")
-
-
-## eoS

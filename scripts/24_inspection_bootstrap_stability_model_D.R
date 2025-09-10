@@ -65,8 +65,12 @@ for(workspace in 1:length(workspaces_bootstrap)){
 ## inefficient for loop 
 
 
+## one workspace is missing (model did not converge),
+## thus naming the workspaces accordingly
+integers_iterations_D <- as.numeric(sub(".*?([0-9]+).*", "\\1", list_files))
+setdiff(c(1:101), integers_iterations_D)
 names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
-                                      1:length(list_files))
+                                      integers_iterations_D)
 
 ## all elements in workspaces_bootstrap have the following names:
 ## covariates_full, iter, ncore_cl, predictors_level_1, train_ids, test_ids,
