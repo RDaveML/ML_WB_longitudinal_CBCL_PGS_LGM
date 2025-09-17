@@ -296,17 +296,24 @@ dev.off()
 ## The analyses above concern the fluctuation of SHAP values across all 
 ## runs. Now, analyzing only the first run (the original run)
 
+workspace_objects <- readRDS(file = here::here(
+  "data", "intermediate", "workspace_SHAP_analysis_model_E_run1.rds"))
+
+list2env(workspace_objects, globalenv())
+rm(workspace_objects)
+
 shap_run1 <- SHAP_list[[1]]
 
 ## shap_df_rf is SHAP values for each participant in the rf model,
 ## shap_values_rf_run is the aggregate (mean aboslute SHAP value over all
 ## participants), same goes for xgb accordingly
-head(shap_run1$shap_df_rf)
+#head(shap_run1$shap_df_rf)
+cat("dimensions sh_df_rf:", "\n")
 dim(shap_run1$shap_df_rf)
 
-head(shap_run1$shap_df_xgb)
+#head(shap_run1$shap_df_xgb)
+cat("dimensions sh_df_xgb:", "\n")
 dim(shap_run1$shap_df_xgb)
-
 ## visualizing individual SHAP values from the rf model only for run 1
 
 ## importing predictors
@@ -338,7 +345,27 @@ stopImplicitCluster()
 baseline_rf <- attr(shp_1_rf, "baseline")
 shv_rf <- shapviz(shp_1_rf, X = X_1_shap, baseline = baseline_rf)
 sv_importance(shv_rf)
-sv_importance(shv_rf, kind = "bee")
+
+
+bee_plot_rf_E <- 
+  sv_importance(shv_rf, kind = "bee", max_display = 20L, show_number = TRUE) + 
+  ggtitle("Top 20 predictors with the highest average feature importance") +
+  labs(subtitle = expression(underline(Model:~CBCL+PGS+LGM))) +
+  theme_classic() + 
+  theme(plot.title = element_text(size=15, face="bold.italic"),
+        plot.subtitle = element_text(size=12, face="italic"),
+        axis.text.x = element_text(face="bold", size=10, angle=0),
+        axis.title.x = element_text(face="bold", size=15, angle=0),
+        axis.text.y = element_text(face="bold", size=10, angle=0),
+        axis.title.y = element_text(face="bold", size=15))
+
+ggsave(filename = "bee_plot_rf_E.png",
+       plot = bee_plot_rf_E,
+       width = 9.0,
+       device = "png",
+       path = here::here("data", "plots"),
+       create.dir = TRUE)
+
 
 
 
@@ -371,6 +398,16 @@ sv_importance(shp_xgb_a, kind = "both", alpha = 0.2, width = 0.2)
 
 ## eoS
 
+workspace_objects <- mget(c("shap_run1", "predictors_1", "model_rf", 
+                            "model_xgb", "X_1_shap", "shp_1_rf", "baseline_rf",
+                            "shv_rf", "shp_1_xgb", "baseline_xgb", "shv_xgb", 
+                            "shp_xgb_a"))
+
+
+# Save the list to an RDS file
+
+saveRDS(workspace_objects, file = here::here(
+  "data", "intermediate", "workspace_SHAP_analysis_model_E_run1.rds"))
 
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_E.RData"))
 

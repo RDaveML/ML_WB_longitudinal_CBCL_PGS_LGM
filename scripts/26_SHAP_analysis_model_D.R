@@ -301,10 +301,12 @@ shap_run1 <- SHAP_list[[1]]
 ## shap_df_rf is SHAP values for each participant in the rf model,
 ## shap_values_rf_run is the aggregate (mean aboslute SHAP value over all
 ## participants), same goes for xgb accordingly
-head(shap_run1$shap_df_rf)
+#head(shap_run1$shap_df_rf)
+cat("dimensions sh_df_rf:", "\n")
 dim(shap_run1$shap_df_rf)
 
-head(shap_run1$shap_df_xgb)
+#head(shap_run1$shap_df_xgb)
+cat("dimensions sh_df_xgb:", "\n")
 dim(shap_run1$shap_df_xgb)
 
 ## visualizing individual SHAP values from the rf model only for run 1
@@ -371,6 +373,17 @@ sv_importance(shp_xgb_a, kind = "both", alpha = 0.2, width = 0.2)
 
 ## eoS
 
+## saving only steps for analysis SHAP values in OG run
+workspace_objects <- mget(c("shap_run1", "predictors_1", "model_rf", 
+                            "model_xgb", "X_1_shap", "shp_1_rf", "baseline_rf",
+                            "shv_rf", "shp_1_xgb", "baseline_xgb", "shv_xgb", 
+                            "shp_xgb_a"))
+
+
+# Save the list to an RDS file
+
+saveRDS(workspace_objects, file = here::here(
+  "data", "intermediate", "workspace_SHAP_analysis_model_D_run1.rds"))
 
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_D.RData"))
 

@@ -352,6 +352,17 @@ sv_importance(shp_xgb_a, kind = "both", alpha = 0.2, width = 0.2)
 ## This one might be used however to sort the features according to importance
 
 
+workspace_objects <- mget(c("shap_run1", "predictors_1", "model_rf", 
+                            "model_xgb", "X_1_shap", "shp_1_rf", "baseline_rf",
+                            "shv_rf", "shp_1_xgb", "baseline_xgb", "shv_xgb", 
+                            "shp_xgb_a"))
+
+
+# Save the list to an RDS file
+
+saveRDS(workspace_objects, file = here::here(
+  "data", "intermediate", "workspace_SHAP_analysis_model_B_run1.rds"))
+
 
 save.image(here::here("data", "intermediate", "workspace_SHAP_analysis_model_B.RData"))
 
