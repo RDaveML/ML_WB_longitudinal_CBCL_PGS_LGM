@@ -26,6 +26,10 @@ options(scipen = 999)
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table")
 
+
+## idea: turn this into function, lapply over all datasets, covariate vectors
+## complete, included and then code linear model
+
 ###############################################################################
 
 ## Model A

@@ -796,18 +796,21 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   # Train the final model using the optimal parameters
   ## I can still train the final model with caret! 
   ## usign all the parameters that emerged from the rf_bayes function
-  model_bayes_rf <- train(
-    x = x_train_matrix,
-    y = y_train_vector,
+  model_bayes_rf <- ranger(
+    dependent.variable.name = "QoL_simple",  # Target variable name in data frame
+    data = data.frame(QoL_simple = y_train_vector, x_train_matrix),  # Combine y and x into a data frame
+    # y = y_train_vector,
     #data = x_train_ML,
-    method = "ranger",
-    trControl = trainControl(method = "none"),
+    # trControl = trainControl(method = "none"),
     # No CV for the final model, hypertuning parameters
     # were already crossvalidated
-    tuneGrid = tune_grid_rf,
+    # tuneGrid = tune_grid_rf,
     ## this needs to added separately in caret / ranger
+    mtry = best_params_rf$mtry,
+    min.node.size = best_params_rf$min.node.size, 
     max.depth = best_params_rf$max.depth, 
-    num.trees = best_params_rf$num.trees
+    num.trees = best_params_rf$num.trees,
+    replace = TRUE
     ###...
   )
   
@@ -818,20 +821,40 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   x_train_matrix_rf <- model.matrix(~ . - 1, data = df_train)[
     , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
 
+  #preds_rf_train <- predict(model_bayes_rf,
+  #                          newdata = x_train_matrix_rf)
+                            
   preds_rf_train <- predict(model_bayes_rf,
-                            newdata = x_train_matrix_rf)
+                            data = x_train_matrix_rf)$predictions
 
-  preds_df_train <- data.frame(predictions_rf = preds_rf_train,
+                            
+ preds_df_train <- data.frame(predictions_rf = preds_rf_train,
                                FISNumber = df_train$FISNumber,
                                train = 1)                          
                               
   cat("predictions rf training set successful", "\n")
 
+  cat("Best hypertuning parameters for random forest: ", "\n")
+  print(best_params_rf)
+  cat("\n")
+
   x_test_matrix_rf <- model.matrix(~ . - 1, data = df_test)[
     , !(colnames(model.matrix(~ . - 1, data = df_test)) %in% exclude_vars)]
 
+  cat("creating test matrix successful", "\n")
+
+  cat("columns training and test set match: ",
+      all(colnames(x_train_matrix_rf) %in% colnames(x_test_matrix_rf)),
+      all(colnames(x_test_matrix_rf) %in% colnames(x_train_matrix_rf)), "\n")
+
+  cat("dimensions training set: ", dim(x_train_matrix_rf), "\n")
+  cat("dimensions test set: ", dim(x_test_matrix_rf), "\n")
+
+#  preds_rf_test <- predict(model_bayes_rf,
+#                           newdata = x_test_matrix_rf)
+
   preds_rf_test <- predict(model_bayes_rf,
-                           newdata = x_test_matrix_rf)
+                           data = x_test_matrix_rf)$predictions
 
   preds_df_test <- data.frame(predictions_rf = preds_rf_test,
                               FISNumber = df_test$FISNumber,

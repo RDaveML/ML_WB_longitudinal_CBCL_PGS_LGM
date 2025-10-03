@@ -4,33 +4,32 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-03-12
+# Date: 2025-09-30
 #
-# Script Name: 09_A_run_bootstrap_stability.R
+# Script Name: 37_D_run_sensitivity_analysis_ML.R
 #
-# Script Description: This script is supposed to run the original and the B = 100
-# bootstrapped versions of the ML script to inspect model stability
-# It will be given to the SNELLIUS cluster, parallelizing a job array for
-# running the script 101 times simultaneously
-# Goal is to save each output of model predictions and performance 
-# in separate file in subdirectory and then to combine them in the script where
-# the stability check takes place
+# Script Description: This script is supposed to re-run the ML training part for 
+# model D after removing the top 5% multivariate outliers to 
+# see if results are robust. No stability assessment will take place
 #
 #
-# Notes: 09_A_run_bootstrap_stability.R runs model A (only raw CBCL scores + covariates)
+# Notes: 37_D_run_sensitivity_analysis_ML.R runs model D
+# (raw CBCL scores + longitudinal variables CBCL + covariates)
 #
 #
-
-# --------------------------------------------------------------
-# ---------- Get Iteration Number ------------------------------
-# --------------------------------------------------------------
 
 
 
 # !/usr/bin/env Rscript
-iter <- commandArgs(trailingOnly=TRUE) ## use this as index for the datasets!
-# iter <- 1
-## this can be tested and returned on ntr1 server run exiting the script 
+
+
+# Set options
+t00 <- Sys.time()
+
+options(scipen = 999, expressions = 500000)
+## note that 500000 is the absolute max allowed
+
+iter <- 1
 iter <- as.numeric(iter)
 
 if(iter > 1){
@@ -43,24 +42,6 @@ b_iter <- as.numeric(b_iter)
 print(b_iter)
 cat("Iteration / Index for Bootstrapped dataset: ", b_iter, "\n")
 
-test <- FALSE
-if(test){
-  filename <- paste0("workspace_model_0_iteration_", iter, ".rds")
-  saveRDS(iter, file = paste0(here::here("data", "intermediate", "bootstrap", filename)))
-  stop("Iteration print works / does not work, testrun with only iteration saved successfully!")
-}
-
-
-
-
-# Set options
-t00 <- Sys.time()
-
-options(scipen = 999, expressions = 500000)
-## note that 500000 is the absolute max allowed
-
-# install.packages("rprojroot")
-# install.packages("here")
 
 install_manually <- FALSE
 if(install_manually == TRUE){
@@ -81,16 +62,12 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
                "kernlab", "ggplot2", "purrr", "tidyr", "rvest")
 
 
-
 ## Sourcing custom functions
 ## (files need to be located in same directory, also on cluster)
 source(here::here("scripts", "functions", "functions_ml.R"))
 
 
-## Find out if you can also load in only a slice of a list, otherwise load in
-## entire list and slice the object here in R
-
-## readRDS solves the problem!
+## reading in train IDs, train IDs to remove (MCD) and test IDs
 if(b_iter == 0){
   train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
 } else {
@@ -106,106 +83,99 @@ if(b_iter == 0){
     here::here("data", "intermediate", "indices_bootstrap.rds"))[[b_iter]][[2]]
 }
 
+
+train_ids_remove <- readRDS(
+  here::here("data", "intermediate", "outlierIDs_MCD_dataset_D.rds"))
+
 ## specifying number of cores to be used for parallelization
-ncore_cl <- 96
-
-
-## loading in the data
-## loading in full model_A data (merged together in script 06_b_merge_nonLGM.R)
-# load(here::here("data", "intermediate", "data_model_0.Rdata"))
-data_full_raw <- readRDS(here::here("data", "intermediate", "data_model_A.rds"))
+ncore_cl <- 48
 
 
 ## loading in covariate names
-# load(here::here("data", "intermediate", "names_covariates.RData"))
 covariates_names <- readRDS(
-  here::here("data", "intermediate", "names_covariates.rds")
-  )
-
-## loading in rater covariates
-## (created in script 06_longitudinal_features_no_LGM) and merging them to 
-## covariates names
-# load(here::here("data", "intermediate", "names_rater_covariates.Rdata"))
-rater_covariates <- readRDS(
-  here::here("data", "intermediate", "names_rater_covariates.rds")
-  )
+  here::here("data", "intermediate", "names_covariates.rds"))
+covariates_names
 
 
-## loading in df with Family Numbers
-# load(here::here("data", "intermediate", "FIS_fam_nr.RData"))
-df_FIS_fam <- readRDS(here::here("data", "intermediate", "FIS_fam_nr.rds"))
+## removing flagged multivariate outliers, preprocessing data
 
+## loading in dataset (unpreprocessed, variables already dummy coded)
+## + filtering out the 5% multivariate MCD outliers
+data_model_D_train <- readRDS(
+  here::here("data", "intermediate", "data_model_D_train.rds")) %>%
+  filter(!FISNumber %in% train_ids_remove)
 
-## one vector with all covariates names
-covariates_names <- c(covariates_names, rater_covariates)
+## loading in full covariates names
+covariates_full <- readRDS(
+  here::here("data", "intermediate", "covariates_full_D.rds"))
 
+## reading in (unpreprocessed) test set
+data_model_D_test <- readRDS(
+  here::here("data", "intermediate", "data_model_D_test.rds"))
 
-## further distinction: numeric and factor covariates
-num_covariates <- c(grep("time_lag", covariates_names, value = TRUE),
-                    grep("age_qol", covariates_names, value = TRUE),
-                    rater_covariates)
+data_model_D <- rbind(data_model_D_train,
+                      data_model_D_test)
 
-factor_covariates <- setdiff(covariates_names, num_covariates)
-
-
-## converting covariates to factors
-## (this is done in the function f_conv)
-data_full_raw <- f_conv(df = data_full_raw, covariates = factor_covariates)
-
-
-## converting columns with multiple
-## class types to numeric
-data_full_raw <- mult_to_numeric(df = data_full_raw)
-
-## dummy coding categorical covariates
-data_dummies_A <- dummy_cols(data_full_raw,
-                             select_columns = factor_covariates,
-                             remove_first_dummy = TRUE,
-                             remove_selected_columns = TRUE,
-                             ignore_na = TRUE)
-## not own column, but missing
-## information here will be imputed as well
-
-## saving unpreprocessed training set for later calculating
-## MCD (scripts 34-38)
-if(iter == 1){
-  data_model_A_train <- data_dummies_A %>%
-    filter(FISNumber %in% train_ids)
-  
-  saveRDS(data_model_A_train,
-          here::here("data", "intermediate", "data_model_A_train.rds"))
-  
-  data_model_A_test <- data_dummies_A %>%
-    filter(FISNumber %in% test_ids)
-  
-  saveRDS(data_model_A_test,
-          here::here("data", "intermediate", "data_model_A_test.rds"))
-  
-}
-
-dummy_vars <- setdiff(colnames(data_dummies_A), colnames(data_full_raw))
-
-covariates_full <- c(num_covariates, dummy_vars)
-
-saveRDS(covariates_full,
-        here::here("data", "intermediate", "covariates_full_A.rds"))
+## sanity check: were covariates completely saved?
+setdiff(covariates_names, covariates_full)
+setdiff(covariates_full, covariates_names)
 
 
 ## preprocessing for machine learning
 ## (this is done in the function f_preprocess)
 ## nzv removal, high cor removal, linear combination removal, imputation
-preprocessed_A <- ml_preprocess(df = data_dummies_A,
-                                train_ids = train_ids,
-                                test_ids = test_ids,
-                                covariates = covariates_full)
+preprocessed_D <- ml_preprocess(
+  df = data_model_D,
+  train_ids = setdiff(train_ids, train_ids_remove),
+  test_ids = test_ids,
+  covariates = covariates_full
+)
 
 ## checking if family is still included in training variables
-cat("FamilyNumber still in training set: ",
-    "FamilyNumber" %in% colnames(preprocessed_A$x_train_comb), "\n")
+"FamilyNumber" %in% colnames(preprocessed_D$x_train_comb)
 
-x_train <- preprocessed_A$x_train_comb
+x_train <- preprocessed_D$x_train_comb
 
-x_test <- preprocessed_A$x_test_comb
+x_test <- preprocessed_D$x_test_comb
+
+train_ids <- setdiff(train_ids, train_ids_remove)
+
+cat("All covariates in training set: ",
+    all(covariates_full %in% colnames(x_train)), "\n")
+
+cat("All covariates in test set: ",
+    all(covariates_full %in% colnames(x_test)), "\n")
+
+cat("Dimensions training set: ", dim(x_train), "\n")
+
+cat("Dimensions test set: ", dim(x_test), "\n")
+
+## saving data
+filename_dataset_processed <- paste0("prepared_data_D_MCD_", iter, ".rds")
+
+saveRDS(
+  list(
+    x_train = x_train,
+    x_test = x_test,
+    train_ids = train_ids,
+    test_ids = test_ids
+  ),
+  here::here(
+    "data",
+    "intermediate",
+    "prep_data_MCD",
+    filename_dataset_processed
+  )
+)
+cat("data preparation finished for model D (MCD outliers removed)", "\n", "\n")
+
+
+t0a <- Sys.time()
+cat("duration data preparation: ",
+    difftime(t0a, t00, unit = "mins"), " minutes")
+
+
+##-----------------------------------------------------------------------------
 
 set.seed(7)
 
@@ -332,44 +302,47 @@ cat("hypertuning random forest successful!", "\n")
 
 ##-------------------------------------------------------------
 
-## Model 2 - Support Vector Regression
+## Model 2 - Support Vector Regression (dropped after model A, did not 
+## converge, saving budget)
 
-# Define the search bounds for hyperparameters
-bounds_svr <- list(
-  C = c(0.1, 10),            # Range for C
-  sigma = c(0.01, 0.1),     # Range for sigma
-  degree = c(2, 3),          # Range for degree
-  scale = c(0.01, 0.1),     # Range for scale
-  method = c(0, 1)           # Encodes categorical: 0 = Radial, 1 = Poly
-)
-
-## Running support vector regression with bayesian hyperparameter tuning
-run_svr <- bayes_hyper_svr(
-  df_train = x_train_ML,
-  df_test = x_test_ML,
-  folds = folds,
-  bounds_svr = bounds_svr,
-  ncores = ncore_cl,
-  iters.n = ncore_cl,
-  iters.k = ncore_cl
-)
-
-## printing some output from svr process
-cat("Best parameters for svr: ", "\n")
-run_svr$best_params_svr
-cat("Duration hypertuning svr", "\n")
-run_svr$time_hypertuning
-cat("Early stopping triggered", "\n")
-run_svr$early_stopping_triggered
-cat("Iterations run", "\n")
-run_svr$niters
-cat("Stopping status", "\n")
-run_svr$stopStatus
-cat("total time elapsed", "\n")
-run_svr$totalTime
-
-cat("hypertuning support vector regression successful!", "\n")
-
+svr <- FALSE
+if(svr){
+  # Define the search bounds for hyperparameters
+  bounds_svr <- list(
+    C = c(0.1, 10),            # Range for C
+    sigma = c(0.01, 0.1),     # Range for sigma
+    degree = c(2, 3),          # Range for degree
+    scale = c(0.01, 0.1),     # Range for scale
+    method = c(0, 1)           # Encodes categorical: 0 = Radial, 1 = Poly
+  )
+  
+  ## Running support vector regression with bayesian hyperparameter tuning
+  run_svr <- bayes_hyper_svr(
+    df_train = x_train_ML,
+    df_test = x_test_ML,
+    folds = folds,
+    bounds_svr = bounds_svr,
+    ncores = ncore_cl,
+    iters.n = ncore_cl,
+    iters.k = ncore_cl
+  )
+  
+  ## printing some output from svr process
+  cat("Best parameters for svr: ", "\n")
+  run_svr$best_params_svr
+  cat("Duration hypertuning svr", "\n")
+  run_svr$time_hypertuning
+  cat("Early stopping triggered", "\n")
+  run_svr$early_stopping_triggered
+  cat("Iterations run", "\n")
+  run_svr$niters
+  cat("Stopping status", "\n")
+  run_svr$stopStatus
+  cat("total time elapsed", "\n")
+  run_svr$totalTime
+  
+  cat("hypertuning support vector regression successful!", "\n")
+}
 ##-------------------------------------------------------------
 
 ## Model 3 - XGBoost
@@ -417,14 +390,20 @@ cat("hypertuning XGBoost successful!", "\n")
 
 ## adding flag if prediction is original or bootstrapped
 if(iter == 1){
-run_rf$preds_df_rf$original_prediction <- 1
-run_svr$preds_df_svr$original_prediction <- 1
-run_xgb$preds_df_xgb$original_prediction <- 1
+  run_rf$preds_df_rf$original_prediction <- 1
+  run_xgb$preds_df_xgb$original_prediction <- 1
 } else {
-run_rf$preds_df_rf$original_prediction <- 0
-run_svr$preds_df_svr$original_prediction <- 0
-run_xgb$preds_df_xgb$original_prediction <- 0  
+  run_rf$preds_df_rf$original_prediction <- 0
+  run_xgb$preds_df_xgb$original_prediction <- 0  
 } 
+## optional if svr was run
+if(svr){
+  if(iter == 1){
+    run_svr$preds_df_svr$original_prediction <- 1
+  } else {
+    run_svr$preds_df_svr$original_prediction <- 0
+  }
+}
 
 # ----------------------------------------------------------------------
 # ----- Export ---------------------------------------------------------
@@ -435,12 +414,15 @@ run_xgb$preds_df_xgb$original_prediction <- 0
 ## not all elements in workspace, only selected
 workspace_objects <- mget(c("covariates_full", "iter", "ncore_cl",
                             "predictors_level_1", "train_ids", "test_ids",
-                            "run_rf", "run_svr", "run_xgb"))
+                            "run_rf", "run_xgb"))
 
 
 # Save the list to an RDS file
-filename <- paste0("workspace_model_A_iteration_", iter, ".rds")
-saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate", "bootstrap", filename)))
+filename <- paste0("sensitivity_workspace_model_D_iteration_", iter, ".rds")
+saveRDS(
+  workspace_objects,
+  file = paste0(here::here("data", "intermediate",
+                           "workspaces_sensitivity_analysis_MCD", filename)))
 
 
 
@@ -448,22 +430,8 @@ saveRDS(workspace_objects, file = paste0(here::here("data", "intermediate", "boo
 ## time tracking
 t01 <- Sys.time()
 
-cat("duration entire script (model A, custom functions): ",
+cat("duration entire script (model D, custom functions): ",
     difftime(t01, t00, unit = "mins"), " minutes")
 
-
-timer_total <- proc.time()[3]
-
-
-# print total time of nodes
-print(paste0("Full Timing Iteration ", iter, ":"))
-proc.time()[3] - timer_total
-
-#stopCluster(cl)
-
-#rm(timer_total)
-#rm(cl)
-
-
-
+# eoS
 

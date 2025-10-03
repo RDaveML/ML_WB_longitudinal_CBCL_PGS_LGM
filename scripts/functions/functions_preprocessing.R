@@ -340,3 +340,160 @@ filter_CBCL_2 <- function(df, CBCL_YSR_items_vec, data_covariates){
   ## returning final df (which will then be given to perform KNN imputation)
   return(data7) 
 }
+
+###############################################################################
+
+## function that saves IDs of 5% top mcd outliers from the training set
+## for sensitivity analysis, these can then later be removed
+
+## default alpha = .75, performs better than .5 if less than N x 1/4 outliers
+## (Leys et al., 2018)
+
+mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
+                  threshold = 0.05, seed = NULL){
+  
+  if (!is.null(seed)) {
+    set.seed(seed)
+  }
+  
+  cat("random seed for this dataset: ", seed, "\n")
+  
+  cat("name of the dataset: ", dataset_name, "\n")
+  filename_outliers <- paste0("outlierIDs_MCD_", dataset_name, ".rds")
+  
+  ## saving IDs
+  data_mcd_ID <- data %>%
+    dplyr::select(FISNumber)
+  
+  ## selecting only predictor variables
+  data_mcd <- data %>%
+    dplyr::select(-FISNumber, -FamilyNumber, -QoL_simple)
+  
+  cat("Number of columns before removing IQR = 0 cols: ", ncol(data_mcd), "\n")
+  
+  ## deleting columns with IQR = 0
+  data_mcd <- data_mcd[, sapply(data_mcd, function(col) IQR(col, na.rm = TRUE) > 0),
+                       drop = FALSE]
+  
+  cat("Number of columns remaining: ", ncol(data_mcd), "\n")
+  
+  ## removing highly correlated variables to avoid eigenvalue issues
+  cor_mat <- cor(data_mcd, use = "pairwise.complete.obs")
+  high_corr <- caret::findCorrelation(cor_mat, cutoff = 0.95)
+  if (length(high_corr) > 0) {
+    data_mcd <- data_mcd[, -high_corr, drop = FALSE]
+    cat("Dropped", length(high_corr), "highly correlated variables\n")
+  }
+  
+  # cat("Number of columns remaining: ", ncol(data_mcd), "\n")
+  cat("Number of columns remaining for MCD: ", ncol(data_mcd), "\n")
+  
+  ## (This is only possible with non NaN data)
+  ## removing linear combination variables
+  #combos <- findLinearCombos(as.matrix(data_mcd))$remove
+  
+  #if(!is.null(combos)){
+      
+  #  data_mcd <- data_mcd[-combos]
+  #}
+  
+  
+  # Creating covariance matrix for MCD («data_mcd» is the matrix containing  
+  # data with no indicator variable
+  
+
+  # alpha controls the fraction used
+  
+  ## ensure that all eigenvalues are positive, 
+  ## if not, first calculate PCA on the data and calculate mcd on the 
+  ## PCA data
+  
+  ## also if number of mcd columns is too high
+  # if(!all(eigen(output_mcd$cov)$values > 0) | ncol(data_mcd) > 250){
+  # if(!all(eigen(output_mcd$cov)$values > 0)){
+  if(ncol(data_mcd) > 250){
+    
+    PCA_approach <- TRUE
+    
+    ## mean imputing before calculating PCA (This is only to determine the 
+    ## outliers, the actual data will not bet touched)
+    for(j in seq_len(ncol(data_mcd))){
+      data_mcd[is.na(data_mcd[, j]), j] <- mean(data_mcd[, j], na.rm = TRUE)
+    }
+    
+    # 1) scale the data (important for PCA when variables have different units)
+    X <- scale(data_mcd, center = TRUE, scale = TRUE)
+    
+    # 2) PCA
+    pca <- prcomp(X, center = FALSE, scale = FALSE)
+    
+    # 3) choose number of PCs to keep
+    #    a) keep PCs with non-negligible variance:
+    eps <- 1e-8
+    k_nonzero <- sum(pca$sdev > eps)
+    
+    #    b) or use cumulative variance threshold (80% to not have excessive 
+    # high number of PCs)
+    cumvar <- cumsum(pca$sdev^2) / sum(pca$sdev^2)
+    k_80 <- which(cumvar >= 0.80)[1]   # first index reaching >=980%
+    
+    # pick k = min(k_nonzero, k_80, nrow(X)-1)
+    # setting hard cap at 250 PCAs
+    k <- min(k_nonzero, ifelse(is.na(k_80), k_nonzero, k_80), 250, nrow(X)-1)
+    
+    if(k == 250){
+      cat("Cap of 250 PCs applied", "\n")
+    }
+    
+    pcs <- pca$x[, 1:k, drop = FALSE]
+    
+    cat("Number of PCAs to calculate MCD on: ", ncol(pcs), "\n")
+    
+    # 4) run MCD on the reduced data
+    mcd <- covMcd(pcs, alpha = alpha_mcd)  # robust center and covariance in PC space
+    
+    # 5) compute mahalanobis distances in PC space
+    # If mcd$cov is fine (invertible), this works:
+    mhmcd <- mahalanobis(pcs, mcd$center, mcd$cov)
+    
+  } else {
+    # Distances from centroid for matrix
+    PCA_approach <- FALSE
+    #output_mcd <- rrcov::CovMcd(data_mcd, alpha = alpha_mcd)
+    output_mcd <- robustbase::covMcd(data_mcd, alpha = alpha_mcd)
+    mhmcd <- mahalanobis(data_mcd, output_mcd$center, output_mcd$cov)
+  }
+  
+  cat("PCA carried out: ", PCA_approach, "\n")
+  
+  ## optional: Instead of fixed quota, flag all IDs that fall below
+  ## significance threshold
+  
+  if(filter_cutoff){
+    cutoff <- (qchisq(p = 1 - threshold, df = ncol(data_mcd))) ## ADJUST THIS! 
+    names_outliers_MCD <- which(mhmcd > cutoff)
+    
+    saveRDS(names_outliers_MCD,
+            file = here::here("data", "intermediate", filename_outliers))
+  } else {
+    
+    names_outliers_MCD <- cbind(data.frame(mhmcd), data_mcd_ID) %>% 
+      # rowid_to_column() %>%
+      arrange(desc(mhmcd)) %>%
+      head(0.05 * length(mhmcd)) %>%
+      dplyr::select(FISNumber) %>%
+      pull()
+    
+    saveRDS(names_outliers_MCD,
+            file = here::here("data", "intermediate", filename_outliers))
+    
+    cat(length(names_outliers_MCD),
+        " participants removed from training set ", dataset_name, "\n")
+    ## Thus instead of cutoff only discard the top 5%, based on the mhmcd75!
+  }
+  
+  return(names_outliers_MCD)
+  
+}
+
+

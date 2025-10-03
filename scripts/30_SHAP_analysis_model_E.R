@@ -368,6 +368,53 @@ ggsave(filename = "bee_plot_rf_E.png",
 
 
 
+## further inspection of the models 
+
+
+imp_vec_rf <- sv_importance(shv_rf, kind = "no")   # named numeric vector, sorted by mean |SHAP|
+
+importance_df_rf <- data.frame(
+  Feature = names(imp_vec_rf),
+  Importance = as.numeric(imp_vec_rf),
+  stringsAsFactors = FALSE
+) %>% rowid_to_column()
+
+head(importance_df_rf, 30)
+
+## covariates
+covariates_full
+all(covariates_full %in% importance_df_rf$Feature)
+
+## checking ranks of the covariates in the feature importance df 
+for(covariate in covariates_full){
+  cat("Rank feature ", covariate, " in model E: ",
+      importance_df_rf %>%
+        filter(Feature == covariate) %>%
+        select(rowid) %>%
+        pull(),
+      " / ", nrow(importance_df_rf), "\n")
+}
+
+
+## non-LGM and LGM features
+## collect non LGM features in model
+non_LGM_preds <- grep("non",
+                      grep("LGM", importance_df_rf$Feature, value = TRUE),
+                      invert = FALSE, value = TRUE)
+
+LGM_preds <- grep("non",
+                  grep("LGM", importance_df_rf$Feature, value = TRUE),
+                  invert = TRUE, value = TRUE)
+
+types_non_LGM <- c("mean", "sd", "RMSSD", "acf", "ar_order")
+types_LGM <- c("_I_", "_S_", "CPROB")
+
+types_longitudinal <- c(types_non_LGM, types_LGM)
+
+for(t_long in types_longitudinal){
+  cat("Features of type ", t_long, " in model: ",
+      length(grep(t_long, importance_df_rf$Feature, value = TRUE)), "\n")
+}
 
 
 
@@ -395,6 +442,90 @@ sv_importance(shp_xgb_a, kind = "beeswarm", alpha = 0.2, width = 0.2)
 sv_importance(shp_xgb_a, kind = "both", alpha = 0.2, width = 0.2)
 ## sv_importance(shp_xgb_a, kin = "no")
 ## This one might be used however to sort the features according to importance
+
+## further inspection of the models 
+
+
+imp_vec_xgb <- sv_importance(shv_xgb, kind = "no")   # named numeric vector, sorted by mean |SHAP|
+
+importance_df_xgb <- data.frame(
+  Feature = names(imp_vec_xgb),
+  Importance = as.numeric(imp_vec_xgb),
+  stringsAsFactors = FALSE
+) %>% rowid_to_column()
+
+head(importance_df_xgb, 30)
+
+## covariates
+covariates_full
+all(covariates_full %in% importance_df_xgb$Feature)
+
+## checking ranks of the covariates in the feature importance df 
+for(covariate in covariates_full){
+  cat("Rank feature ", covariate, " in model E: ",
+      importance_df_xgb %>%
+        filter(Feature == covariate) %>%
+        select(rowid) %>%
+        pull(),
+      " / ", nrow(importance_df_xgb), "\n")
+}
+
+## Comparison rf and xgb feature importances
+
+# Merge dataframes by feature
+merged_SHAP_df <- merge(importance_df_rf,
+                        importance_df_xgb,
+                        by = "Feature",
+                        suffixes = c("_rf", "_xgb"))
+
+# Correlation of importance values
+importance_cor <- cor(merged_SHAP_df$Importance_rf,
+                      merged_SHAP_df$Importance_xgb,
+                      method = "pearson")
+
+# Correlation of ranks
+rank_cor <- cor(merged_SHAP_df$rowid_rf,
+                merged_SHAP_df$rowid_xgb,
+                method = "spearman")
+
+importance_cor
+## .59 correlation of average SHAP importance
+
+rank_cor
+## .63 correlation of rank of average SHAP importance
+
+library(boot)
+
+# Function to compute correlation (Pearson or Spearman)
+correlation_fn <- function(data, indices, method = "pearson") {
+  d <- data[indices, ]
+  return(cor(d$x, d$y, method = method))
+}
+
+# importance values
+data_importance <- data.frame(x = merged_SHAP_df$Importance_rf,
+                              y = merged_SHAP_df$Importance_xgb)
+
+# Bootstrap for Pearson correlation
+set.seed(123)
+boot_res <- boot(data_importance,
+                 statistic = correlation_fn, R = 2000, method = "pearson")
+
+# Bootstrap CI
+boot.ci(boot_res, type = c("perc", "bca"))
+
+# ranks
+data_importance_rank <- data.frame(x = merged_SHAP_df$rowid_rf,
+                                   y = merged_SHAP_df$rowid_xgb)
+
+# Bootstrap for Pearson correlation
+set.seed(123)
+boot_res_rank <- boot(data_importance_rank,
+                      statistic = correlation_fn, R = 2000, method = "spearman")
+
+# Bootstrap CI
+boot.ci(boot_res_rank, type = c("perc", "bca"))
+
 
 ## eoS
 

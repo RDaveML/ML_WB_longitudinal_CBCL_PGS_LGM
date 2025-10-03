@@ -197,6 +197,12 @@ if(data_prepared == FALSE){
     }
     ## leave this in for descriptive statistics!
     
+    ## save unpreprocessed data for later confounder analysis
+    if(iter == 1){
+      saveRDS(data_model_D_base,
+              file = here::here("data", "intermediate", "data_model_D.rds"))
+    }
+    
     ## converting covariates to factors
     ## (this is done in the function f_conv)
     
@@ -218,6 +224,22 @@ if(data_prepared == FALSE){
       ignore_na = TRUE
     ) ## not own column, but missing
     ## information here will be imputed as well
+    
+    ## saving unpreprocessed training set for later calculating
+    ## MCD (scripts 34-38)
+    if(iter == 1){
+      data_model_D_train <- data_dummies_D %>%
+        filter(FISNumber %in% train_ids)
+      
+      saveRDS(data_model_D_train,
+              here::here("data", "intermediate", "data_model_D_train.rds"))
+      
+      data_model_D_test <- data_dummies_D %>%
+        filter(FISNumber %in% test_ids)
+      
+      saveRDS(data_model_D_test,
+              here::here("data", "intermediate", "data_model_D_test.rds"))
+    }
     
     dummy_vars <- setdiff(colnames(data_dummies_D), colnames(data_model_D))
     

@@ -83,9 +83,8 @@ if(data_prepared) {
 # ---------- Get Iteration Number ------------------------------
 # --------------------------------------------------------------
 
-  ## FOR TEST RUN: SET ITER TO 1, remove later 
 
-  iter <- 1
+  #iter <- 1
   ## CONTINUE HERE LATER!!
   #iter <- commandArgs(trailingOnly = TRUE) ## use this as index for the datasets!
   iter <- as.numeric(iter)
@@ -177,8 +176,13 @@ if(data_prepared) {
       by = c("FISNumber", "QoL_simple"))
     
     
-    
     ## (rater covariates not necessary here)
+    
+    ## save unpreprocessed data for later confounder analysis
+    if(iter == 1){
+      saveRDS(data_model_B,
+              file = here::here("data", "intermediate", "data_model_B.rds"))
+    }
     
     ## loading in df with Family Numbers (not necessary, already adressed in begin)
     #df_FIS_fam <-  readRDS(here::here("data", "intermediate", "PGS", "data_fam_PGS.rds"))
@@ -238,6 +242,22 @@ if(data_prepared) {
       ignore_na = TRUE
     ) ## not own column, but missing
     ## information here will be imputed as well
+    
+    ## saving unpreprocessed training set for later calculating
+    ## MCD (scripts 34-38)
+    if(iter == 1){
+      data_model_B_train <- data_dummies_B %>%
+        filter(FISNumber %in% train_ids)
+      
+      saveRDS(data_model_B_train,
+              here::here("data", "intermediate", "data_model_B_train.rds"))
+      
+      data_model_B_test <- data_dummies_B %>%
+        filter(FISNumber %in% test_ids)
+      
+      saveRDS(data_model_B_test,
+              here::here("data", "intermediate", "data_model_B_test.rds"))
+    }
     
     dummy_vars <- setdiff(colnames(data_dummies_B), colnames(data_model_B))
     
