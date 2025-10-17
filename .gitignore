@@ -44,3 +44,5 @@ scripts/27_3_model_E_run_bootstrap_stability.R
 scripts/script_correction_iterations.R
 scripts/output_correction_iteration.txt
 scripts/Demographics_descriptive statistics.R
+scripts/cheatsheet_CBCL.R
+scripts/xx_comparison_model_performance_OG_sensitivity.R

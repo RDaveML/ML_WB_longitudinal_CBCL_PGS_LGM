@@ -175,7 +175,7 @@ cat("Dimensions test set: ", dim(x_test), "\n")
 
 
 ## saving data
-filename_dataset_processed <- paste0("prepared_data_C_MCD_", iter, ".rds")
+filename_dataset_processed <- paste0("prepared_data_E_MCD_", iter, ".rds")
 
 saveRDS(
   list(
@@ -191,7 +191,7 @@ saveRDS(
     filename_dataset_processed
   )
 )
-cat("data preparation finished for model C (MCD outliers removed)", "\n", "\n")
+cat("data preparation finished for model E (MCD outliers removed)", "\n", "\n")
 
 
 t0a <- Sys.time()

@@ -367,7 +367,7 @@ for(run in 1:2) {
 }
 
 ## CONTINUE HERE!! 
-load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
+# load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
 
 ## creating empty vector where all predictor variables that occured in any 
 ## of the bootstrapped models are stored

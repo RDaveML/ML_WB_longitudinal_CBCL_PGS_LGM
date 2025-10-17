@@ -257,7 +257,7 @@ full_models_list <- lapply(feature_sets, function(set){
     
     ## Bonferroni-corrected significance
     ## in total 10 tests, 2(rf + xgb) for each feature set (A-E)
-    pred_sig <- p_val < 0.05 / 10
+    pred_sig_bonf <- p_val < 0.05 / 10
     
     # table and plotting
     t1 <- decomposed_r2[c(1:5,8),]
@@ -293,7 +293,8 @@ full_models_list <- lapply(feature_sets, function(set){
     ## paper again in how far I need to go over folds when cross validating
     
     return(list(decomposed_r2 = decomposed_r2,
-                pred_sig = pred_sig,
+                pred_sig_bonf = pred_sig_bonf,
+                pval = p_val,
                 plot_decomposition = p))
   })
   
@@ -309,15 +310,32 @@ names(full_models_list) <- paste0("confounder_analysis_set_", feature_sets)
 
 ## analysis: In how many of the cases is adding the predictions to the 
 ## confounders significant regarding R²?
-## CONTINUE HERE!!!
+
+
+## A) Bonferroni-corrected p-value
 
 ## Indexing lists to the deepest level
-sig_values <- unlist(lapply(full_models_list, function(sublist) {
-  lapply(sublist, function(x) x$pred_sig)
+sig_values_bonf <- unlist(lapply(full_models_list, function(sublist) {
+  lapply(sublist, function(x) x$pred_sig_bonf)
 }))
 
 # Print them out
-print(sig_values)
+print(sig_values_bonf)
+
+
+## B) Benjamini-Hochberg method (less conservative)
+sig_values_bh <- unlist(lapply(full_models_list, function(sublist) {
+  lapply(sublist, function(x) x$pval)
+}))
+
+## applying the correction
+sig_values_bh_adj <- p.adjust(unname(sig_values_bh), method = "BH")
+
+sig_bh <- sig_values_bh_adj < 0.05
+
+names(sig_bh) <- names(sig_values_bh)
+
+print(sig_bh)
 
 ## plots
 decomposition_plots <- flatten(map(full_models_list,
