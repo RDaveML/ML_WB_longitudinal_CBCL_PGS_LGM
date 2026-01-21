@@ -8,11 +8,17 @@
 #
 # Script Name: 08_PCA_PRS_NTR.R
 #
+# Note: Dataset with polygenic scores can not be published due to 
+# NTR regulations, contact NTR datamanagement for replication interest
+# 
 # Script Description:
-## This script is supposed to execute the following steps
+## This script calculates the principal components 
+## for the polygenic risk scores included which will be 
+## used as genetic features in the ML models 
+## it contains the following steps
 ## (in the following order):
 ## Unzip .zip file in the directory 
-## /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
+## here::here("data", "intermediate", "PGS")
 ## for every .sav file in the unzipped directory:
 ##  1. Read in the .sav file
 ##  2. Perform specific calculations:
@@ -25,12 +31,20 @@
 ## 
 ## after all calculations are done, merge all dataframes on the ID columns,
 ## named "FISNumber" finally, save the dataset as a .csv file in the directory 
-## /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
+## here::here("data", "intermediate", "PGS")
+#
+# Notes: Being part of a national prospective cohort study (NTR), 
+# (a) our data cannot be made publicly available for privacy reasons but are available
+# for legitimate researchers via their data access procedure
+# ([https://tweelingenregister.vu.nl/information_for_researchers/working-with-ntr-data]
+# (https://tweelingenregister.vu.nl/information_for_researchers/working-with-ntr-data))
+# and (b) our sample will, due to the longitudinal data collection procedures,
+# partly overlap with previous publications.
 #
 #
 # Notes:
-# this script was run on the compute server ntrcompute2 where the source file 
-# was located. For data access, contact ntr data access comittee
+# this script was run on the NTR compute server ntrcompute2 where the source
+# file was located. For data access, contact ntr data access comittee
 # Script assumes that .zip file is located in file path
 #
 #
@@ -50,10 +64,16 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
 
 # Unzip the .zip file in the current directory
 ## The zip files are in the directory 
-## /data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS
-unzip_dir <- "data/intermediate/PGS/unzipped_files"
+unzip_dir <- here::here("data", "intermediate", "PGS", "unzipped_files")
+
+if(!dir.exists(unzip_dir)){
+  dir.create(here::here("data", "intermediate", "PGS"))
+  dir.create(unzip_dir)
+}
+## place zip files in unzip_dir before continue
+
 # Directory containing zip files
-zip_dir <- "/data/dleitritz/p01_CBCL_PGS_LGM/data/intermediate/PGS"
+zip_dir <- here::here("data", "intermediate", "PGS")
 zip_file <- list.files(path = zip_dir, pattern = "\\.zip$", full.names = TRUE)
 if (length(zip_file) == 1) {
     unzip(zip_file, exdir = unzip_dir)
@@ -66,12 +86,12 @@ sav_files <- list.files(unzip_dir, pattern = "\\.sav$", full.names = TRUE)
 
 ## run once with TRUE to save name vectors of genetic covariates and outlier
 ## columns
-testing_PCA <- FALSE
+testing_PCA <- TRUE
 
 if(testing_PCA){
 ## sandboxing here with only the first element from sav_files
   test_file <- sav_files[1]
-## loading in data
+  ## loading in data
   data <- read.spss(test_file, to.data.frame = TRUE, use.value.labels = FALSE)
   print(colnames(data))
   str(data)
@@ -125,9 +145,6 @@ if(testing_PCA){
       ggplot(aes(x = scores)) + 
       geom_histogram()
 
-## garbage collection
-  gc()
-
 }
 
 # Function to perform specific calculations on a .sav file
@@ -168,8 +185,6 @@ process_sav_pca <- function(file_path) {
     ## the string 'NTR-DSR-4552_' and the next underscore in the filename
     phenotype <- str_extract(file_path, "(?<=NTR-DSR-4552_)[^_]+")
     
-    ## Still address this issue: ADHD, AlzheimersDisease and Smoking 
-    ## exist several times! Find out which phenotypes those exactly are!
     if(file_path == sav_files[1]){
         data_out <- PCA_PGS_data %>%
             select(FISNumber, all_of(c(gen_covariates, outlier_cols)))
@@ -217,16 +232,8 @@ full_data_PCA_PGS <- lapply(sav_files, process_sav_pca)
 merged_data <- Reduce(function(x, y) merge(x, y, by = "FISNumber", all = TRUE),
                       full_data_PCA_PGS)
 
-# head(merged_data)
-# colnames(merged_data)
-# table(merged_data$EUR_1KG_Outlier) / nrow(merged_data)
-# ~3.7% EUR outliers
-# table(merged_data$NL_Strict_Outlier) / nrow(merged_data)
-# ~5% NL outliers
-# sum(colMeans(is.na(merged_data)))
-# No missing values
 
-## saving data
+## saving pre-processed genetic data
 saveRDS(merged_data,
         file = here::here("data", "intermediate", "PGS", "data_PCA_PGS.rds"))
 

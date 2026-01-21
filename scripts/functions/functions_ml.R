@@ -1,4 +1,4 @@
-## function to automatize ML procedure with different datasets 
+## functions to automatize ML procedure with different datasets 
 ## and different models 
 
 
@@ -7,7 +7,7 @@
 
 # options(scipen = 999, expressions = 50000)
 
-## converting factor covariates to factors
+## converting categorical covariates to factors
 f_conv <- function(df, covariates){
   data_converted <- df
   for(covariate in covariates){
@@ -15,7 +15,8 @@ f_conv <- function(df, covariates){
   }
   return(data_converted)
 }
-## function works 
+
+#############################################################################
 
 ## function to list types of variables in dataframe
 class_info <- function(df){
@@ -41,8 +42,6 @@ class_info <- function(df){
   for(var in 1:ncol(df)){
     variable <- df[, var]
     if(length(class(variable)) > 1) {
-      #cat("multiclass variable; variable ", colnames(df[var]),
-      #    " is class: ", class(variable), "\n", "\n")
       vars_mult_class <- c(vars_mult_class, colnames(df[var]))
       length_mult_class <- length_mult_class + 1
     } else if(class(variable) == "numeric"){
@@ -61,8 +60,6 @@ class_info <- function(df){
       vars_factor <- c(vars_factor, colnames(df[var]))
       length_factor_vars <- length_factor_vars + 1
     } else {
-      #cat("other variable detected; variable ", colnames(df[var]),
-      #    " is class: ", class(variable), "\n", "\n")
       vars_other <- c(vars_other, colnames(df[var]))
       length_other <- length_other + 1
     }
@@ -86,10 +83,12 @@ class_info <- function(df){
          )
          
 }
-## this function also works
+
+##############################################################################
 
 ## converting columns in dataset that had multiple column types to
-## numeric
+## purely numeric, important preprocessing function, will enable 
+## processing of data with specific R functions smoothly
 mult_to_numeric <- function(df){
   
   vars_mult_class <- vector()
@@ -98,44 +97,41 @@ mult_to_numeric <- function(df){
   for(var in 1:ncol(df)){
     variable <- df[, var]
     if(length(class(variable)) > 1) {
-      #cat("multiclass variable; variable ", colnames(df[var]),
-      #    " is class: ", class(variable), "\n", "\n")
       vars_mult_class <- c(vars_mult_class, colnames(df[var]))
       length_mult_class <- length_mult_class + 1
     } else {
       next
     }
   }
-  # cat("multiclass variables: ", vars_mult_class, "\n")
+
   if(length_mult_class > 0){
-    #cat("variables ", vars_mult_class, " will be converted to numeric")
+    
     df_converted <- df %>%
       mutate_at(vars_mult_class, as.numeric)
   } else {
     df_converted <- df
   }
   
-  
   return(df_converted)
 }
-## function also works but get rid of some of the print clutter
 
 
-## preprocessing function taking current dataset and train and test split 
-## varies thus per bootstrap
+## ML preprocessing function taking current dataset and train and test split 
+## will be looped over all B = 100 bootstrapped datasets,
+## takes as input dataset, train IDs, test IDs and vector of covariate names
 ml_preprocess <- function(df, train_ids, test_ids, covariates){
   
   df_FIS_fam <- df %>%
     select(FISNumber, FamilyNumber)
   
+  ## train test split
   data_train <- df %>% 
     filter(FISNumber %in% train_ids)
   
   data_test <- df %>%
     filter(FISNumber %in% test_ids)
   
-  ## Rearranging Columns (ID, outcome and covariates in beginning)
-  ## Should they be avoided in feature selection?
+  ## re-arranging columns
   data_train <- data_train %>%
     select(FISNumber, QoL_simple, all_of(covariates), everything())
   
@@ -172,9 +168,6 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   data_covariates_test <- data_test %>%
     select(FISNumber, all_of(covariates))
   
-  ## append this back to the dataset after removing columns!
-  
-  
   ## For preprocessing: Remove all columns that are not supposed to be removed 
   ## by the preprocessing steps, based on the training data, later
   ## filter test data with remaining variables and append FISNumber again when 
@@ -183,7 +176,7 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
     select(-all_of(covariates), -FISNumber, -QoL_simple, -FamilyNumber)
   
 
-  ## i) near-zero variance
+  ## i) near-zero variance removal
   nzv_train <- nearZeroVar(data_train)
   
   
@@ -197,7 +190,8 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   cat(ncol(data_train), " columns remaining in training set", "\n")
   
   
-  ## ii) high correlation (note that all columns must be numeric, df not changed here)
+  ## ii) high correlation removal
+  ## (note that all columns must be numeric, df not changed here)
   ## Note: here no non-numeric column, still kept in in case changes
   num_data <- data_train[, sapply(data_train, is.numeric)]
   
@@ -219,11 +213,12 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
     data_train <- data_train
   }
   
-  ## iii) linear dependence
+  ## iii) linear dependence (note: does not allow NAs, in between imputation)
+  ## executed prior
   
   # Create a preprocessing object for median imputation
   ## note: This is only to find linear combiations of columns which are intended 
-  ## to be removed! 
+  ## to be removed! Will not be actual imputation of data for ML
   num_data <- data_train[, sapply(data_train, is.numeric)]
   
   preProcessObj <- preProcess(num_data, method = "medianImpute")
@@ -264,10 +259,9 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
     
   }
   
-  ## (iv) multicollinearity)
-  
-  ## feature selection by means of elastic net also takes care of 
-  ## removing highly collinear variables
+  ## (feature selection by means of elastic net also takes care of 
+  ## removing highly collinear variables, thus additional step taking care of 
+  ## multicollinear variables not needed)
   
   
   ## selecting variables in test set that are also contained in training set
@@ -277,17 +271,11 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   ##----------------------------------------------------------------------------
   
   
-  ## B) Imputing data
-  
-  ## Note: Outlier removal by means of the Minimum covariance determinant (MCD)
-  ## can only be done with imputed data and will only be done as sensitivity
-  ## analysis after obtaining stable ML models
+  ## B) Imputing data (ML does not allow for NAs)
   
   ## before imputation: Take out FISNR! it should not be part of the KNN procedure
   
   ## Rejoining with covariates 
-  
-  
   df_train <- data_covariates_train %>%
     cbind(data_train)
   
@@ -320,6 +308,8 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   y_test <- y_test
   
   cat("Beginning KNN imputation training data", "\n")
+  ## determining k (square root of number of predictors, following 
+  ## e.g. Pelt et al., 2024)
   k_pad <- round(sqrt(ncol(x_train)))
   train_pre_obj <- preProcess(x_train,
                               method = "knnImpute",
@@ -333,14 +323,19 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   
   t3 <- Sys.time()
   
-  cat("duration KNN imputation train data: ", difftime(t3, t2, unit = "mins"), "\n")
+  cat("duration KNN imputation train data: ",
+      difftime(t3, t2, unit = "mins"), "\n")
   
+  ## running imputation on test data, solely informed by training data, no
+  ## leakage
   x_test_imp <- predict(train_pre_obj, x_test)
   
   t4 <- Sys.time()
   
-  cat("duration KNN imputation test data: ", difftime(t4, t3, unit = "mins"), "\n")
+  cat("duration KNN imputation test data: ",
+      difftime(t4, t3, unit = "mins"), "\n")
   
+  ## check if there are still missing values
   sum(colMeans(is.na(x_train_imp)) != 0)
   if(sum(colMeans(is.na(x_train_imp)) != 0)){
     cat("The following columns still contain NAs: ", "\n", 
@@ -358,6 +353,8 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
   x_test_comb <- cbind(df_FISNr_test, y_test, x_test_imp) %>%
     left_join(df_FIS_fam, by = "FISNumber")
   
+  ## returning all objects needed, can straight be passed to ML pipeline
+  
   return(list(df_FISNr_train = df_FISNr_train,
               df_FISNr_test = df_FISNr_test,
               x_train_comb = x_train_comb,
@@ -370,15 +367,26 @@ ml_preprocess <- function(df, train_ids, test_ids, covariates){
 
 ##-----------------------------------------------------------------------------
 
+## Functions that carry out bayesian hypertuning of tuning parameters 
+## for different ML models. The tuned parameters are then saved in the
+## script where ML modelling is done and passed to the ultimate model 
+
+
 ## Bayesian Hypertuning: First function that integrates hypertuning 
 ## for elastic net, then for rf, SVr and XGB
+
+## takes as input dataset, folds object (family members need to stay together
+## during cross-validation!), manually defined bounds for the parameter
+## search space, number of cores to use during hypertuning
+## and number of times function is run after initialization (iters.n) 
+## and number of times to sample functions at each optimization step (iter.k)
+## iters.k must be max = iters.n
 bayes_hyper_enet <- function(df, folds, bounds_enet,
                              ncores = parallel::detectCores() - 2,
                              iters.n = 10,
                              iters.k = 10){
   
-  ## making sure bounds is a list containing parameters "alpha" and "lambda",
-  ## this can be used a lot more to stop functions from breaking
+  ## making sure bounds is a list containing parameters "alpha" and "lambda"
   if(!is.list(bounds_enet) | 
      length(
        setdiff(
@@ -394,7 +402,10 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
   exclude_vars <-  c("FISNumber", "FamilyNumber", "QoL_simple")
-  x_train_matrix <- model.matrix(~ ., data = df)[, !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
+  x_train_matrix <- model.matrix(~ ., data = df)[
+    , !(colnames(model.matrix(~ ., data = df)) %in% exclude_vars)]
+  
+  ## saving outcome vector
   y_train_vector <- df$QoL_simple
   
   
@@ -408,12 +419,14 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   # Define the objective function
   elastic_net_bayes <- function(alpha, lambda) {
     
-    # Prevent further iterations if early stopping was triggered (stored globally)
+    # Prevent further iterations if early stopping was triggered
+    # (stored globally)
     if (early_stopping_triggered) {
-      return(list(Score = best_result_so_far$Score))  # Return best result found so far
+      return(list(Score = best_result_so_far$Score))
+      # Return best result found so far
     }
     
-    # Train model
+    # Train model with 10 fold CV using sampled hypertuning parameters
     model <- train(x = x_train_matrix, 
                    y = y_train_vector,  
                    method = "glmnet",
@@ -423,63 +436,52 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
                                             allowParallel = FALSE),
                    tuneGrid = data.frame(alpha = alpha, lambda = lambda))
     
-    score <- -min(model$results$RMSE)  # Negative RMSE since we maximize
+    score <- -min(model$results$RMSE)  # Negative RMSE as outcome 
+    ## since bayesOpt function maximizes
     
     
-    no_file <- FALSE
-    if(no_file){
-    minUtility <- 0.001  # Define threshold for improvement
-    if (score - get("bestScore", envir = .GlobalEnv) < minUtility) {
-      assign("noImprovementCount",
-             get("noImprovementCount",
-                 envir = .GlobalEnv) + 1, envir = .GlobalEnv)
-    } else {
-      assign("noImprovementCount", 0, envir = .GlobalEnv)  # Reset counter if improvement is significant
-      assign("bestScore", score, envir = .GlobalEnv)  # Update best score
-    }
-    
-    # Stop if no improvement for 5 consecutive iterations (Or other amount of iterations)
-    if (get("noImprovementCount", envir = .GlobalEnv) >= 5) {
-      stop("Early stopping: No improvement in 5 consecutive iterations")
-    }
-    
-    }
-    
-    # Check for early stopping
+    # Check for early stopping, otherwise update best score list
     minUtility <- 0.001
-    if (!is.null(best_result_so_far) && (score - best_result_so_far$Score < minUtility)) {
-      best_result_so_far$noImprovementCount <<- best_result_so_far$noImprovementCount + 1
+    if (!is.null(best_result_so_far) && 
+        (score - best_result_so_far$Score < minUtility)) {
+          best_result_so_far$noImprovementCount <<- 
+            best_result_so_far$noImprovementCount + 1
     } else {
-      best_result_so_far <<- list(Score = score, alpha = alpha, lambda = lambda, noImprovementCount = 0)
+        best_result_so_far <<- 
+          list(Score = score, alpha = alpha, lambda = lambda,
+               noImprovementCount = 0)
     }
     
-    # Trigger early stopping if no improvement for 5 iterations
+    # Flag early stopping if no improvement for 5 iterations
     if (best_result_so_far$noImprovementCount >= 5) {
-      early_stopping_triggered <<- TRUE  # Set flag to prevent further evaluations
-    } ## to global environment
+      early_stopping_triggered <<- TRUE
+      # Set flag to prevent further evaluations
+    } # to global environment
     
     ## Note: This ensures that upon running again, no further model will 
     ## be trained if there was no improvement previously
     ## bayesOpt will still run all iterations, but it will only always return 
     ## the earlier score, saving a lot of time
     
-    return(list(Score = best_result_so_far$Score))  # Always return the best score found
+    return(list(Score = best_result_so_far$Score))
+    # Always return the best score found
   }
   
   
   ## integrating parallelization
   cl <- makeCluster(ncores)
-  ## cluster of 64 on ntrcompute-2
+  
+  ## (study was run in parallel with 96 cores on computational cluster SNELLIUS)
+  
   registerDoParallel(cl)
   clusterExport(cl, c("folds", df_name, "elastic_net_bayes", "x_train_matrix",
                       "y_train_vector",
                       'best_result_so_far',
                       'early_stopping_triggered'),
                 envir = environment())
-  ## Fix: Use `environment()` to get function scope
   ## Manually export the formula because `clusterExport` struggles with formulas
-  # clusterCall(cl, function(f) assign("formula", f, envir = .GlobalEnv), formula)
-  ## here: suppress printing content that is being exported
+  
+  ## suppress printing content that is being exported
   invisible(clusterEvalQ(cl,expr= {
     library(glmnet)
     library(caret)
@@ -487,18 +489,17 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   }))
   invisible(clusterEvalQ(cl, ls()))
   
+  ## running optimization function, bayesOpt uses the above defined 
+  ## training function
   tWithPar <- system.time(
     opt_results_enet <- bayesOpt(
       FUN = elastic_net_bayes,
       bounds = bounds_enet,
       initPoints = 5,
       ## initPoints must be greater than the number of FUN inputs
-      ## iters.n = (parallel::detectCores() - 1)*2,
       iters.n = iters.n,
-      ## iters.n = 64*2,
-      ## iters.k = (parallel::detectCores() - 1)*2,
       iters.k = iters.k,
-      ## iters.k = 64*2,
+      ## optional: Specify other stopping triggers
       ## otherHalting = list(timeLimit = 30000, minUtility = NULL)
       parallel = TRUE,
       verbose = 1
@@ -510,28 +511,32 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   registerDoSEQ()
   
   ## print best results
-  
   print(opt_results_enet)
 
   print(tWithPar)
   
-  
+  ## extracting best hypertuning parameters
   best_params_enet <- getBestPars(opt_results_enet)
   
+  ## saving meta-information on hypertuning
   niters <- opt_results_enet$iters
   
   stopStatus <- opt_results_enet$stopStatus
   
   totalTime <- opt_results_enet$elapsedTime
   
+  ## train the final model with the best set of hypertuning parameters
+  
   model_enet <- train(x = x_train_matrix,  # Use filtered predictors
                       y = y_train_vector,  # Response variable
                       method = "glmnet",
-                      trControl = trainControl(method = "none"),  # No CV for the final model
+                      trControl = trainControl(method = "none"),
+                      # No CV for the final model as parameters were already 
+                      ## optimized
                       tuneGrid = data.frame(alpha = best_params_enet$alpha,
                                             lambda = best_params_enet$lambda))
   
-  ## same for bayesian optimized tuned model
+  ## return optimized tuned model
   final_model_bayes <- model_enet$finalModel
   
   # cv tuned lambda
@@ -546,17 +551,19 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   rownames(coef_df_bayes) <- NULL
   
   
-  # Filter for non-zero coefficients
+  # Filter for non-zero coefficients (those are the variables
+  # that should be kept for subsequent prediction models!)
   non_zero_coef_bayes <- coef_df_bayes[coef_df_bayes[, 1] != 0, ]
   
   non_zero_predictors_bayes <- unique(non_zero_coef_bayes$Predictor)
   
-  ## Removing Intercept
+  ## Removing Intercept (not needed for tree-based models)
   non_zero_predictors_bayes <- grep("(Intercept)",
                                     non_zero_predictors_bayes,
                                     value = TRUE, invert = TRUE)
   
-  
+  ## returning output to be passed into next step in pipeline, coding of 
+  ## other ML prediction models
   return(list(best_params_enet = best_params_enet,
               time_hypertuning = tWithPar,
               non_zero_predictors = non_zero_predictors_bayes,  
@@ -568,6 +575,11 @@ bayes_hyper_enet <- function(df, folds, bounds_enet,
   
   
 }
+
+###############################################################################
+
+## function to carry out Bayesian hypertuning for random forest model, 
+## works analogue to elastic net hypertuning function
 
 bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
                            ncores = parallel::detectCores() - 2,
@@ -597,12 +609,7 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
     , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
   y_train_vector <- df_train$QoL_simple
 
-  #cat("column names df_train without exclude vars: ", "\n")
-  #print(colnames(df_train %>% select(-all_of(exclude_vars))))
-
-  #cat("column names x_train_matrix", "\n")
-  #print(colnames(x_train_matrix))
-
+  ## making sure datasets are aligned
   cat("difference colnames between both datasets: ", "\n")
   setdiff(colnames(df_train %>% select(-all_of(exclude_vars))),
           colnames(x_train_matrix))
@@ -618,35 +625,24 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   early_stopping_triggered <- FALSE
   
   # Define the objective function
-
   rf_bayes <- function(mtry, max.depth, min.node.size, num.trees) {
     
-    # Prevent further iterations if early stopping was triggered (stored globally)
+    # Prevent further iterations if early stopping
+    # was triggered (stored globally)
     if (early_stopping_triggered) {
-      return(list(Score = best_result_so_far$Score))  # Return best result found so far
+      return(list(Score = best_result_so_far$Score))
+      # Return best result found so far
     }
     
-    # Convert parameters to integers
+    # Convert parameters to be hypertuned to integers
     mtry <- as.integer(mtry)
     max.depth <- as.integer(max.depth)
     min.node.size <- as.integer(min.node.size)
     num.trees <- as.integer(num.trees)
+  
     
-
-    
-    no_file <- FALSE
-    if(no_file){
-    ## track iterations and progress
-    if (!exists("bestScore", envir = .GlobalEnv)){
-      assign("bestScore", -Inf, envir = .GlobalEnv)
-    }
-    if (!exists("noImprovementCount", envir = .GlobalEnv)){
-      assign("noImprovementCount", 0, envir = .GlobalEnv)
-    }
-    }
     ## initiating cross-validation by hand
     # Initialize an empty vector to store RMSE for each fold
-    
     cv_rmse_rf <- numeric(length(folds))
     
     # Loop over each fold
@@ -663,10 +659,9 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
       
       # Train the ranger model
       model <- ranger(
-        #formula = formula,
-        #data = train_data,
         dependent.variable.name = "y",  # Target variable name in data frame
-        data = data.frame(y = y_train_rf, x_train_rf),  # Combine y and x into a data frame
+        data = data.frame(y = y_train_rf, x_train_rf),
+        # Combine y and x into a data frame
         mtry = mtry,
         max.depth = max.depth,
         min.node.size = min.node.size,
@@ -675,11 +670,9 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
       
       # Make predictions on the validation set
       predictions <- predict(model, data = data.frame(x_val_rf))$predictions
-      ## why does it need to be data here instead of newdata?
       ## ranger::predict only works with data = 
       
       # Calculate RMSE for the current fold
-      # true_values <- val_data[[all.vars(formula)[1]]] # Extract target variable
       fold_rmse <- sqrt(mean((predictions - y_val_rf)^2))
       
       # Store the RMSE
@@ -692,13 +685,14 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
     score <- -min(mean_cv_rmse)
     ## bayesOpt function maximizes, so taking negative score
     
-    
     ## Cross-validation was built in by hand
     
     # Check for early stopping
     minUtility <- 0.001
-    if (!is.null(best_result_so_far) && (score - best_result_so_far$Score < minUtility)) {
-      best_result_so_far$noImprovementCount <<- best_result_so_far$noImprovementCount + 1
+    if (!is.null(best_result_so_far) &&
+        (score - best_result_so_far$Score < minUtility)) {
+      best_result_so_far$noImprovementCount <<- 
+        best_result_so_far$noImprovementCount + 1
       ## global assignment, i.e. assinging this variable to be accessible outside
       ## the rf_bayes function (but not the outer function)
     } else {
@@ -707,7 +701,8 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
     
     # Trigger early stopping if no improvement for 5 iterations
     if (best_result_so_far$noImprovementCount >= 5) {
-      early_stopping_triggered <<- TRUE  # Set flag to prevent further evaluations
+      early_stopping_triggered <<- TRUE
+      # Set flag to prevent further evaluations
     } ## to global environment
     
     ## Note: This ensures that upon running again, no further model will 
@@ -715,15 +710,15 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
     ## bayesOpt will still run all iterations, but it will only always return 
     ## the earlier score, saving a lot of time
     
-    return(list(Score = best_result_so_far$Score))  # Always return the best score found
+    return(list(Score = best_result_so_far$Score))
+    # Always return the best score found
   }
+  
   
   ## Optimizing the hypertuning of random forest parameters
   
   ## To parallelize
   cl <- makeCluster(ncores)
-  ## cl <- makeCluster(64)
-  ## cluster of 64 on ntrcompute-2
   registerDoParallel(cl)
   clusterExport(cl,c(df_train_name, 'folds', 'rf_bayes',
                      'x_train_matrix', 'y_train_vector',
@@ -738,30 +733,26 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   }))
   invisible(clusterEvalQ(cl, ls()))
   
+  ## running the hypertuning
   tWithPar_rf <- system.time(
     opt_results_rf <- bayesOpt(
       FUN = rf_bayes,
       bounds = bounds_rf,
       initPoints = 5,
       ## initPoints must be greater than the number of FUN inputs
-      ## iters.n = 3,
-      # iters.n = (parallel::detectCores() - 1)*2,
       iters.n = iters.n,
-      ## iters.n = 64*2,
-      ## iters.k = 3,
-      # iters.k = (parallel::detectCores() - 1)*2,
       iters.k = iters.k,
-      ## iters.k = 64*2,
-      # otherHalting = list(timeLimit = 6000),
-      otherHalting = list(timeLimit = 6000),
+      ## optional: different stopping trigger
+      ## otherHalting = list(timeLimit = 6000),
       ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
       acq = "ei"
+      ## acquisition function type, "ei" signalizes expected improvement
     )
   )
   
-  
+  ## ending cluster
   stopCluster(cl)
   registerDoSEQ()
   
@@ -780,7 +771,6 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   
   totalTime <- opt_results_rf$elapsedTime
   
-  #print(best_params_rf)
   
   tune_grid_rf <- data.frame(
     ## note: tuneGrid only accepts mtry, min.node.size and splitrule for rf
@@ -794,36 +784,28 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   
   
   # Train the final model using the optimal parameters
-  ## I can still train the final model with caret! 
-  ## usign all the parameters that emerged from the rf_bayes function
   model_bayes_rf <- ranger(
-    dependent.variable.name = "QoL_simple",  # Target variable name in data frame
-    data = data.frame(QoL_simple = y_train_vector, x_train_matrix),  # Combine y and x into a data frame
-    # y = y_train_vector,
-    #data = x_train_ML,
-    # trControl = trainControl(method = "none"),
+    dependent.variable.name = "QoL_simple",
+    # Target variable name in data frame
+    data = data.frame(QoL_simple = y_train_vector, x_train_matrix),
+    # Combine y and x into a data frame
     # No CV for the final model, hypertuning parameters
     # were already crossvalidated
-    # tuneGrid = tune_grid_rf,
-    ## this needs to added separately in caret / ranger
     mtry = best_params_rf$mtry,
     min.node.size = best_params_rf$min.node.size, 
     max.depth = best_params_rf$max.depth, 
     num.trees = best_params_rf$num.trees,
     replace = TRUE
-    ###...
   )
   
   ## same for bayesian optimized tuned model
-  #final_model_bayes <- model_bayes_rf$finalModel
   
   ## ensuring dataframes are exactly the same
   x_train_matrix_rf <- model.matrix(~ . - 1, data = df_train)[
     , !(colnames(model.matrix(~ . - 1, data = df_train)) %in% exclude_vars)]
 
-  #preds_rf_train <- predict(model_bayes_rf,
-  #                          newdata = x_train_matrix_rf)
-                            
+  
+  ## predictions on training set with the final optimal model                          
   preds_rf_train <- predict(model_bayes_rf,
                             data = x_train_matrix_rf)$predictions
 
@@ -837,12 +819,14 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   cat("Best hypertuning parameters for random forest: ", "\n")
   print(best_params_rf)
   cat("\n")
-
+  
+  ## applying model to test set
   x_test_matrix_rf <- model.matrix(~ . - 1, data = df_test)[
     , !(colnames(model.matrix(~ . - 1, data = df_test)) %in% exclude_vars)]
 
   cat("creating test matrix successful", "\n")
-
+  
+  ## checking if columns align
   cat("columns training and test set match: ",
       all(colnames(x_train_matrix_rf) %in% colnames(x_test_matrix_rf)),
       all(colnames(x_test_matrix_rf) %in% colnames(x_train_matrix_rf)), "\n")
@@ -850,8 +834,6 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   cat("dimensions training set: ", dim(x_train_matrix_rf), "\n")
   cat("dimensions test set: ", dim(x_test_matrix_rf), "\n")
 
-#  preds_rf_test <- predict(model_bayes_rf,
-#                           newdata = x_test_matrix_rf)
 
   preds_rf_test <- predict(model_bayes_rf,
                            data = x_test_matrix_rf)$predictions
@@ -871,7 +853,7 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
 
   cat("predictions dataframe created", "\n")
 
-
+  ## return final output list to be used in analysis scripts
   return(list(best_params_rf = best_params_rf,
               time_hypertuning = tWithPar_rf,
               early_stopping_triggered  = early_stopping_triggered,
@@ -885,7 +867,10 @@ bayes_hyper_rf <- function(df_train, df_test, folds, bounds_rf,
   
 }
   
-## Note: What all these functions do not yet do is evaluation on the test set!  
+#############################################################################
+
+## function to carry out Bayesian hypertuning for random forest model, 
+## works analogue to elastic net hypertuning function
 
 bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
                            ncores = parallel::detectCores() - 2,
@@ -922,21 +907,22 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
   early_stopping_triggered <- FALSE
   
   # Define the objective function
-  
   svr_bayes <- function(C, sigma, degree, scale, method) {
     
-    # Prevent further iterations if early stopping was triggered (stored globally)
+    # Prevent further iterations
+    ## if early stopping was triggered (stored globally)
     if (early_stopping_triggered) {
-      return(list(Score = best_result_so_far$Score))  # Return best result found so far
+      return(list(Score = best_result_so_far$Score))
+      # Return best result found so far
     }
     
-    ## Rounding degree to integer
+    ## Rounding degree to integer (necessary for model training)
     degree <- as.integer(ifelse(degree < 2.5, 2, 3))
     
     # Dynamically select parameters based on the method
     method <- ifelse(method < 0.5, "svmRadial", "svmPoly")
-    ## also use this later to select the method
     
+    ## defining tuneGrid depending on kernel (different input)
     if(method == "svmRadial") {
       tune_grid <- expand.grid(
         C = C,
@@ -953,7 +939,7 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
     }
     
     
-    # Train the model
+    # Train the model (support vector regression with 10-fold CV)
     model <- train(
       x = x_train_matrix,
       y = y_train_vector,
@@ -963,17 +949,22 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
         number = 10,
         verboseIter = TRUE,
         allowParallel = FALSE,
-        index = folds), ## making sure the family split is still applied 
+        index = folds),
+      ## making sure the family split is still applied 
       tuneGrid = tune_grid
     )
     
+    ## negative score as bayesOpt function maximizes
     score <- -min(model$results$RMSE)
     
     # Check for early stopping
     minUtility <- 0.001
-    if (!is.null(best_result_so_far) && (score - best_result_so_far$Score < minUtility)) {
-      best_result_so_far$noImprovementCount <<- best_result_so_far$noImprovementCount + 1
-      ## global assignment, i.e. assinging this variable to be accessible outside
+    if (!is.null(best_result_so_far) && 
+        (score - best_result_so_far$Score < minUtility)) {
+      best_result_so_far$noImprovementCount <<- 
+        best_result_so_far$noImprovementCount + 1
+      ## global assignment, 
+      ## i.e. assinging this variable to be accessible outside
       ## the rf_bayes function (but not the outer function)
     } else {
       best_result_so_far <<- list(Score = score, noImprovementCount = 0)
@@ -981,7 +972,8 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
     
     # Trigger early stopping if no improvement for 5 iterations
     if (best_result_so_far$noImprovementCount >= 5) {
-      early_stopping_triggered <<- TRUE  # Set flag to prevent further evaluations
+      early_stopping_triggered <<- TRUE
+      # Set flag to prevent further evaluations
     } ## to global environment
     
     ## Note: This ensures that upon running again, no further model will 
@@ -989,15 +981,16 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
     ## bayesOpt will still run all iterations, but it will only always return 
     ## the earlier score, saving a lot of time
     
-    return(list(Score = best_result_so_far$Score))  # Always return the best score found
+    return(list(Score = best_result_so_far$Score)) 
+    # Always return the best score found
   }
+  
   
   ## Optimizing the hypertuning of support vector regression parameters
   
   ## To parallelize
   cl <- makeCluster(ncores)
-  ## cl <- makeCluster(64)
-  ## cluster of 64 on ntrcompute-2
+
   registerDoParallel(cl)
   clusterExport(cl,c(df_train_name, 'folds', 'svr_bayes',
                      'x_train_matrix', 'y_train_vector',
@@ -1017,16 +1010,10 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
       bounds = bounds_svr,
       initPoints = 10,
       ## initPoints must be greater than the number of FUN inputs
-      ## iters.n = 3,
-      # iters.n = (parallel::detectCores() - 1)*2,
       iters.n = iters.n,
-      ## iters.n = 64*2,
-      ## iters.k = 3,
-      # iters.k = (parallel::detectCores() - 1)*2,
       iters.k = iters.k,
-      ## iters.k = 64*2,
-      # otherHalting = list(timeLimit = 6000),
-      otherHalting = list(timeLimit = 6000),
+      ## optional: other stopping trigger
+      ## otherHalting = list(timeLimit = 6000),
       ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
@@ -1034,7 +1021,7 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
     )
   )
   
-  
+  ## ending cluster
   stopCluster(cl)
   registerDoSEQ()
   
@@ -1053,37 +1040,33 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
   
   totalTime <- opt_results_svr$elapsedTime
   
-  # print(best_params_svr)
   
-  ## train final model
-  
+  ## train final model, depending on outcome of hypertuning
   if(best_params_svr$method < 0.5) {
     method_svr <- "svmRadial"
     tune_grid_svr <- data.frame(
       C = best_params_svr$C, ## optimal C
       sigma = best_params_svr$sigma ## optimal sigma
     )
-    ## here also add other parameters (or not)
+
+    
   } else {
     method_svr <- "svmPoly"
     tune_grid_svr <- data.frame(
       C = best_params_svr$C, ## optimal C
-      degree = round(best_params_svr$degree), ## optimal degree, round to integer
+      degree = round(best_params_svr$degree), 
+      ## optimal degree, round to integer
       scale = best_params_svr$scale # ## optimal scale,
     )
-    ## here also add other parameters
   }
   
   
-  model_bayes_svr <- train(#formula, 
-    #data = x_train_ML,
+  model_bayes_svr <- train(
     x = x_train_matrix,
     y = y_train_vector,
     method = method_svr,
-    trControl = trainControl(method = "none"),
-    # No CV for the final model
-    tuneGrid = tune_grid_svr #,
-    ## ...
+    trControl = trainControl(method = "none"), ## no CV for final model
+    tuneGrid = tune_grid_svr
   )
 
   ## ensuring dataframes are exactly the same
@@ -1120,27 +1103,34 @@ bayes_hyper_svr <- function(df_train, df_test, folds, bounds_svr,
 
 cat("predictions dataframe created", "\n")
   
-  
+## return final output list to be used in analysis scripts
   return(list(best_params_svr = best_params_svr,
               time_hypertuning = tWithPar_svr,
               early_stopping_triggered  = early_stopping_triggered,
               niters = niters, 
               stopStatus = stopStatus,
               totalTime = totalTime,
-              model_bayes_svr = model_bayes_svr, ## model object to also make predictions
+              model_bayes_svr = model_bayes_svr, 
+              ## model object to also make predictions
               preds_svr_train = preds_svr_train,
               preds_svr_test = preds_svr_test,
               preds_df_svr = preds_df_svr))
   
 }
 
+##############################################################################
+
+## function to carry out Bayesian hypertuning for xgb model, 
+## structure analogue to the previous functions, 
+## model is trained with the xgboost library, requiring different parameters
+
+## input analogue to previous hypertuning functions
 bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                             ncores = parallel::detectCores() - 2,
                             iters.n = 10,
                             iters.k = 10){
   
-  ## making sure bounds is a list containing parameters 
-  ## mtry, max.depth, min,node.size and num.trees
+  ## making sure bounds is a list containing the required parameters 
   if(!is.list(bounds_xgb) | 
      length(
        setdiff(
@@ -1175,13 +1165,11 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   ## excluding variables from being predictors
   ## creating x and y to avoid problems with formula object
   exclude_vars <- c("FISNumber", "FamilyNumber", "QoL_simple")
-  #dtrain <- xgboost::xgb.DMatrix(as.matrix(df_train %>%
-  #                                            select(-all_of(exclude_vars))),
-  #                                label = as.matrix(df_train$QoL_simple))
   
-  train_matrix <- as.matrix(df_train %>% select(-all_of(exclude_vars)))  # Predictor matrix
+  
+  train_matrix <- as.matrix(df_train %>% select(-all_of(exclude_vars)))
+  # Predictor matrix, necessary for xgboost
   train_labels <- as.matrix(df_train$QoL_simple)  # Labels
-  
   
   
   # Initialize shared variable for best result
@@ -1190,7 +1178,7 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   best_result_so_far <- NULL
   early_stopping_triggered <- FALSE
   
-  
+  ## hypertuning function
   xgb_bayes <- function(num_parallel_tree,
                         max_depth,
                         min_child_weight,
@@ -1202,17 +1190,19 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                         alpha,
                         nrounds) {
     
-    # Re-create dtrain inside the function
+    # Re-create dtrain inside the function to make sure data is in 
+    # correct format
     dtrain <- xgboost::xgb.DMatrix(train_matrix, label = train_labels)
     
-    ## converting all integer inputs to integers.
+    ## converting all integer inputs to integer type
     num_parallel_tree <- round(num_parallel_tree)
     max_depth <- round(max_depth)
     min_child_weight <- round(min_child_weight)
     
+    ## list of parameters to hypertune
     Pars <- list(
       booster = "gbtree",
-      ## using default option, no variation of this parameter
+      ## using default option for booster, no variation of this parameter
       num_parallel_tree = num_parallel_tree,
       max_depth = max_depth,
       min_child_weight = min_child_weight,
@@ -1223,35 +1213,43 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
       lambda = lambda,
       alpha = alpha,
       objective = 'reg:squarederror',
-      ## default option, sensible?
+      ## outcome metric to optimize, default option
       eval_metric = "rmse"
     )
     
+    ## training xgb model
     xgbcv <- xgb.cv(
       params = Pars,
       data = dtrain,
       nrounds = nrounds,
       folds = folds,
       early_stopping_rounds = 10,
+      ## trigger early stopping after 10 rounds of no further improvement
       maximize = TRUE,
       verbose = 1
     )
     
+    ## negative as bayesOpt function maximizes
     score = -min(xgbcv$evaluation_log$test_rmse_mean)
     
     # Check for early stopping
     minUtility <- 0.001
-    if (!is.null(best_result_so_far) && (score - best_result_so_far$Score < minUtility)) {
-      best_result_so_far$noImprovementCount <<- best_result_so_far$noImprovementCount + 1
-      ## global assignment, i.e. assinging this variable to be accessible outside
+    if (!is.null(best_result_so_far) &&
+        (score - best_result_so_far$Score < minUtility)) {
+      best_result_so_far$noImprovementCount <<- 
+        best_result_so_far$noImprovementCount + 1
+      ## global assignment, i.e. 
+      ## assinging this variable to be accessible outside
       ## the rf_bayes function (but not the outer function)
     } else {
       best_result_so_far <<- list(Score = score, noImprovementCount = 0)
     }
     
-    # Trigger early stopping if no improvement for 5 iterations
+    # Trigger early stopping if no improvement for 5 iterations of the bayesian
+    # hypertuning
     if (best_result_so_far$noImprovementCount >= 5) {
-      early_stopping_triggered <<- TRUE  # Set flag to prevent further evaluations
+      early_stopping_triggered <<- TRUE
+      # Set flag to prevent further evaluations
     } ## to global environment
     
     ## Note: This ensures that upon running again, no further model will 
@@ -1259,21 +1257,19 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
     ## bayesOpt will still run all iterations, but it will only always return 
     ## the earlier score, saving a lot of time
     
-    return(list(Score = best_result_so_far$Score))  # Always return the best score found
+    return(list(Score = best_result_so_far$Score))
+    # Always return the best score found
   }
   
-  ## To parallelize
+  ## initiating parallelization over set number of cores
   cl <- makeCluster(ncores)
-  ## cl <- makeCluster(64)
-  ## cluster of 64 on ntrcompute-2
   registerDoParallel(cl)
   clusterExport(cl,c(df_train_name, 'folds', 'xgb_bayes',
                      'train_matrix', 'train_labels',
                      'best_result_so_far',
                      'early_stopping_triggered', 'bounds_xgb'),
                 envir = environment())
-  #clusterExport(cl, c('dtrain'),
-  #              envir = globalenv())
+
   invisible(clusterEvalQ(cl,expr= {
     library(caret)
     library(dplyr)
@@ -1281,23 +1277,17 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   }))
   invisible(clusterEvalQ(cl, ls()))
   
+  ## running hypertuning
   tWithPar_xgb <- system.time(
     opt_results_xgb <- bayesOpt(
       FUN = xgb_bayes,
       bounds = bounds_xgb,
       initPoints = 11,
       ## initPoints must be greater than the number of FUN inputs
-      ## iters.n = 3,
-      # iters.n = (parallel::detectCores() - 1)*2,
       iters.n = iters.n,
-      ## iters.n = 64*2,
-      ## iters.k = 3,
-      # iters.k = (parallel::detectCores() - 1)*2,
       iters.k = iters.k,
-      ## iters.k = 64*2,
-      # otherHalting = list(timeLimit = 6000),
+      ## keeping other stopping trigger to counter overfitting
       otherHalting = list(timeLimit = 6000),
-      ## very low but this is only for testing
       parallel = TRUE,
       verbose = 1,
       acq = "ei"
@@ -1313,7 +1303,6 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   
   print(tWithPar_xgb)
   
-  
   # Extract the best parameters
   best_params_xgb <- getBestPars(opt_results_xgb)
   
@@ -1322,8 +1311,6 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   stopStatus <- opt_results_xgb$stopStatus
   
   totalTime <- opt_results_xgb$elapsedTime
-  
-  # print(best_params_xgb)
   
   ## train final model
   ## Converting training data to xgb Matrix
@@ -1336,6 +1323,7 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
                                                 select(-all_of(exclude_vars))),
                                     label = as.matrix(df_test$QoL_simple))
   
+  ## parameter list for training final xgb model
   par_xgb <- list(
     booster = "gbtree",
     objective = "reg:squarederror", 
@@ -1352,9 +1340,8 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
     nthread = 1
   )
   
+  ## nrounds was hypertuned as well
   nrounds_opt = best_params_xgb$nrounds
-
-  # watchlist <- list(train = dtrain_xgb, eval = dtest_xgb)
 
   ## Debugging before model training:
   cat("Missings in train matrix: ", sum(is.na(dtrain_xgb)), "\n", "\n")
@@ -1362,29 +1349,17 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   ## ensuring model object is class xgb.DMatrix
   cat("Class dtrain: ", class(dtrain_xgb), "\n", "\n")
 
-  ## checking system memory usage before 
-  gc()  # Run garbage collection
   
-  ## Final model training 
-  
-  ## final model trained with xgb
+  ## final model trained with xgb with hypertuning parameters extracted
   model_bayes_xgb <- xgb.train(
     data = dtrain_xgb,
     params = par_xgb,
-    #objective = "reg:squarederror", 
-    #eval_metric = "rmse",
-    #nrounds = 1000,
-    ## Test: Does this work with nrounds = 1
     nrounds = nrounds_opt,
-  # watchlist = watchlist, ## not needed anymore
-  # early_stopping_rounds = 10, ## not needed anymore
     verbose = 1
   )
   
   
-  ## getting predictions (On test set)
-  # best_iteration <- model_bayes_xgb$best_iteration
-  # Get the best iteration number
+  ## getting predictions (On train and test set)
   preds_xgb_train <- predict(model_bayes_xgb, dtrain_xgb)
 
   preds_df_train <- data.frame(predictions_xgb = preds_xgb_train,
@@ -1405,6 +1380,7 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
 
   cat("predictions dataframe created", "\n")
   
+  ## return final output list to be used in analysis scripts
   return(list(best_params_xgb = best_params_xgb,
               time_hypertuning = tWithPar_xgb,
               early_stopping_triggered  = early_stopping_triggered,
@@ -1418,127 +1394,6 @@ bayes_hyper_xgb <- function(df_train, df_test, folds, bounds_xgb,
   
 }
 
-#ml_longitudinal <- function(datasets = list){}
-
-#ml_stability <- function{}
-
-#ml_compare <- function{}
-
-shap_calc <- function(x_shap, model, pfun, ncores, nsim = 10){
-  ## xgboost model requires different format
-
-  if(class(model) == "xgb.Booster"){
-
-    shap_obj <- fastshap::explain(object = model, X = as.matrix(x_shap), pred_wrapper = pfun,
-                                 nsim = nsim, parallel = TRUE, adjust = TRUE)
-
-
-  } else if(class(model) == "ranger") {
-      shap_obj <- fastshap::explain(object = model, X = x_shap, pred_wrapper = pfun,
-                                   nsim = nsim, parallel = TRUE, adjust = TRUE)
-  }
-  ## on ntr1 with 48 cores, this takes about 3.5 minutes
-  
-  baseline_model <- attr(shap_obj, "baseline") 
-  
-  # shv <- shapviz(shap_obj, X = x_shap, baseline = baseline_model)
-  # sv_importance(shv_rf)
-  
-  ## create table
-  shap_values <- as.data.frame(tibble::as_tibble(shap_obj))
-  
-  return(shap_values = shap_values)
-}
-
-
-df_sig_quantile <- function(df, alpha = 0.05){
-  lower_alpha <- (0 + alpha) / 2
-  upper_alpha <- 1 - lower_alpha
-  CI_bounds_df <- t(apply(
-    df, 2, quantile, probs = c(lower_alpha, upper_alpha))) %>%
-    as.data.frame() %>%
-    tibble::rownames_to_column() %>%
-    dplyr::rename("var_name"= rowname,
-                  "lower_bound_CI" = 2,
-                  "upper_bound_CI" = 3)
-  return(CI_bounds_df)
-}
-
-
-
-SHAP_viz_top_x <- function(shap_df, shap_df_name,
-                           show_features = 20,
-                           alpha, covariates){
-  
-  if(class(covariates)!= "character"){
-    stop("'covariates' needs to be character vector of covariates")
-  }
-  ## Assiging the name of the object that was given to the argument "shap_df"
-    model_name <- case_when(
-    grepl("rf", shap_df_name, ignore.case = TRUE) ~ "Random Forest",
-    grepl("xgb", shap_df_name, ignore.case = TRUE) ~ "XGBoost",
-    grepl("svr", shap_df_name, ignore.case = TRUE) ~ "Support Vector Regression",
-    ## here add further possibilities
-    TRUE ~ "Model"
-  )
-  
-  ## calculate the confidence interval bounds
-  CI_bounds_df <- df_sig_quantile(df = select(shap_df, -run), alpha)
-  
-  ## calculating aggrated df
-  df_aggregate <- colMeans(select(shap_df, -run)) %>%
-    as.data.frame() %>%
-    tibble::rownames_to_column() %>%
-    dplyr::rename(var_name = 1, mean_SHAP = 2) %>%
-    left_join(CI_bounds_df, by = "var_name") %>%
-    mutate(covariate = ifelse(
-      var_name %in% covariates, "covariate", "feature"),
-      ## column to detect the features with the highest absolute mean SHAP values
-      abs_mean_SHAP = abs(mean_SHAP),
-      significant = ifelse(lower_bound_CI > 0,
-                           "significant",
-                           "non-significant")) %>%
-    arrange(desc(abs_mean_SHAP))
-  
-  ## printing frequency of significant SHAP values
-  table_sig <- table(df_aggregate$significant)
-  cat("How many predictors show (non-)significant feature importance (SHAP)
-      over all bootstrapped runs in model ", model_name, " ?", "\n ")
-  print(table_sig)
-  
-  ## plotting the top x columns
-  plot_SHAPviz <- ggplot(df_aggregate[1:show_features,],
-         aes(x = var_name, y = mean_SHAP, fill = covariate)) + 
-    geom_col() +
-    geom_errorbar(aes(ymin = lower_bound_CI, ymax = upper_bound_CI)) +
-    labs(title = paste0("Top ", show_features, " features with highest mean absolut feature importance for model ",
-                        model_name),
-         subtitle = paste0("Significance level: ", alpha),
-         x = "Feature",
-         y = "Mean absolute SHAP value",
-         fill = "Feature type") +
-    theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust=1))
-  
-  return(list(plot = plot_SHAPviz,
-              table_sig = table_sig))
-
-}
-
-
-df_name <- function(shap_df){
-  
-  ## Assigning the name of the object that was given to the argument "shap_df"
-  df_name_name <- deparse(substitute(shap_df))
-  print(df_name_name)
-  ## assigning model name
-  model_name <- case_when(
-    grepl("rf", df_name_name, ignore.case = TRUE) ~ "Random Forest",
-    grepl("xgb", df_name_name, ignore.case = TRUE) ~ "XGBoost",
-    grepl("svr", df_name_name, ignore.case = TRUE) ~ "Support Vector Regression",
-    ## here add further possibilities
-    TRUE ~ "Model"
-  )
-}
-
+# eoS
 
 

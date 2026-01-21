@@ -4,14 +4,14 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-03-06
+# Date: 2025-07-15
 #
-# Script Name: 10_inspection_bootstrap_stability_model_A.R
+# Script Name: 24_inspection_bootstrap_stability_model_D.R
 #
 # Script Description: 
 # This script does the bootstrapping stability check of ML predictions 
-## (Riley et. 2023) for the models estimated on variable set A
-## (CBCL items + covariates). 
+## (Riley et. 2023) for the models estimated on variable set D
+## (CBCL items + longitudinal variables + covariates). 
 ## Assessing if model predictions are stable and if feature
 ## space needs to be shrunken down further. Prediction-, calibration and MAPE
 # instability plots are created and saved
@@ -37,25 +37,30 @@ pacman::p_load("dplyr", "haven", "foreign", "here", "readr",
 source(here::here("scripts", "functions", "functions_plotting_ML.R"))
 ## ---------------------------------------------------------------------------
 
-## Steps to be coded:
 
 ## Loading in the predictions from the B = 100 bootstrap procedures
 
 ## creating list of workspaces
 filepath <- here::here("data", "intermediate", "bootstrap")
-list_files <- grep("model_A", list.files(filepath), value = TRUE)
+list_files <- grep("model_D", list.files(filepath), value = TRUE)
+
+
+
 
 workspaces_bootstrap <- vector("list", length = length(list_files))
+## (Note: svr model was dropped after model A)
 
-for(workspace in 1:length(workspaces_bootstrap)){
-  filename <- paste0(filepath, "/", list_files[workspace])
-  workspaces_bootstrap[[workspace]][[1]] <- 
-    readRDS(filename)[["run_rf"]][["preds_df_rf"]]
-  workspaces_bootstrap[[workspace]][[2]] <- 
-    readRDS(filename)[["run_svr"]][["preds_df_svr"]]
-  workspaces_bootstrap[[workspace]][[3]] <- 
-    readRDS(filename)[["run_xgb"]][["preds_df_xgb"]]
-}
+## loading in model objects
+system.time({
+  for(workspace in 1:length(workspaces_bootstrap)){
+    filename <- paste0(filepath, "/", list_files[workspace])
+    workspaces_bootstrap[[workspace]][[1]] <- 
+      readRDS(filename)[["run_rf"]][["preds_df_rf"]]
+    workspaces_bootstrap[[workspace]][[2]] <- 
+      readRDS(filename)[["run_xgb"]][["preds_df_xgb"]]
+  }
+})
+
 
 names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
                                       1:length(list_files))
@@ -70,6 +75,8 @@ names(workspaces_bootstrap) <- paste0("workspace_bootstrap_",
 ## prediction instability plot, calibration instability plot and MAPE 
 ## instability plot
 
+
+## 
 outcome_saved <- FALSE
 
 if(outcome_saved == FALSE){
@@ -82,25 +89,25 @@ if(outcome_saved == FALSE){
   
   ## reading in full data, selecting output column and filter for ids that 
   ## have PGS
-  full_prepared_data_A <- readRDS(
+  full_prepared_data_D <- readRDS(
     here::here(
-      "data", "intermediate", "prep_data_A", "full_prepared_data_A_1.rds"))
-  data_full_raw <- rbind(full_prepared_data_A$x_train,
-                         full_prepared_data_A$x_test)
+      "data", "intermediate", "prep_data_D", "full_prepared_data_D_1.rds"))
+  data_full_raw <- rbind(full_prepared_data_D$x_train,
+                         full_prepared_data_D$x_test)
   data_true_y <- data_full_raw %>%
     select(FISNumber, QoL_simple) %>%
     filter(FISNumber %in% ids_full)
   
   ## saving outcome data to load them in simpler later
-  saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome_A.RDS"))
+  saveRDS(data_true_y, here::here("data", "intermediate", "data_outcome_D.RDS"))
   rm(data_full_raw)
-  rm(full_prepared_data_A)
+  rm(full_prepared_data_D)
 }
 
 ## loading in data with true y scores
 data_true_y <- readRDS(
-  here::here("data", "intermediate", "data_outcome_A.RDS")) %>%
-  rename(true_y = QoL_simple)
+  here::here("data", "intermediate", "data_outcome_D.RDS")) %>%
+    rename(true_y = QoL_simple)
 
 ##-----------------------------------------------------------------------------
 
@@ -117,13 +124,12 @@ data_true_y <- readRDS(
 ## y-axis: scatter of MAPE value for each individual
 
 
-## getting all plots for all three models in one function
+## getting all plots for all models in one go
 
 # Model metadata
 model_info <- list(
   rf = list(index = 1, pred_col = "predictions_rf"),
-  svr = list(index = 2, pred_col = "predictions_svr"),
-  xgb = list(index = 3, pred_col = "predictions_xgb")
+  xgb = list(index = 2, pred_col = "predictions_xgb")
 )
 
 # Container to store outputs
@@ -142,12 +148,10 @@ for (model_name in names(model_info)) {
       select(FISNumber, !!sym(prediction_column))
     
     if (i == 1) {
-      # Name like: original_prediction_rf
       new_name <- paste0("original_prediction")
       pred_df <- pred_df %>%
         rename(!!new_name := !!sym(prediction_column))
     } else {
-      # Name like: bootstrapped_prediction_1_rf
       colname_boot <- paste0("bootstrapped_prediction_", i - 1, "_")
       pred_df <- pred_df %>%
         rename(!!colname_boot := !!sym(prediction_column))
@@ -157,8 +161,8 @@ for (model_name in names(model_info)) {
   })
   
   # Merge all bootstrap replicates for this model
-  data_bootstrap <- 
-    Reduce(function(x, y) merge(x, y, by = "FISNumber"), list_bootstrap_df)
+  data_bootstrap <- Reduce(function(x, y) merge(x, y, by = "FISNumber"),
+                           list_bootstrap_df)
   
   # Join with the true values
   data_bootstrap <- data_bootstrap %>%
@@ -168,7 +172,7 @@ for (model_name in names(model_info)) {
   plot_pred_inst_model <- plot_pred_inst(data_bootstrap)
   plot_cal_inst_model <- plot_cal_inst(data_bootstrap,
                                        round = FALSE #TRUE
-                                       )
+  )
   plot_mape_inst_model <- plot_mape_inst(data_bootstrap)
   
   # Store result
@@ -182,52 +186,33 @@ for (model_name in names(model_info)) {
 }
 
 ## storing all plots in object
-
-## creating directories to save to
-if(!dir.exists(here:here("data", "final", "stability"))){
-  dir.create(here::here("data", "final"))
-  dir.create(here::here("data", "final", "stability"))
-}
-
 saveRDS(all_plots_models,
         file = here::here(
-          "data", "final", "stability", "stability_plots_model_A.rds"))
+          "data", "final", "stability", "stability_plots_model_D.rds"))
 
 ## saving plots
 
 ## prediction instability
-ggsave(filename = "A_pred_inst_rf.png",
+ggsave(filename = "D_pred_inst_rf.png",
        plot = all_plots_models$rf$plot_pred_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "A_pred_inst_svr.png",
-       plot = all_plots_models$svr$plot_pred_inst_model,
-       device = "png",
-       path = here::here("data", "intermediate", "bootstrap", "plots"),
-       create.dir = TRUE)
-
-ggsave(filename = "A_pred_inst_xgb.png",
+ggsave(filename = "D_pred_inst_xgb.png",
        plot = all_plots_models$xgb$plot_pred_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
 ## calibration instability
-ggsave(filename = "A_cal_inst_smooth_rf.png",
+ggsave(filename = "D_cal_inst_smooth_rf.png",
        plot = all_plots_models$rf$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
        create.dir = TRUE)
 
-ggsave(filename = "A_cal_inst_smooth_svr.png",
-       plot = all_plots_models$svr$plot_cal_inst_model,
-       device = "png",
-       path = here::here("data", "intermediate", "bootstrap", "plots"),
-       create.dir = TRUE)
-
-ggsave(filename = "A_cal_inst_smooth_xgb.png",
+ggsave(filename = "D_cal_inst_smooth_xgb.png",
        plot = all_plots_models$xgb$plot_cal_inst_model,
        device = "png",
        path = here::here("data", "intermediate", "bootstrap", "plots"),
@@ -238,22 +223,20 @@ ggsave(filename = "A_cal_inst_smooth_xgb.png",
 plot_path <- here::here("data", "intermediate", "bootstrap", "plots")
 
 # Save the plot
-png(filename = file.path(plot_path, "A_mape_inst_rf.png"),
+png(filename = file.path(plot_path, "D_mape_inst_rf.png"),
     width = 800, height = 600)
 replayPlot(all_plots_models$rf$plot_mape_inst_model)
 dev.off()
 
-png(filename = file.path(plot_path, "A_mape_inst_svr.png"),
-    width = 800, height = 600)
-replayPlot(all_plots_models$svr$plot_mape_inst_model)
-dev.off()
-
-png(filename = file.path(plot_path, "A_mape_inst_xgb.png"),
+png(filename = file.path(plot_path, "D_mape_inst_xgb.png"),
     width = 800, height = 600)
 replayPlot(all_plots_models$xgb$plot_mape_inst_model)
 dev.off()
 
-
+## saving image to re-use
+save.image(
+  here::here("data", "intermediate", "workspace_stability_model_D.RData")
+)
 ## eoS
 
 

@@ -13,15 +13,22 @@
 # Combining longitudinal change features of childhood psychopathology 
 # with Polygenic scores in machine learning models of adult wellbeing
 # will be used for latent growth modeling (LGM) to create 
-# features carrying longitudinal information about childhood psychopathology
+# features carrying latent longitudinal information about 
+# childhood psychopathology
 # these features will later be used in the ML predictor space for the 
 # prediction of adult wellbeing (Qualitý of life)
 #
 #
-# Notes: This steps needs to happen after the splitting of the dataset
-# in training and test data
+# Notes: The modelling is first carried out on the training set. The 
+# resulting models are then applied to the test set to generate the same 
+# features in the test set
 #
-#
+# LGM models can be 2-4 class Latent growth analysis models, or, if 
+# fit criteria indicate that there are no latent classes, 
+# multilevel LGM models where every individual has their own 
+# latent slope and intercept
+
+# Note: Script was ran on server (ntr-compute1), using 48 cores in parallel
 
 # Set options
 cat("SETTING OPTIONS... /n/n", sep = "")
@@ -35,10 +42,6 @@ packages_load <- c("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
                    "stringr", "readxl", "data.table", "MplusAutomation", "glue",
                    "purrr", "parallel", "doParallel", "foreach")
 
-#pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
-#               "stringr", "readxl", "data.table", "MplusAutomation", "glue",
-#               "purrr", "parallel", "doParallel", "foreach")
-
 pacman::p_load(char = packages_load)
 
 ## custom preparation functions
@@ -48,21 +51,32 @@ source(here::here("scripts", "functions", "functions_LGM.R"))
 ## setting working directory
 setwd(here::here())
 
-  ## creating the directory "cprobabilities" within current directory 
-  ## if it does not yet exist
-  if(!dir.exists(here::here("mplus_files", "cprobabilities"))){
-    dir.create(here::here("mplus_files", "cprobabilities"))
-  }
+## creating the directories for mplus files
+## within current directory 
+## if it does not yet exist
+
+if(!dir.exists(here::here("mplus_files"))){
+  dir.create(here::here("mplus_files"))
+  dir.create(here::here("mplus_files", "cprobabilities"))
+}
 
 ## loading in necessary dataset and vectors / tables of variables
+data_full <- readRDS(here::here("data", "intermediate", "data_full.rds"))
 
-## loading in training set
-# load(here::here("data", "intermediate", "train_data.RData"))
-train_data <- readRDS(here::here("data", "intermediate", "train_data.rds"))
+## loading in train and test IDs
+indices_train <- readRDS(
+  here::here("data", "intermediate", "indices_train.rds"))
 
-## loading in test set
-# load(here::here("data", "intermediate", "test_data.RData"))
-test_data <- readRDS(here::here("data", "intermediate", "test_data.rds"))
+indices_test <- readRDS(
+  here::here("data", "intermediate", "indices_test.rds"))
+
+## train set
+train_data <- data_full %>%
+  filter(FISNumber %in% indices_train)
+
+## test set
+test_data <- data_full %>%
+  filter(FISNumber %in% indices_test)
 
 ## loading in refined variable table (with labels and description of CBCL items)
 CBCL_items_table <- read_excel(
@@ -78,13 +92,10 @@ CBCL_age_df <- as.data.frame(
 colnames(CBCL_age_df) <- CBCL_age_df["question_number", ]
 CBCL_age_df <- CBCL_age_df[-nrow(CBCL_age_df), ]
 colnames(CBCL_age_df)[ncol(CBCL_age_df)] <- "age_var"
-## CONTINE HERE!! 
-## Code a function that given an input item from the CBCL questions list 
-## outputs the age variables that are associated with the question codes
+
 
 ## loading in vectors of variable names for filtering and selecting
 ## those were created in the script 02_data_exploration.R
-# load(here::here("scripts", "variable_vectors.RData"))
 CBCL_YSR_items_vec <- readRDS(
   here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
 
@@ -101,15 +112,10 @@ qol_vars <- readRDS(
   here::here("data", "intermediate", "variable_vectors.rds"))[[5]]
 
 ## loading in list of CBCL items per question
-# load(here::here("scripts", "CBCL_questions_list.RData"))
 CBCL_questions_list <- readRDS(
-  here::here("scripts", "CBCL_questions_list.rds"))
+  here::here("data", "intermediate", "CBCL_questions_list.rds"))
 
 ## note that this still contains the CBCL items to be dropped
-
-## loading in CBCL items to be retained and to be dropped
-load(here::here("scripts", "CBCL_items_keep"))
-load(here::here("scripts", "CBCL_items_drop"))
 
 CBCL_items_keep <- readRDS(
   here::here("data", "intermediate", "CBCL_items_keep.rds")
@@ -120,23 +126,10 @@ CBCL_items_drop <- readRDS(
 
 #------------------------------------------------------------------------------
 
-## Important step before actual analysis: For trial calculations, permute 
-## IDs so one remains blind for data
-permute <- FALSE
-if(permute){
-  train_data <- transform(train_data, FISNumber = sample(FISNumber))
-}
-
-#------------------------------------------------------------------------------
-
-
-
 ## First task: Adjust the variable vectors, some of the variables are not 
-## in the dataset anymore! 
+## in the dataset anymore (were removed in filtering procedure)! 
 CBCL_items_LGM <- intersect(CBCL_items_keep, CBCL_items_vec)
 YSR_items_LGM <- intersect(CBCL_items_keep, YSR_items_vec)
-
-
 
 ## Second task: Which of the CBCL longitudinal questions are still eligible for
 ## longitudinal modeling? Some of the items were eliminated during data cleaning
@@ -154,7 +147,6 @@ CBCL_items_table <- CBCL_items_table %>%
   ungroup() %>%
   filter(n_items_available >= 4)
 ## 80 questions might still be used for latent growth modeling
-## (If IQR = 0 columns are not removed)
 
 ## shrinking down: table to contain only the variable names and the question
 ## names
@@ -170,9 +162,6 @@ CBCL_items_valid <- unique(CBCL_items_table_reduced$question_number)
 CBCL_questions_list <- CBCL_questions_list[CBCL_items_valid]
 
 
-## Checking structure of missing:
-# colMeans(is.na(data_LGM)) %>% as.data.frame() %>% View()
-
 ## calculate per question: How many measures does a participant have 
 ## for this specific question?
 n_m_df <- data.frame()
@@ -186,7 +175,6 @@ for(question in unique(CBCL_items_table_reduced$question_number)){
   
   data_question <- train_data %>%
     select(FISNumber, all_of(items_question)) %>%
-    # rowwise() %>%
     mutate(n_measures = rowSums(!is.na(.)) - 1) %>%
     select(FISNumber, n_measures)
   
@@ -238,6 +226,8 @@ for(question in unique(CBCL_items_table_reduced$question_number)){
   
 }
 
+## recoding haven_labelled variables in the raw data
+
 labelled_count <- 0
 for(col in 1:ncol(train_data)){
   if("haven_labelled" %in% class(train_data[, col])){
@@ -245,19 +235,18 @@ for(col in 1:ncol(train_data)){
   }
 }
 cat(labelled_count, " columns haven_labelled, those need to be converted")
-## 497 multiple class columns with haven_labelled
 
 ## converting have_labelled columns to numeric
 train_data <- mult_to_numeric(df = train_data)
 
 test_data <- mult_to_numeric(df = test_data)
 
-
 ##----------------------------------------------------------------------------
 
-
 ## parallelizing data preparation and LGM modelling per question 
-## Do this in two blocks so it can run at 48 cores at ntr-compute1
+## Note: This was here done in two blocks 
+## analysis was run on 48 cores (about half of the available cores on the 
+## ntr-compute1 server of the NTR)
 ncore_ntr <- 48
 
 ## integrating parallelization
@@ -285,10 +274,9 @@ invisible(clusterEvalQ(cl,expr= {
   library(data.table)
   library(parallel)
   library(doParallel)
-  # source(here::here("scripts", "functions", "functions_LGM.R"))
+
   ## export entire set of functions
 }))
-#invisible(clusterEvalQ(cl, ls()))
 
 ## do this in two blocks, 48 cores available on ntr-compute1
 LGM_full_CBCL_1 <- parLapply(
@@ -327,6 +315,7 @@ LGM_full_CBCL_1 <- parLapply(
   })
 stopCluster(cl)
 
+## assigning names according to question labels
 names(LGM_full_CBCL_1) <- names(CBCL_questions_list)[1:48]
 
 
@@ -368,11 +357,9 @@ invisible(clusterEvalQ(cl,expr= {
   library(readxl)
   library(glue)
   library(purrr)
-  # source(here::here("scripts", "functions", "functions_LGM.R")) 
 }))
 invisible(clusterEvalQ(cl, ls()))
 
-## do this in two blocks, 48 cores available on ntr-compute1
 LGM_full_CBCL_2 <- parLapply(
   cl, names(CBCL_questions_list)[49:length(CBCL_questions_list)], function(x) {
      tryCatch({
@@ -417,10 +404,10 @@ names(LGM_full_CBCL_2) <- names(
 setwd(here::here())
 
 
-## appending lists
+## appending both lists
 LGM_full_CBCL <- c(LGM_full_CBCL_1, LGM_full_CBCL_2)
 
-## saving LGM df
+## saving LGM df for subsequent analyses
 saveRDS(
   LGM_full_CBCL, file = here::here("data", "intermediate", "LGM_full_CBCL.rds"))
 
@@ -443,13 +430,16 @@ LGM_df <- Reduce(function(x, y) left_join(x, y, by = "FISNumber"),
                   df$df_out_CBCL
                   })) %>% 
   ## renaming: To be able to separate from the non-LGM longitudinal
-  ## features later, give all variables (except for FISNumber)
-  ## the prefix (or suffix) LGM_ (_LGM)
+  ## features later, all variables (except for FISNumber)
+  ## get the prefix (or suffix) 'LGM_ (_LGM)'
   rename_with(~ paste0("LGM_", .), -FISNumber) %>%
   mutate(FISNumber = as.numeric(as.character(FISNumber)))
   ## numeric to align with FISNumber
   ## in other data parts
   ## saving LGM df
+
+## saving data frame that resulted from the latent growth modelling on all
+## eligible CBCL items
 saveRDS(LGM_df, file = here::here("data", "intermediate", "LGM_df.rds"))
 
 ## saving CBCL_questions where outcome dataframe was NULL

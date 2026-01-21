@@ -10,7 +10,7 @@
 #
 # Script Description: This script extracts the pre-registered covariates 
 # for the analysis. Those will then be saved and merged to the dataset at a
-# later timepoint
+# subsequent analysis steps
 #
 #
 # Notes:
@@ -21,7 +21,7 @@
 cat("SETTING OPTIONS... \n\n", sep = "")
 options(scipen = 999)
 
-# Install and load packages (list can be enriched if needed)
+# Install and load packages
 # install.packages("pacman")
 pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr", 
                "stringr", "readxl", "data.table", "lubridate")
@@ -29,7 +29,8 @@ pacman::p_load("dplyr", "tidyverse", "haven", "foreign", "here", "readr",
 ## loading in custom functions
 source(here::here("scripts", "functions", "functions_preprocessing.R"))
 
-## loading in refined variable table (with labels and description of CBCL items)
+## loading in refined variable table 
+## (with labels and description of CBCL items)
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
 ## loading in vectors of variable names for filtering and selecting
@@ -54,10 +55,11 @@ summary_df <- readRDS(here::here("data", "intermediate", "summary_CBCL.rds"))
 
 ## loading in list of CBCL items per question
 CBCL_questions_list <- readRDS(
-  here::here("scripts", "CBCL_questions_list.rds"))
+  here::here("data", "intermediate", "CBCL_questions_list.rds"))
 
-
-data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
+## loading in data
+data <- read_sav(
+  here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
   as.data.frame()
 
 ##-----------------------------------------------------------------------------
@@ -66,8 +68,8 @@ data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) 
 ## Extraction of all pre-registered covariates for the analysis
 
 
-## First: Applying the same filters as in filtering script
-## (03_data_cleaning_filtering1.R)
+## First: Applying the same filters as later in filtering script
+## (04_data_cleaning_filtering1.R)
 data1 <- data %>% 
   filter(!is.na(levenc8) | !is.na(levenc10) |
            !is.na(levenc12) | !is.na(levenc14)) %>%
@@ -78,15 +80,14 @@ data1 <- data %>%
 
 ## removing participants with only NAs in CBCL variables
 all_na_rows <- apply(data1 %>%
-                       dplyr::select(all_of(CBCL_YSR_items_vec)), 1, function(x) all(is.na(x)))
+                       dplyr::select(all_of(CBCL_YSR_items_vec)), 1,
+                     function(x) all(is.na(x)))
 
 data1 <- data1[!all_na_rows, ]
 
 ## saving FISNumber column
 data_FIS <- data1 %>%
   select(FISNumber)
-
-## PGS covariates: PCAs + Genotyping platform (dummy coded)
 
 ##-----------------------------------------------------------------------------
 
@@ -107,15 +108,6 @@ data_ea <- data1 %>%
   select(ea4fa_agg, ea4mo_agg)
 
 ##-----------------------------------------------------------------------------
-
-## rater covariates: to take rater effect into account, calculate mean and 
-## for all CBCL items answered by caregivers and all YSR items answered by 
-## participants separately
-
-
-## Those will be added in later script since first recoding and 
-## deleting columns with too high NAs needs to take place
-## Will take place in script 04_data_cleaning_filtering1
 
 
 ## calculating the time lag between the last YNTR assessment and the first 
@@ -156,8 +148,9 @@ table(data1$QoL_simple, useNA = "ifany")
 table(data1$QoL_indicator, useNA = "ifany")
 
 
-## Adjusting the QoL measure and indicator variable in case time_lag is negative
-## or 0 (QoL assessment must not have happened before the last YNTR participation)
+## Adjusting the QoL measure and indicator variable in case time_lag is 
+## negative or 0 (QoL assessment must not have happened before the 
+## last YNTR participation)
 data1 <- data1 %>%
   mutate(QoL_simple = case_when(
     QoL_indicator == "ANTR8" & time_lag <= 0 & !is.na(levenc10) ~ levenc10,
@@ -199,7 +192,7 @@ table(data1$QoL_simple, useNA = "ifany")
 table(data1$QoL_indicator, useNA = "ifany")
 
 
-## One more covariate: Age at wellbeing assessment, will also be used for 
+## Age at wellbeing assessment, will also be used for 
 ## filtering and is an important covariate for the wellbeing
 data1 <- data1 %>%
   mutate(age_qol = case_when(
@@ -211,7 +204,7 @@ data1 <- data1 %>%
   ))
 
 sum(is.na(data1$age_qol))
-## one individual with no age at QoL assessment, should probably be 
+## one individual with no age at QoL assessment, will 
 ## removed as well
 
 table(data1$age_qol, useNA = "ifany")
@@ -236,30 +229,16 @@ data_covariates <- bind_cols(data_FIS,
 covariates_names <- names(data_covariates)[names(data_covariates) 
                                             %notin% c("FISNumber",
                                                       "QoL_simple")]
-## removing FISNumber and the outcome from the covariates names, 
-## Which survey served for outcome might actually be interesting 
-## covariate
-
 
 ## saving covariate data and names of covariates to call later in the filtering
 ## script
-saveRDS(data_covariates, here::here("data", "intermediate", "data_covariates.rds"))
-saveRDS(covariates_names, here::here("data", "intermediate", "names_covariates.rds"))
-
-## question still where in filtering script to apply filtering
-## Decision for now: when filtering (before the 50% filtering, then remove the
-## covariates again for MCD calculation?!), later join it again to the MCD filtered
-## data with left_join (only keep the rows in data_covariates where FISNumber
-## matches with rows in MCD-filtered data!)
-
-## Issue: many NAs also in covariates, imputation not really possible
-colMeans(is.na(data_covariates))
-
-## now, only 6% missing in time_lag variable due to ascription of last 
-## available YNTR age for difference calculation
+saveRDS(
+  data_covariates, here::here("data", "intermediate", "data_covariates.rds"))
+saveRDS(
+  covariates_names, here::here("data", "intermediate", "names_covariates.rds"))
 
 
-
+# eoS
 
 
 

@@ -1,19 +1,10 @@
-# HEADER --------------------------------------------
+# This script contains custom preprocessing 
+# functions for performing data cleaning and filtering 
+# for the raw data set and later detecting calculating multivariate outliers
 #
-# Author: Dave Leitritz (RDaveML)
-# Year, 2024
-# Email:  d.m.leitritz@vu.nl
-#   
-# Date: 2024-07-31
-#
-# Script Name: functions_preprocessing.R
-#
-# Script Description: This script contains custom preprocessing 
-# functions written for the project:
-## Combining longitudinal change features of childhood psychopathology 
-## with Polygenic scores in machine learning models of adult wellbeing
-#
-# Notes:
+# Notes: functions are used in scripts 02_data_exploration_compressed,
+# 03_covariates 04_data_cleaning_filtering1 and 30_Sensitivity_analysis_MCD 
+# of the execution order
 #
 #
 
@@ -37,11 +28,12 @@ workspace.size <- function() {
   ws
 }
 
-
+###############################################################################
 
 ## Function to assign QoL variable and calculating time lag the correct way
 ## QoL needs to be assessed after last YNTR participation and participants 
 ## need to be at least 18 years old at age of QoL, will then be filtered
+## used in 03_covariates
 calculate_qol <- function(data) {
   data %>%
     mutate(
@@ -54,7 +46,8 @@ calculate_qol <- function(data) {
         ## default will a priori be assigned to NA
         .default = QoL_simple
       ),
-      ## creating indicator which QoL measure was taken
+      ## creating indicator which QoL measure was taken,
+      ## will be used as covariate in ML models
       QoL_indicator = case_when(
         !is.na(levenc8) ~ "ANTR8",
         !is.na(levenc10) ~ "ANTR10",
@@ -65,8 +58,11 @@ calculate_qol <- function(data) {
     )
 }
 
+###############################################################################
+
 ## function to calculate time_lag between QoL assessment and latest available
 ## YNTR assessment - will be used to update QoL in case it happened before YNTR
+## is used in 03_covariates
 calculate_time_lag <- function(data) {
   data %>%
     mutate(
@@ -96,8 +92,12 @@ calculate_time_lag <- function(data) {
     )
 }
 
+###############################################################################
+
 ## Data filtering function that does not create intermediate objects and
 ## puts out at every step how many participants were dropped
+## taking as input a raw dataframe, a vector of items to include 
+## and a covariate data frame
 filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
   cat("initial sample size: ", nrow(df), "\n", "\n")
   
@@ -144,15 +144,18 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
       "Sample size after filtering: ", nrow(data3), "\n",
       "participants dropped: ", nrow(data2) - nrow(data3), "\n", "\n")
   
-  ## filtering out participants where QoL was assessed before last YNTR participation
+  ## filtering out participants where QoL was assessed before last
+  ## YNTR participation
   cat("Removing participants where only QoL assessment happened before last YNTR participation",
       "\n", "\n")
+  
   ## joining with covariate data
   data4 <- data3 %>%
     left_join(data_covariates, by = c("FISNumber", "sex", "twzyg",
                                       "ea4fa_agg", "ea4mo_agg")) %>%
-    filter(time_lag > 0 | is.na(time_lag)) ## only keeping participants where 
-    ## time lag is positive or NA (no infor on time of filling out)
+    filter(time_lag > 0 | is.na(time_lag)) 
+    ## only keeping participants where 
+    ## time lag is positive or NA (no info on time of filling out)
   
   ## outputting updated sample size
   cat("Sample size before filtering: ", nrow(data3), "\n",
@@ -220,6 +223,7 @@ filter_CBCL <- function(df, CBCL_YSR_items_vec, data_covariates){
  return(data7) 
 }
 
+###############################################################################
 
 ## Alternative filtering function: participant with age at QoL assessment
 ## < 18 are NOT dropped
@@ -349,6 +353,9 @@ filter_CBCL_2 <- function(df, CBCL_YSR_items_vec, data_covariates){
 ## default alpha = .75, performs better than .5 if less than N x 1/4 outliers
 ## (Leys et al., 2018)
 
+## function takes as input dataset, name of the dataset, alpha and significance
+## threshold and seed for replication
+
 mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
                   threshold = 0.05, seed = NULL){
   
@@ -371,9 +378,9 @@ mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
   
   cat("Number of columns before removing IQR = 0 cols: ", ncol(data_mcd), "\n")
   
-  ## deleting columns with IQR = 0
-  data_mcd <- data_mcd[, sapply(data_mcd, function(col) IQR(col, na.rm = TRUE) > 0),
-                       drop = FALSE]
+  ## deleting columns with IQR = 0 (those can't be used for MCD calculation)
+  data_mcd <- data_mcd[, sapply(
+    data_mcd, function(col) IQR(col, na.rm = TRUE) > 0), drop = FALSE]
   
   cat("Number of columns remaining: ", ncol(data_mcd), "\n")
   
@@ -385,22 +392,10 @@ mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
     cat("Dropped", length(high_corr), "highly correlated variables\n")
   }
   
-  # cat("Number of columns remaining: ", ncol(data_mcd), "\n")
   cat("Number of columns remaining for MCD: ", ncol(data_mcd), "\n")
-  
-  ## (This is only possible with non NaN data)
-  ## removing linear combination variables
-  #combos <- findLinearCombos(as.matrix(data_mcd))$remove
-  
-  #if(!is.null(combos)){
-      
-  #  data_mcd <- data_mcd[-combos]
-  #}
-  
   
   # Creating covariance matrix for MCD («data_mcd» is the matrix containing  
   # data with no indicator variable
-  
 
   # alpha controls the fraction used
   
@@ -408,36 +403,33 @@ mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
   ## if not, first calculate PCA on the data and calculate mcd on the 
   ## PCA data
   
-  ## also if number of mcd columns is too high
-  # if(!all(eigen(output_mcd$cov)$values > 0) | ncol(data_mcd) > 250){
-  # if(!all(eigen(output_mcd$cov)$values > 0)){
+  # also do this if number of mcd columns is too high
   if(ncol(data_mcd) > 250){
     
     PCA_approach <- TRUE
-    
     ## mean imputing before calculating PCA (This is only to determine the 
     ## outliers, the actual data will not bet touched)
     for(j in seq_len(ncol(data_mcd))){
       data_mcd[is.na(data_mcd[, j]), j] <- mean(data_mcd[, j], na.rm = TRUE)
     }
     
-    # 1) scale the data (important for PCA when variables have different units)
+    # scaling (important for PCA when variables have different units)
     X <- scale(data_mcd, center = TRUE, scale = TRUE)
     
-    # 2) PCA
+    # PCA
     pca <- prcomp(X, center = FALSE, scale = FALSE)
     
-    # 3) choose number of PCs to keep
-    #    a) keep PCs with non-negligible variance:
+    # choose number of PCs to keep
+    # a) keep PCs with non-negligible variance:
     eps <- 1e-8
     k_nonzero <- sum(pca$sdev > eps)
     
-    #    b) or use cumulative variance threshold (80% to not have excessive 
+    # b) or use cumulative variance threshold (80% to not have excessive 
     # high number of PCs)
     cumvar <- cumsum(pca$sdev^2) / sum(pca$sdev^2)
-    k_80 <- which(cumvar >= 0.80)[1]   # first index reaching >=980%
+    k_80 <- which(cumvar >= 0.80)[1]
+    # first index reaching >=980%
     
-    # pick k = min(k_nonzero, k_80, nrow(X)-1)
     # setting hard cap at 250 PCAs
     k <- min(k_nonzero, ifelse(is.na(k_80), k_nonzero, k_80), 250, nrow(X)-1)
     
@@ -449,17 +441,17 @@ mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
     
     cat("Number of PCAs to calculate MCD on: ", ncol(pcs), "\n")
     
-    # 4) run MCD on the reduced data
-    mcd <- covMcd(pcs, alpha = alpha_mcd)  # robust center and covariance in PC space
+    # run MCD on the reduced data (required package loaded in script)
+    mcd <- robustbase::covMcd(pcs, alpha = alpha_mcd)
+    # robust center and covariance in PC space
     
-    # 5) compute mahalanobis distances in PC space
+    # compute mahalanobis distances in PC space
     # If mcd$cov is fine (invertible), this works:
     mhmcd <- mahalanobis(pcs, mcd$center, mcd$cov)
     
   } else {
     # Distances from centroid for matrix
     PCA_approach <- FALSE
-    #output_mcd <- rrcov::CovMcd(data_mcd, alpha = alpha_mcd)
     output_mcd <- robustbase::covMcd(data_mcd, alpha = alpha_mcd)
     mhmcd <- mahalanobis(data_mcd, output_mcd$center, output_mcd$cov)
   }
@@ -468,17 +460,18 @@ mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
   
   ## optional: Instead of fixed quota, flag all IDs that fall below
   ## significance threshold
+  ## (in analysis, instead top 5%)
   
   if(filter_cutoff){
-    cutoff <- (qchisq(p = 1 - threshold, df = ncol(data_mcd))) ## ADJUST THIS! 
+    cutoff <- (qchisq(p = 1 - threshold, df = ncol(data_mcd))) 
     names_outliers_MCD <- which(mhmcd > cutoff)
     
+    ## saving the IDs with multivariate outliers
     saveRDS(names_outliers_MCD,
             file = here::here("data", "intermediate", filename_outliers))
   } else {
     
     names_outliers_MCD <- cbind(data.frame(mhmcd), data_mcd_ID) %>% 
-      # rowid_to_column() %>%
       arrange(desc(mhmcd)) %>%
       head(0.05 * length(mhmcd)) %>%
       dplyr::select(FISNumber) %>%
@@ -489,11 +482,10 @@ mcd_5 <- function(data, dataset_name, alpha_mcd = 0.75, filter_cutoff = FALSE,
     
     cat(length(names_outliers_MCD),
         " participants removed from training set ", dataset_name, "\n")
-    ## Thus instead of cutoff only discard the top 5%, based on the mhmcd75!
   }
   
   return(names_outliers_MCD)
   
 }
 
-
+## eoS

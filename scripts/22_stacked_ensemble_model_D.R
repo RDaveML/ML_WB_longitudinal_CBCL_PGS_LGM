@@ -4,18 +4,19 @@
 # Year, 2025
 # Email:  d.m.leitritz@vu.nl
 #   
-# Date: 2025-05-01
+# Date: 2025-07-15
 #
-# Script Name: 11_stacked_ensemble_model_A.R
+# Script Name: 22_stacked_ensemble_model_D.R
 #
 # Script Description: This script codes the stacked ensemble model 
-# for model A based on the predictions from the first level models 
+# for variable set D (CBCL items + longitudinal variables + covariates)
+# based on the predictions from the first level models 
 # and evaluates the stacked ensemble model and the first level models in terms 
-# of performance and feature importance
+# of performance 
 #
 #
 # Notes: Only the random forest model and the xgb model were included because 
-# the svr model did not produce stable results
+# (svr was dropped after model A because it did not produce stable results)
 #
 #
 
@@ -45,30 +46,33 @@ source(here::here("scripts", "functions", "functions_ml.R"))
 ## for performance measures)
 
 ## 1) Loading in original train test split
-train_ids <- readRDS(here::here("data", "intermediate", "indices_train.rds"))
+train_ids <- readRDS(
+  here::here("data", "intermediate", "indices_train.rds"))
 
 test_ids <- readRDS(here::here("data", "intermediate", "indices_test.rds"))
 
 ## 2) Preparing data
 
 ## loading in data with family numbers (Object is called df_FIS_fam)
-df_FIS_fam <- readRDS(here::here("data", "intermediate", "FIS_fam_nr.rds"))
+## and filtering to have only participants with PGS data
+df_FIS_fam <- readRDS(here::here("data", "intermediate", "FIS_fam_nr.rds")) %>%
+  filter(FISNumber %in% c(train_ids, test_ids))
 
 
-## Loading in prediction data from random forest and xbg (stability plots
-## indicated insufficient stability of svr models, therefore discarded)
+## Loading in prediction data from random forest and xbg
 pred_rf <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_A_iteration_1.rds"))$run_rf$preds_df_rf 
+             "workspace_model_D_iteration_1.rds"))$run_rf$preds_df_rf 
 
 pred_xgb <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_A_iteration_1.rds"))$run_xgb$preds_df_xgb 
+             "workspace_model_D_iteration_1.rds"))$run_xgb$preds_df_xgb 
 
 ## loading in full workspace original prediction
 workspace_orig <- readRDS(
   here::here("data", "intermediate", "bootstrap",
-             "workspace_model_A_iteration_1.rds"))
+             "workspace_model_D_iteration_1.rds"))
+
 
 
 ## checking if all values of the column "original_prediction" in pred_rf and 
@@ -88,21 +92,21 @@ pred_xgb <- pred_xgb %>%
 ## true Y
 ## loading in full data model D and creating outcome df for this model
 if(!file.exists(
-  here::here("data", "intermediate", "data_outcome_A.rds"))) {
+  here::here("data", "intermediate", "data_outcome_D.rds"))) {
   
-  data_model_A_base <- readRDS(
-    here::here("data", "intermediate", "data_model_A.rds"))
+  data_model_D_base <- readRDS(
+    here::here("data", "intermediate", "data_full_model_D.rds"))
   
-  data_outcome <- data_model_a_base %>%
+  data_outcome <- data_model_D_base %>%
     select(FISNumber, QoL_simple) %>%
     mult_to_numeric()
   
   saveRDS(data_outcome, 
-          here::here("data", "intermediate", "data_outcome_A.rds"))
+          here::here("data", "intermediate", "data_outcome_D.rds"))
 }
 
 data_outcome <- readRDS(
-  here::here("data", "intermediate", "data_outcome_A.RDS"))
+  here::here("data", "intermediate", "data_outcome_D.RDS"))
 
 ## creating full dataframe
 data_full <- data_outcome %>% 
@@ -120,18 +124,11 @@ data_test <- data_full %>%
   filter(FISNumber %in% test_ids) 
 
 
-## 3) Train meta-learner stacked ensemble model
-
-## a) Linear regression model 
+## 3) Train meta-learner stacked ensemble model (Linear regression) 
 
 ## creating folds so that families stay together during training
 set.seed(7)
 folds <- groupKFold(group = data_train$FamilyNumber, k = 10)
-
-## coding a linear regression machine learning model with the train function
-## from the caret package. QoL_simple is the outcome variable, the ID
-## variable "FISNumber" should not be part of the features
-## the tuning parameter "Intercept" should be contained in the model
 
 model_lm_stack <- train(QoL_simple ~ . - FISNumber - FamilyNumber, 
                         data = data_train, 
@@ -146,17 +143,16 @@ model_lm_stack <- train(QoL_simple ~ . - FISNumber - FamilyNumber,
 
 ## loading in model objects from the original predictions
 ## Loading in prediction data from random forest and xbg
-model_rf <- readRDS(
-  here::here("data", "intermediate", "bootstrap",
-             "workspace_model_A_iteration_1.rds"))$run_rf$model_bayes_rf 
+model_rf <- workspace_orig$run_rf$model_bayes_rf 
 
-model_xgb <- readRDS(
-  here::here("data", "intermediate", "bootstrap",
-             "workspace_model_A_iteration_1.rds"))$run_xgb$model_bayes_xgb
+model_xgb <- workspace_orig$run_xgb$model_bayes_xgb
 
 list_models <- list("lm_stack" = model_lm_stack,
                     "rf" = model_rf,
                     "xgb" = model_xgb)
+
+
+
 
 ### point estimates of performance metrics for all models
 ## postResample function calculates RMSE, R² and MAE at once
@@ -261,13 +257,10 @@ for (i in 1:length(list_models)) {
 
 saveRDS(boot_results, 
         here::here(
-          "data", "intermediate", "bootstrap", "boot_results_performace_A.rds"))
+          "data", "intermediate", "bootstrap", "boot_results_performace_D.rds"))
 
 ## performance measures are analyzed and compared to the other models in 
-## script on model comparison significance testing
-
-##-----------------------------------------------------------------------------
-
+## script on model performance comparison and significance testing
 
 ##-----------------------------------------------------------------------------
 
@@ -572,14 +565,9 @@ if(stability_metrics) {
 ## saving and loading in workspace
 ## so that data do not have to be loaded in several times)
 #save.image(
-#  here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
-#load(here::here("data", "intermediate", "workspace_stacking_A_server.RData"))
+#  here::here("data", "intermediate", "workspace_stacking_D_server.RData"))
+#load(here::here("data", "intermediate", "workspace_stacking_D_server.RData"))
 
 # eoS
-
-
-
-
-
 
 

@@ -13,8 +13,14 @@
 ## Combining longitudinal change features of childhood psychopathology 
 ## with Polygenic scores in machine learning models of adult wellbeing
 #
-# Notes: Filtering procedure may still be adjusted after consultation with the 
-# supervisors and after receiving PGS data
+# Steps:
+# - filtering out all participants that do not match criteria
+#       (Check script and paper for exact steps)
+# - Re-coding CBCL items that are not on the 0-2 scale
+# - Imputing age variables
+# - 
+#
+# Notes: 
 #
 
 # Set options
@@ -38,14 +44,14 @@ source(here::here("scripts", "functions", "functions_preprocessing.R"))
 
 
 ## reading in datafile (if necessary, change filepath to where file is located)
-data <- read_sav(here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
-  as.data.frame()
+data <- read_sav(
+  here::here("data", "source_raw", "PHE_20240722_4552_YJS.sav")) %>%
+    as.data.frame()
 
 ## loading in refined variable table (with labels and description of CBCL items)
 CBCL_items_table <- read_excel(here::here("doc", "CBCL_table_t_per_item.xlsx"))
 
 ## loading in vectors of variable names for filtering and selecting
-## those were created in the script 02_data_exploration.R
 CBCL_YSR_items_vec <- readRDS(
   here::here("data", "intermediate", "variable_vectors.rds"))[[1]]
 
@@ -66,7 +72,7 @@ summary_df <- readRDS(here::here("data", "intermediate", "summary_CBCL.rds"))
 
 ## loading in list of CBCL items per question
 CBCL_questions_list <- readRDS(
-  here::here("scripts", "CBCL_questions_list.rds"))
+  here::here("data", "intermediate", "CBCL_questions_list.rds"))
 
 ## loading in covariate data for further filtering
 data_covariates <- readRDS(
@@ -165,7 +171,7 @@ table(data_filtered_recoded$q4m5, useNA = "ifany")
 
 ## it worked out correctly
 
-## removing intermediary objects
+## removing intermediate objects
 rm(list = c("data_CBCL_103", "data_CBCL_50", "data_CBCL_57"))
 
 #----------------------------------------------------------------------------
@@ -209,7 +215,7 @@ col_threshold <- 0.5
 
 
 data_CBCL <- data_filtered_recoded %>%
-  select(all_of(CBCL_YSR_items_vec)) %>% ## also add vector of LGM features here (In case after LGM modeling)
+  select(all_of(CBCL_YSR_items_vec)) %>% 
   mutate(across(everything(), as.numeric))
 
 cols_with_excessive_na <- sapply(data_CBCL %>% select(
@@ -232,7 +238,7 @@ saveRDS(CBCL_items_drop,
 
 ##-----------------------------------------------------------------------------
 
-## recalculating summary data frame with fitlered dataset
+## recalculating summary data frame with filtered dataset
 ## Summary statistics and distribution plots
 ## Based participants with at least one QoL measure and at least one YNTR
 ## participation
@@ -283,10 +289,6 @@ for(row in 1:nrow(CBCL_items_table)){
 }
 names(CBCL_item_question_age) <- c("variable", "question_number", "age")
 
-## Important: question_number is then what to loop over when doing the
-## longitudinal modeling
-
-
 ## attach to summary df
 summary_df <- summary_df %>%
   left_join(CBCL_item_question_age %>% filter(!is.na(variable)),
@@ -301,36 +303,9 @@ saveRDS(summary_df, here::here("data", "intermediate", "summary_CBCL.rds"))
 ##-----------------------------------------------------------------------------
 
 
-## Additional cleaning step: Removing columns where IQR = 0
-
-## note: unclear whether this filtering step should actually take place,
-## reduction would be massive
-
-IQR_filter <- FALSE
-
-if(IQR_filter){
-cols_IQR <- summary_df %>%
-  filter(IQR != 0) %>% 
-  select(variable) %>%
-  pull()
-
-data_CBCL_cols_IQR <- data_CBCL_cols %>%
-  select(all_of(cols_IQR))
-
-nrow(data_CBCL_cols_IQR)
-ncol(data_CBCL_cols_IQR)
-
-CBCL_items_keep_IQR <- colnames(data_CBCL_cols_IQR)
-
-CBCL_items_drop_IQR <- setdiff(CBCL_YSR_items_vec, CBCL_items_keep_IQR)
-}
-
-
-
 #-----------------------------------------------------------------------------
 
 ## creating full dataset and dataset for LGM modeling
-if(IQR_filter == FALSE){
 data_full <- data_filtered_recoded %>%
   select(-any_of(CBCL_items_drop))
 
@@ -342,24 +317,9 @@ data_LGM <- data_filtered_recoded %>%
 saveRDS(data_full, here::here("data", "intermediate", "data_full.rds"))
 saveRDS(data_LGM, here::here("data", "intermediate", "data_LGM.rds"))
 
-} else {
-  data_full <- data_filtered_recoded %>%
-    select(-any_of(CBCL_items_drop_IQR))
-  
-  data_LGM <- data_filtered_recoded %>%
-    select(FISNumber, FamilyNumber, QoL_simple, all_of(covariates_names),
-           all_of(CBCL_items_keep_IQR))
-  
-  ## Saving datasets to continue working with them
-  saveRDS(data_full, here::here("data", "intermediate", "data_full.rds"))
-  saveRDS(data_LGM, here::here("data", "intermediate", "data_LGM.rds"))
-  }
-
-## Note: This is all still without PGS calculations! Add those later in 
-## separate preprocessing script and do the row and column filtering 
-## accordingly, also left_join with main df then!
+## Note: PGS will be calculated at later step
 
 
-#-----------------------------------------------------------------------------
+## eoS 
 
 

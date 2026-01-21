@@ -2,20 +2,65 @@
 
 **Summary of the project:**
 
-Combining multiple modalities of data for the prediction of wellbeing in machine learning models might lead to a more accurate prediction. This project aims to investigate the usefulness of longitudinal features of a specific aspect of an individual’s life history, namely childhood psychopathology, for machine learning-based prediction of adult wellbeing. Features derived from longitudinal trajectories of childhood psychopathology will be compared to polygenic risk scores for a variety of phenotypes and to cross-sectional features of childhood psychopathology ignoring the longitudinal aspect. It is expected that longitudinal features will be of high feature importance. 
+Combining multiple modalities of data for the prediction of wellbeing in machine learning models might lead to a more accurate prediction. This project investigated the usefulness of longitudinal features of a specific aspect of an individual’s life history, namely childhood psychopathology, for machine learning-based prediction of adult wellbeing. Features derived from longitudinal trajectories of childhood psychopathology (age 3 - 16) are compared to polygenic risk scores for a variety of phenotypes and to cross-sectional features of childhood psychopathology.
+
+As of January 2026, paper is handed in for publication
 
 Authors: Leitritz, D; Pool, R.; Ligthart, L.; Bartels, M.; Pelt, D.
 
-Department of Biological Psychology; Vrije Universiteit Amsterdam; Amsterdam,. Noord-Holland; The Netherlands
-July 2024
+Department of Biological Psychology; Vrije Universiteit Amsterdam; Amsterdam, Noord-Holland; The Netherlands
+July 2024 - January 2026
+
+### Working with the repository
+A) Make new R project and sync with repository
+    1) Create a new R project 
+    2) Select version control -> Git
+    3) Insert repository link
+    4) Project structure is retained for own fork
+
+B) Pull entire folder directly from gitHub and use file ML_WB_longitudinal_CBCL_PGS_LGM.Rproj
+for a new R project
+
 
 
 ### Content repository
 This repository contains all documents relevant to the analysis and is organized as follows:
 
-- data contains only proof-of-concept calculations and otherwise falls under the gitignore
-- doc contains all documentation of the study including legal documents and the pre-registration, furthermore visualizations based on the results of the analyses
-- scripts contains all R, Python, Mplus and bash scripts that were used for the analysis
+- doc contains all documentation of the study including legal documents and the pre-registration
+- scripts contains all R and bash scripts that were used for the analysis
+- the scripts have an order (indicated by the numeric prefix) which needs to be adhered to when replicating the analysis in order to obtain all required intermediate objects
+- visualizations can be found in the visualization folder
+
+*No data are placed in this repository*
+
+### Content and organization of scripts
+- scripts 01 - 05 contain raw data preparation and cleaning and creation of intial train / test split on the full sample (N = 5,087)
+- scripts 06a -c contain calculation of longitudinal summary statistics
+- script 07 carries out latent growth modelling for all CBCL items included calling Mplus
+- script 08 does preprocessing of genetic data to obtain polygenic scores
+- scripts 09 - 11 run bootstrapped machine learning models (09), inspect the stability of the bootstrapped models (10) and create stacked ensemble models and calculate bootstrapped model performance measures (11) for variable set A (Only raw CBCL variables + covariates)
+- script 12 creates a new train / test split for all variable sets with genetic data (N = 2,656)
+- scripts 13 - 15 execute the same steps as script 09-11 for variables set B (PGS + genetic covariates)
+- scripts 16 - 18 for variables set C (raw CBCL items + PGS + covariates)
+- script 19 merges derived longitudinal variables with other parts of the data to create variable sets D and E
+- scripts 20 - 22 - execute the same steps as script 09-11 for variable set D (raw CBCL items + longitudinal variables + covariates)
+- scripts 23 - 25 - execute the same steps as script 09-11 for variable set E (raw CBCL items + longitudinal variables + PGS + covariates)
+- script 26 inspects sample demographics
+- script 27 compares ML model performances between sets and algorithms
+- script 28 calculates variables importances (SHAP values) for all models
+- script 29 runs a confounder analysis
+- script 30 detects multivariate outliers calculating the Minimum covariance determinant (MCD)
+- scripts 31 - 36 re-run the original model training for variable sets A - E with a reduced sample (MCD outliers removed, no bootstrapping)
+- scripts 36 - 40 run the stacked ensemble modelling and model performance for the re-ran models for variable sets A - E
+- script 41 re-runs the model comparison with the re-ran models
+- script 42  calculates for every measure of model performance if confidence intervals overlap between original analysis and sensitivity analysis (MCDc outliers removed before ML)
+- script 43 re-runs the variable importance calculation for the sensitivity analysis
+- non-numbered scripts contain plotting and formatting code for the publication of the results (no calculations or statistical analyses)
+- Tables coded and presented are in most cases limited to showing most important results, code for full tables and figures (e.g. variable importance, pairwise model comparison, SHAP plots) are available upon request from the first author
+
+Note that bootstrapping models, stability tests and performance measure calculation have separate scripts per variable set because of the large computational costs associated with bootstrapping
+To execute the bootstrapping, bash scripts that loop ML training over all bootstrapped datasets need to be run
+
 
 #### Important coding and variable information: 
 - CBCL questions: 
@@ -68,44 +113,6 @@ This repository contains all documents relevant to the analysis and is organized
 - invjrm3: Year of filling in survey wave 3 (by mother) (**invjrm = invuljaar moeder**)
 
 
-#### Content scripts
-The project contains the following areas of coding and analysis:
-- Preprocessing / filtering / train-test-splitting
-- Latent growth / longitudinal modeling
-- Preparation and running machine learning models
-- assessment of model stability
-- model evaluation
-
-(The following section is constantly being updated!)
-Scripts contain the following operations (in the following order):
-- 01 - 01_participantIDs.R
-- 02 - 02_data_exploration.R
-- 03 - 03_covariates.R
-- 04 - 04_data_cleaning_filtering1.R
-- 05 - 05_initial_split_training_test_data.R
-- 06 - 06_longitudinal_features_no_LGM.R
-- 06a - 06_a_autocorrelation.R
-- 06b - 06_b_merge_nonLGM.R
-- 07 - 07_LGM.R
-- 08 - *old: 08a_ML_model_A.R (not needed anymore)* will be changed to **08_PCA_PRS_NTR.R**
-- 09 - 09_0_run_bootstrap_stability.R
-- (09a - Revision run bootstrap with further feature space shrinkage!) **Also add this at all other bootstrapping model steps**
-- 10 - 10_inspection_bootstrap_stability_model_0.R
-- 11 - *no filename yet* (run bootstrap stability model A)
-- 12 - *no filename yet* (inspection bootstrap stability model A)
-- 13 - *no filename yet, tentative depending on discussion if new training test split* (new training-test split, also bootstrap for PGS data, includes removing the genetic outliers!)
-- 14 - *no filename yet* (run bootstrap stability model B: CBS only)
-- 15 - *no filename yet* (inspect bootstrap stability model B)
-- 16 - *no filename yet* (run bootstrap stability mode C: CBCL features + non-LGM CBCL features + PGS)
-- ***16 - no filename yet* (this is still somewhat tricky, run bootstrap with LGM features, but when calculating these, only do it once with initial test set? Still to be discussed once Mplus code is completely ready, add to documentation!)***
-- 17 - *no filename yet* (run bootstrap stability model D: raw CBCL scores + non-LGM features + LGM features, use same split as in 05_initial_split_training_test_data.R)
-- 18 - *no filename yet* (inspect bootstrap stability model D)
-- 19 - *no filename yet* (run bootstrap stability model E: all features)
-- 20 - *no filename yet* (inspect bootstrap stability model E)
-- 21 onwards: ML analyses, feature importances; alternative, after all stability checks are done!
-
 
 #### Data availability
-Requests for obtaining the raw data need to be sent directly to the NTR (https://ntr-data-request.psy.vu.nl/). A data request needs to
-state for which purposes the data are requested and which safety measures will be taken. Additionally, an analysis or replication plan
-needs to be appended to the data request.
+*Being part of a national prospective cohort study (NTR), (a) our data cannot be made publicly available for privacy reasons but are available for legitimate researchers via their data access procedure (https://tweelingenregister.vu.nl/information_for_researchers/working-with-ntr-data) and (b) our sample will, due to the longitudinal data collection procedures, partly overlap with previous publications.*
