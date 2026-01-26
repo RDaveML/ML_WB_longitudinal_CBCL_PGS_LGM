@@ -84,7 +84,7 @@ To execute the bootstrapping, bash scripts that loop ML training over all bootst
     -  -2 == missing inconsistent data;
     -  -1 == missing no data;
     -  1 == male;
-    -  2 == female*
+    -  2 == female
 
 - twzyg: zygosity twin 1 vs twin 2; 6 unique codes
     -  1 == MZM;
